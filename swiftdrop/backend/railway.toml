@@ -1,0 +1,13 @@
+# SwiftDrop Backend - Railway.app config
+# Place this service's root directory at: swiftdrop/backend (monorepo)
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+preDeployCommand = ["npm run db:migrate"]
+startCommand = "node server.js"
+healthcheckPath = "/"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
