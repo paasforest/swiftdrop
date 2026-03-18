@@ -149,12 +149,15 @@ async function login(req, res) {
     }
 
     const userResult = await db.query(
-      `SELECT * FROM users WHERE (email = $1 OR phone = $1) AND is_active = true`,
+      `SELECT * FROM users
+       WHERE (email = $1 OR phone = $1)
+         AND is_active = true
+         AND is_verified = true`,
       [identifier]
     );
     const user = userResult.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Invalid credentials or phone not verified' });
     }
 
     let extra = {};
@@ -255,7 +258,8 @@ async function refreshToken(req, res) {
 
     const userResult = await db.query(
       `SELECT id, full_name, email, phone, user_type, is_verified, profile_photo_url, wallet_balance
-       FROM users WHERE id = $1 AND is_active = true`,
+       FROM users
+       WHERE id = $1 AND is_active = true AND is_verified = true`,
       [decoded.userId]
     );
     const user = userResult.rows[0];
