@@ -60,7 +60,7 @@ Optional (for full features):
 
 | Variable | Purpose |
 |----------|---------|
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | SMS / OTP |
+| `SMSPORTAL_CLIENT_ID`, `SMSPORTAL_CLIENT_SECRET` | SMS / OTP (SMSPortal REST API) |
 | `PAYFAST_MERCHANT_ID`, `PAYFAST_MERCHANT_KEY` | Payments |
 | `FIREBASE_SERVICE_ACCOUNT` (JSON string) | Push notifications |
 | `CLOUDINARY_URL` or `CLOUDINARY_*` | Image uploads |
