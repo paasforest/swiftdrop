@@ -3,6 +3,24 @@ const jwt = require('jsonwebtoken');
 const db = require('../database/connection');
 const { generateOTP, storeOTP, validateOTP } = require('../utils/otpHelper');
 const { sendSMS } = require('../services/smsService');
+const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
+
+function normalizeEmailForDb(email) {
+  return String(email ?? '').trim().toLowerCase();
+}
+
+/** PostgreSQL unique_violation: tell user whether email or phone collided. */
+function duplicateRegistrationMessage(err) {
+  const c = (err.constraint || '').toLowerCase();
+  const d = (err.detail || '').toLowerCase();
+  if (c.includes('email') || d.includes('(email)')) {
+    return 'This email is already registered';
+  }
+  if (c.includes('phone') || d.includes('(phone)')) {
+    return 'This phone number is already registered';
+  }
+  return 'Email or phone already registered';
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const ACCESS_EXPIRY = '1h';
@@ -33,24 +51,35 @@ async function registerCustomer(req, res) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    const emailNorm = normalizeEmailForDb(email);
+    const phoneNorm = normalizeSouthAfricaToE164(phone);
+    if (!emailNorm) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    if (!phoneNorm) {
+      return res.status(400).json({
+        error: 'Invalid phone number. Use a South African mobile (e.g. 082… or 82… after +27).',
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await db.query(
       `INSERT INTO users (full_name, email, phone, password_hash, user_type)
        VALUES ($1, $2, $3, $4, 'customer')
        RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-      [full_name, email, phone, passwordHash]
+      [full_name, emailNorm, phoneNorm, passwordHash]
     );
     const user = result.rows[0];
     const otp = generateOTP();
-    await storeOTP(user.id, phone, otp, 'verify_phone');
-    await sendSMS(phone, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
+    await storeOTP(user.id, phoneNorm, otp, 'verify_phone');
+    await sendSMS(phoneNorm, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
     return res.status(201).json({
       message: 'Registration successful. Please verify your phone with the OTP sent.',
       user: sanitizeUser(user),
     });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email or phone already registered' });
+      return res.status(409).json({ error: duplicateRegistrationMessage(err) });
     }
     console.error('registerCustomer:', err);
     return res.status(500).json({ error: 'Registration failed' });
@@ -67,6 +96,17 @@ async function registerDriver(req, res) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    const emailNorm = normalizeEmailForDb(email);
+    const phoneNorm = normalizeSouthAfricaToE164(phone);
+    if (!emailNorm) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+    if (!phoneNorm) {
+      return res.status(400).json({
+        error: 'Invalid phone number. Use a South African mobile (e.g. 082… or 82… after +27).',
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const client = await db.pool.connect();
     try {
@@ -75,7 +115,7 @@ async function registerDriver(req, res) {
         `INSERT INTO users (full_name, email, phone, password_hash, user_type)
          VALUES ($1, $2, $3, $4, 'driver')
          RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-        [full_name, email, phone, passwordHash]
+        [full_name, emailNorm, phoneNorm, passwordHash]
       );
       const user = userResult.rows[0];
       await client.query(
@@ -99,7 +139,7 @@ async function registerDriver(req, res) {
     }
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email or phone already registered' });
+      return res.status(409).json({ error: duplicateRegistrationMessage(err) });
     }
     console.error('registerDriver:', err);
     return res.status(500).json({ error: 'Registration failed' });
@@ -113,7 +153,12 @@ async function verifyPhone(req, res) {
       return res.status(400).json({ error: 'phone and otp are required' });
     }
 
-    const userId = await validateOTP(phone, otp, 'verify_phone');
+    const phoneNorm = normalizeSouthAfricaToE164(phone);
+    if (!phoneNorm) {
+      return res.status(400).json({ error: 'Invalid phone number' });
+    }
+
+    const userId = await validateOTP(phoneNorm, otp, 'verify_phone');
     if (!userId) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
@@ -158,13 +203,30 @@ async function login(req, res) {
     }
 
     const verifiedSql = requirePhoneVerificationForAuth() ? 'AND is_verified = true' : '';
-    const userResult = await db.query(
-      `SELECT * FROM users
-       WHERE (email = $1 OR phone = $1)
-         AND is_active = true
-         ${verifiedSql}`,
-      [identifier]
-    );
+    const trimmedId = String(identifier).trim();
+    const isEmailLogin = trimmedId.includes('@');
+
+    let userResult;
+    if (isEmailLogin) {
+      const emailNorm = normalizeEmailForDb(trimmedId);
+      userResult = await db.query(
+        `SELECT * FROM users
+         WHERE LOWER(TRIM(email)) = $1
+           AND is_active = true
+           ${verifiedSql}`,
+        [emailNorm]
+      );
+    } else {
+      const phoneNorm = normalizeSouthAfricaToE164(trimmedId);
+      const variants = [...new Set([trimmedId, phoneNorm].filter(Boolean))];
+      userResult = await db.query(
+        `SELECT * FROM users
+         WHERE phone = ANY($1::text[])
+           AND is_active = true
+           ${verifiedSql}`,
+        [variants]
+      );
+    }
     const user = userResult.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       const msg = requirePhoneVerificationForAuth()
@@ -211,9 +273,10 @@ async function forgotPassword(req, res) {
       return res.status(400).json({ error: 'email is required' });
     }
 
+    const emailNorm = normalizeEmailForDb(email);
     const userResult = await db.query(
-      `SELECT id, phone FROM users WHERE email = $1 AND is_active = true`,
-      [email]
+      `SELECT id, phone FROM users WHERE LOWER(TRIM(email)) = $1 AND is_active = true`,
+      [emailNorm]
     );
     const user = userResult.rows[0];
     if (!user) {
@@ -240,7 +303,12 @@ async function resetPassword(req, res) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    const userId = await validateOTP(phone, otp, 'reset_password');
+    const phoneNorm = normalizeSouthAfricaToE164(phone);
+    if (!phoneNorm) {
+      return res.status(400).json({ error: 'Invalid phone number' });
+    }
+
+    const userId = await validateOTP(phoneNorm, otp, 'reset_password');
     if (!userId) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }

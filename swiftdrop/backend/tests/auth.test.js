@@ -21,7 +21,8 @@ async function request(method, path, body = null, token = null) {
 async function runTests() {
   const timestamp = Date.now();
   const testEmail = `test${timestamp}@swiftdrop.local`;
-  const testPhone = `+27000000${String(timestamp).slice(-4)}`;
+  // Valid SA mobile shape: +27 + 9 digits (e.g. 82…)
+  const testPhone = `+2780000${String(timestamp).slice(-4)}`;
 
   console.log('SwiftDrop Auth Tests\n');
 

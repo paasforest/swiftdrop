@@ -37,8 +37,8 @@ const Login = ({ navigation }) => {
     // If they typed full country code "27..."
     if (v.startsWith('27')) return `+${v}`;
 
-    // If they typed something starting with 7 (e.g. 7xxxxxxxxx), treat as local
-    if (v.startsWith('7')) return `+27${v}`;
+    // 9-digit local mobile without leading 0 (SA mobiles usually start with 6, 7, or 8)
+    if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
 
     return '';
   };
