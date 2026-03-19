@@ -55,7 +55,7 @@ In the backend service → **Variables**, ensure these are set:
 | `JWT_SECRET`   | Yes      | Use a long random string (e.g. 32+ chars). Generate with: `openssl rand -hex 32` |
 | `PORT`         | No       | Railway sets this automatically. |
 | `NODE_ENV`     | No       | Set to `production` for production. |
-| `REQUIRE_PHONE_VERIFICATION` | No | Default `true`: login/refresh require `is_verified`. Set to `false` for **testing only** (skip OTP gate). |
+| `REQUIRE_PHONE_VERIFICATION` | No | Default `true`: login/refresh require `is_verified`; register flow sends OTP. Set to `false` for **testing only** (skip OTP after register, no SMS on signup, login/refresh without verify). |
 
 Optional (for full features):
 

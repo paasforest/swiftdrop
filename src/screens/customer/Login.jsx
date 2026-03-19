@@ -108,8 +108,19 @@ const Login = ({ navigation }) => {
         password: registerPassword,
       });
 
+      // When REQUIRE_PHONE_VERIFICATION=false on the server, register returns tokens and skips OTP.
+      if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
+        console.log('[Register] Server skipped phone verification; signing in.');
+        setAuth({
+          token: data.token,
+          refreshToken: data.refreshToken,
+          user: data.user,
+        });
+        navigation.navigate('Home');
+        return;
+      }
+
       console.log('[Register] Success! Navigating to OTP...');
-      // Backend sends OTP on register; next step is verify-phone.
       navigation.navigate('OTPScreen', { phone });
     } catch (err) {
       console.error('[Register] Error:', err.message);

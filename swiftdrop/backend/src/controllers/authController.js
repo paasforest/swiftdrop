@@ -70,12 +70,35 @@ async function registerCustomer(req, res) {
       [full_name, emailNorm, phoneNorm, passwordHash]
     );
     const user = result.rows[0];
+
+    // Testing / relaxed mode: skip OTP SMS and return tokens so the client can go straight in.
+    if (!requirePhoneVerificationForAuth()) {
+      const accessToken = jwt.sign(
+        { userId: user.id, userType: user.user_type },
+        JWT_SECRET,
+        { expiresIn: ACCESS_EXPIRY }
+      );
+      const refreshToken = jwt.sign(
+        { userId: user.id, type: 'refresh' },
+        JWT_SECRET,
+        { expiresIn: REFRESH_EXPIRY }
+      );
+      return res.status(201).json({
+        message: 'Registration successful.',
+        user: sanitizeUser(user),
+        phoneVerificationRequired: false,
+        token: accessToken,
+        refreshToken,
+      });
+    }
+
     const otp = generateOTP();
     await storeOTP(user.id, phoneNorm, otp, 'verify_phone');
     await sendSMS(phoneNorm, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
     return res.status(201).json({
       message: 'Registration successful. Please verify your phone with the OTP sent.',
       user: sanitizeUser(user),
+      phoneVerificationRequired: true,
     });
   } catch (err) {
     if (err.code === '23505') {
