@@ -6,6 +6,13 @@ import { resetToRoleHome } from '../../navigationHelpers';
 
 const { width, height } = Dimensions.get('window');
 
+/** Strip zero-width / BOM (common when copy-pasting email/password from chat). */
+function cleanLoginInput(value) {
+  return String(value ?? '')
+    .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
+    .trim();
+}
+
 const Login = ({ navigation }) => {
   const [activeTab, setActiveTab] = useState('login');
   const [showPassword, setShowPassword] = useState(false);
@@ -48,11 +55,15 @@ const Login = ({ navigation }) => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const email = String(loginEmail ?? '').trim();
-      const password = String(loginPassword ?? '').trim();
+      const email = cleanLoginInput(loginEmail).toLowerCase();
+      const password = cleanLoginInput(loginPassword);
       if (!email || !password) {
         setErrorMessage('Email and password are required.');
         return;
+      }
+
+      if (__DEV__) {
+        console.log('[Login] sending', { emailLen: email.length, passwordLen: password.length });
       }
 
       const data = await postJson('/api/auth/login', {
