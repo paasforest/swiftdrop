@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
+import { resetToRoleHome } from '../../navigationHelpers';
 
 const { width, height } = Dimensions.get('window');
 
@@ -65,7 +66,7 @@ const Login = ({ navigation }) => {
         user: data.user,
       });
 
-      navigation.navigate('Home');
+      resetToRoleHome(navigation, data.user);
     } catch (err) {
       setErrorMessage(err.message || 'Login failed.');
     } finally {
@@ -118,7 +119,7 @@ const Login = ({ navigation }) => {
           refreshToken: data.refreshToken,
           user: data.user,
         });
-        navigation.navigate('Home');
+        resetToRoleHome(navigation, data.user);
         return;
       }
 

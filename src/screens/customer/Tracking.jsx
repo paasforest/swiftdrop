@@ -1,142 +1,203 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, Animated } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ActivityIndicator,
+  Linking,
+} from 'react-native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const Tracking = () => {
-  const [eta, setEta] = useState('8 min away');
-  const [driverPosition] = useState(new Animated.ValueXY({ x: 100, y: 200 }));
+function humanStatus(status) {
+  if (!status) return '';
+  return String(status).replace(/_/g, ' ');
+}
 
-  const driverInfo = {
-    name: 'Sipho M.',
-    rating: '4.8',
-    vehicle: 'Toyota Corolla',
-    plate: 'CA 123-456',
-    photo: '👨‍💼'
-  };
+function formatMoney(n) {
+  const x = Number(n);
+  if (Number.isNaN(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
 
-  const orderDetails = {
-    from: '123 Main Street, Worcester',
-    to: '456 Oak Avenue, Cape Town',
-    parcelType: 'Clothing — Medium',
-    deliveryType: 'Express'
-  };
+const Tracking = ({ navigation, route }) => {
+  const orderId = route?.params?.orderId;
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(Boolean(orderId));
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Simulate driver movement
-    const moveDriver = () => {
-      Animated.timing(driverPosition, {
-        toValue: { x: 150, y: 180 },
-        duration: 3000,
-        useNativeDriver: false,
-      }).start(() => {
-        setTimeout(moveDriver, 1000);
-      });
+    let cancelled = false;
+    async function load() {
+      if (!orderId) {
+        setOrder(null);
+        setLoading(false);
+        return;
+      }
+      const auth = getAuth();
+      if (!auth?.token) {
+        setError('Not signed in');
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (!cancelled) setOrder(data);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e.message || 'Failed to load order');
+          setOrder(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
     };
-    
-    // moveDriver();
-  }, []);
+  }, [orderId]);
 
   const handleCall = () => {
-    console.log('Call driver');
+    const phone = order?.driver_phone;
+    if (phone) Linking.openURL(`tel:${String(phone).replace(/\s/g, '')}`);
   };
 
-  const handleChat = () => {
-    console.log('Chat with driver');
-  };
+  if (!orderId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Track a delivery</Text>
+          <Text style={styles.emptySub}>
+            Open a delivery from your home screen, or create a new one to see live status here.
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backBtnText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <ActivityIndicator size="large" color="#1A73E8" />
+          <Text style={styles.emptySub}>Loading order…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !order) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Could not load order</Text>
+          <Text style={styles.emptySub}>{error || 'Unknown error'}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backBtnText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const driverName = order.driver_name || 'Driver';
+  const vehicleBits = [order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ');
+  const plate = order.vehicle_plate || '';
+  const parcelBits = [order.parcel_type, order.parcel_size].filter(Boolean).join(' — ');
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Map View */}
       <View style={styles.mapContainer}>
         <View style={styles.mapPlaceholder}>
-          {/* Route Line */}
+          <Text style={styles.mapHint}>Map view — connect a map SDK for live tracking</Text>
           <View style={styles.routeLine} />
-          
-          {/* Driver Position */}
-          <Animated.View
-            style={[
-              styles.driverMarker,
-              {
-                transform: [
-                  { translateX: driverPosition.x },
-                  { translateY: driverPosition.y },
-                ],
-              },
-            ]}
-          >
-            <Text style={styles.driverIcon}>🚗</Text>
-          </Animated.View>
-          
-          {/* Pickup Location */}
-          <View style={[styles.pickupMarker, { left: 200, top: 150 }]}>
+          <View style={styles.pickupMarker}>
             <View style={styles.pickupDot} />
           </View>
-          
-          {/* Destination */}
-          <View style={[styles.destinationMarker, { left: 280, top: 100 }]}>
+          <View style={styles.destinationMarker}>
             <View style={styles.destinationDot} />
           </View>
         </View>
       </View>
 
-      {/* Bottom Sheet */}
       <View style={styles.bottomSheet}>
-        {/* Driver Info */}
-        <View style={styles.driverInfo}>
-          <View style={styles.driverPhoto}>
-            <Text style={styles.driverAvatar}>{driverInfo.photo}</Text>
+        {order.driver_id ? (
+          <View style={styles.driverInfo}>
+            <View style={styles.driverPhoto}>
+              <Text style={styles.driverAvatar}>🚗</Text>
+            </View>
+            <View style={styles.driverDetails}>
+              <Text style={styles.driverName}>{driverName}</Text>
+              {order.driver_rating != null ? (
+                <Text style={styles.driverRating}>⭐ {Number(order.driver_rating).toFixed(1)}</Text>
+              ) : null}
+              <Text style={styles.driverVehicle} numberOfLines={2}>
+                {[vehicleBits, plate].filter(Boolean).join(' • ') || 'Vehicle details pending'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.driverDetails}>
-            <Text style={styles.driverName}>{driverInfo.name}</Text>
-            <Text style={styles.driverRating}>⭐ {driverInfo.rating}</Text>
-            <Text style={styles.driverVehicle}>
-              {driverInfo.vehicle} • {driverInfo.plate}
-            </Text>
-          </View>
-        </View>
+        ) : (
+          <Text style={styles.noDriver}>Matching a driver…</Text>
+        )}
 
-        {/* Status Banner */}
         <View style={styles.statusBanner}>
-          <Text style={styles.statusText}>Driver is on the way to pickup</Text>
-          <Text style={styles.etaText}>• {eta}</Text>
+          <Text style={styles.statusText}>{humanStatus(order.status)}</Text>
+          <Text style={styles.etaText}>#{order.order_number}</Text>
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-            <Text style={styles.actionIcon}>📞</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleChat}>
-            <Text style={styles.actionIcon}>💬</Text>
-          </TouchableOpacity>
-        </View>
+        {order.driver_phone ? (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+              <Text style={styles.actionIcon}>📞</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
-        {/* Delivery Details */}
         <View style={styles.deliveryDetails}>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>From:</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {orderDetails.from}
+            <Text style={styles.detailValue} numberOfLines={2}>
+              {order.pickup_address}
             </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>To:</Text>
-            <Text style={styles.detailValue} numberOfLines={1}>
-              {orderDetails.to}
+            <Text style={styles.detailValue} numberOfLines={2}>
+              {order.dropoff_address}
             </Text>
           </View>
+          {parcelBits ? (
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Parcel:</Text>
+              <Text style={styles.detailValue}>{parcelBits}</Text>
+            </View>
+          ) : null}
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Parcel:</Text>
-            <Text style={styles.detailValue}>{orderDetails.parcelType}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Type:</Text>
+            <Text style={styles.detailLabel}>Tier:</Text>
             <View style={styles.deliveryTypeBadge}>
-              <Text style={styles.deliveryTypeText}>{orderDetails.deliveryType}</Text>
+              <Text style={styles.deliveryTypeText}>{order.delivery_tier || '—'}</Text>
             </View>
           </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Total:</Text>
+            <Text style={styles.detailValue}>{formatMoney(order.total_price)}</Text>
+          </View>
         </View>
+
+        <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
+          <Text style={styles.backLinkText}>← Back to home</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -146,8 +207,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    width: width,
-    height: height,
+    width,
+    height,
+  },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  backBtn: {
+    backgroundColor: '#1A73E8',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  backBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   mapContainer: {
     flex: 1,
@@ -156,72 +247,58 @@ const styles = StyleSheet.create({
   mapPlaceholder: {
     flex: 1,
     position: 'relative',
-  },
-  routeLine: {
-    position: 'absolute',
-    width: 2,
-    height: 150,
-    backgroundColor: '#1A73E8',
-    left: 150,
-    top: 100,
-    transform: [{ rotate: '-30deg' }],
-  },
-  driverMarker: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1A73E8',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
   },
-  driverIcon: {
-    fontSize: 20,
-    color: '#FFFFFF',
+  mapHint: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    right: 16,
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  routeLine: {
+    width: 3,
+    height: 120,
+    backgroundColor: '#1A73E8',
+    opacity: 0.5,
   },
   pickupMarker: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    left: '25%',
+    bottom: '35%',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    elevation: 2,
   },
   pickupDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#4CAF50',
   },
   destinationMarker: {
     position: 'absolute',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    right: '25%',
+    top: '30%',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    elevation: 2,
   },
   destinationDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: '#FF6B35',
   },
   bottomSheet: {
@@ -236,6 +313,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
+  },
+  noDriver: {
+    fontSize: 15,
+    color: '#666666',
+    marginBottom: 12,
+    textAlign: 'center',
   },
   driverInfo: {
     flexDirection: 'row',
@@ -285,15 +368,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1A73E8',
     flex: 1,
+    textTransform: 'capitalize',
   },
   etaText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1A73E8',
   },
   actionButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'flex-start',
     marginBottom: 20,
   },
   actionButton: {
@@ -305,6 +389,7 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 16,
   },
   actionIcon: {
     fontSize: 24,
@@ -323,7 +408,7 @@ const styles = StyleSheet.create({
   detailLabel: {
     fontSize: 14,
     color: '#666666',
-    width: 60,
+    width: 56,
   },
   detailValue: {
     flex: 1,
@@ -341,6 +426,16 @@ const styles = StyleSheet.create({
   deliveryTypeText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  backLink: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  backLinkText: {
+    color: '#1A73E8',
+    fontSize: 15,
     fontWeight: '600',
   },
 });

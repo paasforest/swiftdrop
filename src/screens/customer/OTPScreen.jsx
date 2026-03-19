@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, TextInput } from 'react-native';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
+import { resetToRoleHome } from '../../navigationHelpers';
 
 const { width, height } = Dimensions.get('window');
 
@@ -57,7 +58,7 @@ const OTPScreen = ({ navigation, route }) => {
         user: data.user,
       });
 
-      navigation.navigate('Home');
+      resetToRoleHome(navigation, data.user);
     } catch (err) {
       setErrorMessage(err.message || 'OTP verification failed.');
     } finally {

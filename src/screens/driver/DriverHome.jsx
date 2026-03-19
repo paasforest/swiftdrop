@@ -1,189 +1,217 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, Switch } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
+import { resetToLogin } from '../../navigationHelpers';
 
 const { width, height } = Dimensions.get('window');
 
-const DriverHome = () => {
+function formatMoney(n) {
+  const x = Number(n);
+  if (Number.isNaN(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+function humanStatus(status) {
+  if (!status) return '';
+  return String(status).replace(/_/g, ' ');
+}
+
+function tierLabel(tier) {
+  if (!tier) return 'Driver';
+  const t = String(tier);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+const DriverHome = ({ navigation }) => {
   const [isOnline, setIsOnline] = useState(false);
+  const [dashboard, setDashboard] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const driverInfo = {
-    name: 'Sipho',
-    rating: '4.8',
-    photo: '👨‍💼'
-  };
+  const loadDashboard = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setLoading(false);
+      setDashboard(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getJson('/api/orders/driver/dashboard', { token: auth.token });
+      setDashboard(data);
+    } catch (e) {
+      setError(e.message || 'Could not load dashboard');
+      setDashboard(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const todayStats = {
-    earnings: 'R340',
-    deliveries: 3
-  };
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [loadDashboard])
+  );
+
+  const userName = dashboard?.user?.full_name || getAuth()?.user?.full_name || 'Driver';
+  const rating =
+    dashboard?.current_rating != null && !Number.isNaN(Number(dashboard.current_rating))
+      ? Number(dashboard.current_rating).toFixed(1)
+      : '—';
+  const todayEarnings = dashboard?.today?.earnings ?? 0;
+  const todayDeliveries = dashboard?.today?.deliveries ?? 0;
+  const totalDone = dashboard?.total_deliveries_completed ?? 0;
+  const recent = Array.isArray(dashboard?.recent_orders) ? dashboard.recent_orders : [];
 
   const handleToggleOnline = () => {
     setIsOnline(!isOnline);
-    console.log('Toggle online status:', !isOnline);
+    // TODO: sync with backend driver availability when endpoint exists
   };
-
-  const handlePostRoute = () => {
-    console.log('Post a route');
-  };
-
-  const handleViewJobs = () => {
-    console.log('View available jobs');
-  };
-
-  const renderOnlineToggle = () => (
-    <View style={styles.toggleContainer}>
-      <View style={[
-        styles.toggleCircle,
-        isOnline ? styles.toggleCircleOnline : styles.toggleCircleOffline
-      ]}>
-        <View style={[
-          styles.toggleIndicator,
-          isOnline ? styles.toggleIndicatorOnline : styles.toggleIndicatorOffline
-        ]} />
-      </View>
-      <Text style={[
-        styles.toggleText,
-        isOnline ? styles.toggleTextOnline : styles.toggleTextOffline
-      ]}>
-        {isOnline ? 'You are online' : 'You are offline — tap to go online'}
-      </Text>
-      {isOnline && (
-        <View style={styles.pulsingDot} />
-      )}
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.driverInfo}>
-            <Text style={styles.driverName}>{driverInfo.name}</Text>
-            <Text style={styles.driverRating}>⭐ {driverInfo.rating}</Text>
+            <Text style={styles.driverName}>{userName}</Text>
+            <Text style={styles.driverRating}>⭐ {rating}</Text>
+            <TouchableOpacity onPress={() => resetToLogin(navigation)} style={styles.inlineLogout}>
+              <Text style={styles.inlineLogoutText}>Log out</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.driverPhoto}>
-            <Text style={styles.driverAvatar}>{driverInfo.photo}</Text>
+            <Text style={styles.driverAvatar}>🚗</Text>
           </View>
         </View>
 
-        {/* Online/Offline Toggle */}
         <View style={styles.toggleSection}>
-          {renderOnlineToggle()}
+          <TouchableOpacity activeOpacity={0.85} onPress={handleToggleOnline} style={styles.toggleContainer}>
+            <View
+              style={[
+                styles.toggleCircle,
+                isOnline ? styles.toggleCircleOnline : styles.toggleCircleOffline,
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleIndicator,
+                  isOnline ? styles.toggleIndicatorOnline : styles.toggleIndicatorOffline,
+                ]}
+              />
+            </View>
+            <Text style={[styles.toggleText, isOnline ? styles.toggleTextOnline : styles.toggleTextOffline]}>
+              {isOnline ? 'You are online' : 'You are offline — tap to go online'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Today's Earnings */}
         <View style={styles.earningsCard}>
-          <Text style={styles.earningsLabel}>Today</Text>
-          <Text style={styles.earningsAmount}>{todayStats.earnings}</Text>
-          <Text style={styles.deliveriesCount}>
-            {todayStats.deliveries} deliveries completed
-          </Text>
+          <Text style={styles.earningsLabel}>Today (completed)</Text>
+          <Text style={styles.earningsAmount}>{formatMoney(todayEarnings)}</Text>
+          <Text style={styles.deliveriesCount}>{todayDeliveries} deliveries completed today</Text>
         </View>
 
-        {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.postRouteButton}
-            onPress={handlePostRoute}
+            onPress={() => navigation.navigate('PostRoute')}
           >
             <Text style={styles.postRouteText}>Post a Route</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={styles.viewJobsButton}
-            onPress={handleViewJobs}
+            onPress={() => navigation.navigate('JobOffer')}
           >
             <Text style={styles.viewJobsText}>View Available Jobs</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Rating Card */}
         <View style={styles.ratingCard}>
           <View style={styles.ratingHeader}>
-            <Text style={styles.ratingTitle}>Your Rating</Text>
+            <Text style={styles.ratingTitle}>Your stats</Text>
             <View style={styles.tierBadge}>
-              <Text style={styles.tierText}>Trusted Driver</Text>
+              <Text style={styles.tierText}>{tierLabel(dashboard?.tier)}</Text>
             </View>
           </View>
-          
+
           <View style={styles.ratingStats}>
             <View style={styles.ratingItem}>
-              <Text style={styles.ratingValue}>{driverInfo.rating}</Text>
-              <Text style={styles.ratingLabel}>Average Rating</Text>
+              <Text style={styles.ratingValue}>{rating}</Text>
+              <Text style={styles.ratingLabel}>Avg rating</Text>
             </View>
             <View style={styles.ratingItem}>
-              <Text style={styles.ratingValue}>127</Text>
-              <Text style={styles.ratingLabel}>Total Deliveries</Text>
+              <Text style={styles.ratingValue}>{totalDone}</Text>
+              <Text style={styles.ratingLabel}>Completed</Text>
             </View>
             <View style={styles.ratingItem}>
-              <Text style={styles.ratingValue}>98%</Text>
-              <Text style={styles.ratingLabel}>On-Time Rate</Text>
+              <Text style={styles.ratingValue}>{dashboard?.deliveries_completed ?? 0}</Text>
+              <Text style={styles.ratingLabel}>Tier count</Text>
             </View>
           </View>
         </View>
 
-        {/* Recent Activity */}
         <View style={styles.recentSection}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          
-          <View style={styles.activityList}>
-            <View style={styles.activityItem}>
-              <View style={styles.activityIcon}>
-                <Text style={styles.activityIconText}>✓</Text>
-              </View>
-              <View style={styles.activityInfo}>
-                <Text style={styles.activityTitle}>Delivery completed</Text>
-                <Text style={styles.activitySubtitle}>Worcester to Cape Town</Text>
-                <Text style={styles.activityTime}>2 hours ago</Text>
-              </View>
-              <Text style={styles.activityAmount}>+R85</Text>
+          <Text style={styles.sectionTitle}>Recent jobs</Text>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {loading ? (
+            <ActivityIndicator style={{ marginVertical: 20 }} color="#1A73E8" />
+          ) : recent.length === 0 ? (
+            <Text style={styles.emptyText}>No assigned jobs yet. Check available jobs or post a route.</Text>
+          ) : (
+            <View style={styles.activityList}>
+              {recent.map((o) => (
+                <View key={o.id} style={styles.activityItem}>
+                  <View style={styles.activityIcon}>
+                    <Text style={styles.activityIconText}>📦</Text>
+                  </View>
+                  <View style={styles.activityInfo}>
+                    <Text style={styles.activityTitle} numberOfLines={1}>
+                      {o.order_number} · {humanStatus(o.status)}
+                    </Text>
+                    <Text style={styles.activitySubtitle} numberOfLines={2}>
+                      {o.dropoff_address || '—'}
+                    </Text>
+                    <Text style={styles.activityTime}>
+                      {o.updated_at ? new Date(o.updated_at).toLocaleString() : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityAmount}>{formatMoney(o.driver_earnings)}</Text>
+                </View>
+              ))}
             </View>
-            
-            <View style={styles.activityItem}>
-              <View style={styles.activityIcon}>
-                <Text style={styles.activityIconText}>✓</Text>
-              </View>
-              <View style={styles.activityInfo}>
-                <Text style={styles.activityTitle}>Delivery completed</Text>
-                <Text style={styles.activitySubtitle}>Stellenbosch to Somerset West</Text>
-                <Text style={styles.activityTime}>5 hours ago</Text>
-              </View>
-              <Text style={styles.activityAmount}>+R120</Text>
-            </View>
-            
-            <View style={styles.activityItem}>
-              <View style={styles.activityIcon}>
-                <Text style={styles.activityIconText}>✓</Text>
-              </View>
-              <View style={styles.activityInfo}>
-                <Text style={styles.activityTitle}>Delivery completed</Text>
-                <Text style={styles.activitySubtitle}>Cape Town CBD to Sea Point</Text>
-                <Text style={styles.activityTime}>Yesterday</Text>
-              </View>
-              <Text style={styles.activityAmount}>+R135</Text>
-            </View>
-          </View>
+          )}
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem}>
           <Text style={styles.navIconActive}>🏠</Text>
           <Text style={styles.navTextActive}>Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('JobOffer')}>
           <Text style={styles.navIcon}>📋</Text>
           <Text style={styles.navText}>Jobs</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Earnings')}>
           <Text style={styles.navIcon}>💰</Text>
           <Text style={styles.navText}>Earnings</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>👤</Text>
-          <Text style={styles.navText}>Profile</Text>
+        <TouchableOpacity style={styles.navItem} onPress={() => resetToLogin(navigation)}>
+          <Text style={styles.navIcon}>🚪</Text>
+          <Text style={styles.navText}>Log out</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -194,8 +222,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    width: width,
-    height: height,
+    width,
+    height,
   },
   header: {
     flexDirection: 'row',
@@ -217,6 +245,15 @@ const styles = StyleSheet.create({
   driverRating: {
     fontSize: 16,
     color: '#FFA500',
+    marginBottom: 8,
+  },
+  inlineLogout: {
+    alignSelf: 'flex-start',
+  },
+  inlineLogoutText: {
+    color: '#d93025',
+    fontSize: 14,
+    fontWeight: '600',
   },
   driverPhoto: {
     width: 60,
@@ -274,15 +311,6 @@ const styles = StyleSheet.create({
   toggleTextOnline: {
     color: '#1A73E8',
     fontWeight: '600',
-  },
-  pulsingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    position: 'absolute',
-    top: 10,
-    right: 10,
   },
   earningsCard: {
     backgroundColor: '#FFFFFF',
@@ -395,13 +423,23 @@ const styles = StyleSheet.create({
   },
   recentSection: {
     paddingHorizontal: 20,
-    marginBottom: 80,
+    marginBottom: 88,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1A1A1A',
     marginBottom: 16,
+  },
+  errorText: {
+    color: '#d93025',
+    marginBottom: 8,
+    fontSize: 14,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 12,
   },
   activityList: {
     backgroundColor: '#FFFFFF',
@@ -419,15 +457,13 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#E8F5E8',
+    backgroundColor: '#E8F4FF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
   activityIconText: {
-    color: '#4CAF50',
     fontSize: 16,
-    fontWeight: 'bold',
   },
   activityInfo: {
     flex: 1,
@@ -448,7 +484,7 @@ const styles = StyleSheet.create({
     color: '#999999',
   },
   activityAmount: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#4CAF50',
   },

@@ -1,10 +1,51 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
+import { resetToLogin } from '../../navigationHelpers';
 
 const { width, height } = Dimensions.get('window');
 
+function firstName(fullName) {
+  if (!fullName || typeof fullName !== 'string') return 'there';
+  return fullName.trim().split(/\s+/)[0] || 'there';
+}
+
+function formatMoney(n) {
+  const x = Number(n);
+  if (Number.isNaN(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+function humanStatus(status) {
+  if (!status) return '';
+  return String(status).replace(/_/g, ' ');
+}
+
+function greetingPrefix() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
 const Home = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [displayName, setDisplayName] = useState('there');
 
   const deliveryTiers = [
     {
@@ -13,7 +54,7 @@ const Home = ({ navigation }) => {
       icon: '🕐',
       time: '2-5 hrs',
       price: 'From R80',
-      color: '#4CAF50'
+      color: '#4CAF50',
     },
     {
       id: 'express',
@@ -22,7 +63,7 @@ const Home = ({ navigation }) => {
       time: '1-2 hrs',
       price: 'From R150',
       color: '#1A73E8',
-      popular: true
+      popular: true,
     },
     {
       id: 'urgent',
@@ -30,68 +71,68 @@ const Home = ({ navigation }) => {
       icon: '🔥',
       time: 'Under 1hr',
       price: 'From R280',
-      color: '#FF6B35'
-    }
+      color: '#FF6B35',
+    },
   ];
 
-  const recentDeliveries = [
-    {
-      id: 1,
-      destination: '123 Main Street, Cape Town',
-      date: 'Today, 2:30 PM',
-      price: 'R200',
-      status: 'Delivered'
-    },
-    {
-      id: 2,
-      destination: '456 Oak Avenue, Worcester',
-      date: 'Yesterday, 10:15 AM',
-      price: 'R120',
-      status: 'Delivered'
-    },
-    {
-      id: 3,
-      destination: '789 Pine Road, Stellenbosch',
-      date: 'Mar 15, 4:45 PM',
-      price: 'R150',
-      status: 'Delivered'
+  const loadOrders = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setLoading(false);
+      setOrders([]);
+      return;
     }
-  ];
+    setDisplayName(firstName(auth.user?.full_name));
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const data = await getJson('/api/orders/customer?limit=20', { token: auth.token });
+      setOrders(Array.isArray(data.orders) ? data.orders : []);
+    } catch (e) {
+      setLoadError(e.message || 'Could not load orders');
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadOrders();
+    }, [loadOrders])
+  );
 
   const handleNewDelivery = () => {
-    // Start customer delivery flow
     navigation.navigate('AddressEntry');
   };
 
-  const handleTierSelect = (tier) => {
-    // Go to delivery tiers screen
+  const handleTierSelect = () => {
     navigation.navigate('DeliveryTiers');
   };
 
-  const handleDeliveryPress = (delivery) => {
-    // Show tracking for this delivery
-    navigation.navigate('Tracking');
+  const handleDeliveryPress = (order) => {
+    navigation.navigate('Tracking', { orderId: order.id });
   };
 
-  const handleNotification = () => {
-    console.log('Notifications pressed');
+  const handleLogout = () => {
+    resetToLogin(navigation);
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Good morning, Thabo</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>
+              {greetingPrefix()}, {displayName}
+            </Text>
             <Text style={styles.subtitle}>Ready to send something?</Text>
           </View>
-          <TouchableOpacity style={styles.notificationButton} onPress={handleNotification}>
-            <Text style={styles.notificationIcon}>🔔</Text>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Search Bar */}
         <TouchableOpacity style={styles.searchBar} onPress={handleNewDelivery}>
           <Text style={styles.searchIcon}>📍</Text>
           <TextInput
@@ -103,16 +144,11 @@ const Home = ({ navigation }) => {
           />
         </TouchableOpacity>
 
-        {/* Delivery Tiers */}
         <View style={styles.tiersSection}>
           <Text style={styles.sectionTitle}>Choose Delivery Speed</Text>
           <View style={styles.tiersContainer}>
             {deliveryTiers.map((tier) => (
-              <TouchableOpacity
-                key={tier.id}
-                style={styles.tierCard}
-                onPress={() => handleTierSelect(tier)}
-              >
+              <TouchableOpacity key={tier.id} style={styles.tierCard} onPress={handleTierSelect}>
                 {tier.popular && (
                   <View style={styles.popularBadge}>
                     <Text style={styles.popularText}>Popular</Text>
@@ -127,31 +163,45 @@ const Home = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Recent Deliveries */}
         <View style={styles.recentSection}>
-          <Text style={styles.sectionTitle}>Recent Deliveries</Text>
-          {recentDeliveries.map((delivery) => (
-            <TouchableOpacity
-              key={delivery.id}
-              style={styles.deliveryCard}
-              onPress={() => handleDeliveryPress(delivery)}
-            >
-              <View style={styles.deliveryHeader}>
-                <Text style={styles.deliveryDestination}>{delivery.destination}</Text>
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>✓ {delivery.status}</Text>
+          <Text style={styles.sectionTitle}>Your deliveries</Text>
+          {loadError ? (
+            <Text style={styles.hintText}>{loadError}</Text>
+          ) : null}
+          {loading ? (
+            <ActivityIndicator style={{ marginVertical: 24 }} color="#1A73E8" />
+          ) : orders.length === 0 ? (
+            <Text style={styles.hintText}>No deliveries yet. Start one with the address bar above.</Text>
+          ) : (
+            orders.map((order) => (
+              <TouchableOpacity
+                key={order.id}
+                style={styles.deliveryCard}
+                onPress={() => handleDeliveryPress(order)}
+              >
+                <View style={styles.deliveryHeader}>
+                  <Text style={styles.deliveryDestination} numberOfLines={2}>
+                    {order.dropoff_address || 'Delivery'}
+                  </Text>
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusText}>{humanStatus(order.status)}</Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.deliveryFooter}>
-                <Text style={styles.deliveryDate}>{delivery.date}</Text>
-                <Text style={styles.deliveryPrice}>{delivery.price}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View style={styles.deliveryFooter}>
+                  <Text style={styles.deliveryDate}>
+                    {order.order_number}{' '}
+                    {order.updated_at
+                      ? new Date(order.updated_at).toLocaleString()
+                      : ''}
+                  </Text>
+                  <Text style={styles.deliveryPrice}>{formatMoney(order.total_price)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navItem}>
           <Text style={styles.navIconActive}>🏠</Text>
@@ -161,13 +211,9 @@ const Home = ({ navigation }) => {
           <Text style={styles.navIcon}>📍</Text>
           <Text style={styles.navText}>Track</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('DriverHome')}>
-          <Text style={styles.navIcon}>�</Text>
-          <Text style={styles.navText}>Driver</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('AdminOverview')}>
-          <Text style={styles.navIcon}>⚙️</Text>
-          <Text style={styles.navText}>Admin</Text>
+        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
+          <Text style={styles.navIcon}>🚪</Text>
+          <Text style={styles.navText}>Log out</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -178,19 +224,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    width: width,
-    height: height,
+    width,
+    height,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 16,
   },
   greeting: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#1A1A1A',
   },
@@ -199,21 +245,18 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 4,
   },
-  notificationButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  logoutButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
-  notificationIcon: {
-    fontSize: 20,
+  logoutText: {
+    fontSize: 14,
+    color: '#d93025',
+    fontWeight: '600',
   },
   searchBar: {
     flexDirection: 'row',
@@ -247,6 +290,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1A1A1A',
     marginBottom: 16,
+  },
+  hintText: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 12,
   },
   tiersContainer: {
     flexDirection: 'row',
@@ -302,7 +350,7 @@ const styles = StyleSheet.create({
   },
   recentSection: {
     paddingHorizontal: 20,
-    paddingBottom: 80,
+    paddingBottom: 88,
   },
   deliveryCard: {
     backgroundColor: '#FFFFFF',
@@ -329,15 +377,17 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   statusBadge: {
-    backgroundColor: '#E8F5E8',
+    backgroundColor: '#E8F4FF',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+    maxWidth: '45%',
   },
   statusText: {
-    color: '#4CAF50',
-    fontSize: 12,
+    color: '#1A73E8',
+    fontSize: 11,
     fontWeight: '600',
+    textTransform: 'capitalize',
   },
   deliveryFooter: {
     flexDirection: 'row',
@@ -345,8 +395,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deliveryDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666666',
+    flex: 1,
+    marginRight: 8,
   },
   deliveryPrice: {
     fontSize: 16,

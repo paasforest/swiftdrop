@@ -1,244 +1,104 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const Earnings = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState('today');
+function formatMoney(n) {
+  const x = Number(n);
+  if (Number.isNaN(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
 
-  const todayStats = {
-    total: 'R510',
-    deliveries: 4,
-    pendingPayout: 'R340',
-    payoutDate: 'Tomorrow 9:00 AM',
-    instantPayoutFee: 'R8'
-  };
+function humanStatus(status) {
+  if (!status) return '';
+  return String(status).replace(/_/g, ' ');
+}
 
-  const weeklyData = [
-    { day: 'Mon', amount: 120 },
-    { day: 'Tue', amount: 85 },
-    { day: 'Wed', amount: 200 },
-    { day: 'Thu', amount: 150 },
-    { day: 'Fri', amount: 180 },
-    { day: 'Sat', amount: 90 },
-    { day: 'Sun', amount: 510, isToday: true }
-  ];
+const Earnings = ({ navigation }) => {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const deliveryHistory = [
-    {
-      id: '#SD2024031801',
-      route: 'Worcester-CT',
-      amount: 'R85',
-      status: 'Paid',
-      date: 'Today, 2:30 PM'
-    },
-    {
-      id: '#SD2024031802',
-      route: 'Stellenbosch-SW',
-      amount: 'R120',
-      status: 'Paid',
-      date: 'Today, 11:15 AM'
-    },
-    {
-      id: '#SD2024031803',
-      route: 'CT CBD-SP',
-      amount: 'R135',
-      status: 'Paid',
-      date: 'Today, 9:45 AM'
-    },
-    {
-      id: '#SD2024031804',
-      route: 'Paarl-Worcester',
-      amount: 'R170',
-      status: 'Pending',
-      date: 'Today, 8:20 AM'
-    },
-    {
-      id: '#SD2024031701',
-      route: 'Cape Town-Durbanville',
-      amount: 'R95',
-      status: 'Paid',
-      date: 'Yesterday, 6:00 PM'
-    },
-    {
-      id: '#SD2024031702',
-      route: 'Bellville-Parow',
-      amount: 'R75',
-      status: 'Paid',
-      date: 'Yesterday, 3:30 PM'
+  const load = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setLoading(false);
+      return;
     }
-  ];
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getJson('/api/orders/driver?limit=50', { token: auth.token });
+      setOrders(Array.isArray(data.orders) ? data.orders : []);
+    } catch (e) {
+      setError(e.message || 'Failed to load');
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const handlePeriodSelect = (period) => {
-    setSelectedPeriod(period);
-  };
-
-  const handleInstantPayout = () => {
-    console.log('Request instant payout with fee:', todayStats.instantPayoutFee);
-  };
-
-  const handleApprovePayout = (jobId) => {
-    console.log('Approve payout for job:', jobId);
-  };
-
-  const renderPeriodTabs = () => (
-    <View style={styles.tabsContainer}>
-      {['Today', 'This Week', 'This Month'].map((period) => (
-        <TouchableOpacity
-          key={period.toLowerCase().replace(' ', '')}
-          style={[
-            styles.tab,
-            selectedPeriod === period.toLowerCase().replace(' ', '') && styles.tabActive
-          ]}
-          onPress={() => handlePeriodSelect(period.toLowerCase().replace(' ', ''))}
-        >
-          <Text style={[
-            styles.tabText,
-            selectedPeriod === period.toLowerCase().replace(' ', '') && styles.tabTextActive
-          ]}>
-            {period}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
   );
 
-  const renderTodayView = () => (
-    <View>
-      {/* Total Earnings */}
-      <View style={styles.totalEarnings}>
-        <Text style={styles.totalLabel}>Total Earnings</Text>
-        <Text style={styles.totalAmount}>{todayStats.total}</Text>
-        <Text style={styles.deliveriesCount}>
-          {todayStats.deliveries} deliveries completed
-        </Text>
-      </View>
-
-      {/* Pending Payout */}
-      <View style={styles.payoutCard}>
-        <Text style={styles.payoutTitle}>Pending Payout</Text>
-        <Text style={styles.payoutAmount}>{todayStats.pendingPayout}</Text>
-        <Text style={styles.payoutDate}>
-          Payout date: {todayStats.payoutDate}
-        </Text>
-        
-        <TouchableOpacity
-          style={styles.instantPayoutButton}
-          onPress={handleInstantPayout}
-        >
-          <Text style={styles.instantPayoutText}>
-            Get Paid Now — {todayStats.instantPayoutFee} fee
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Weekly Chart */}
-      <View style={styles.chartSection}>
-        <Text style={styles.sectionTitle}>Weekly Earnings</Text>
-        <View style={styles.chartContainer}>
-          {weeklyData.map((data, index) => (
-            <View key={data.day} style={styles.chartBar}>
-              <View style={styles.barContainer}>
-                <View
-                  style={[
-                    styles.bar,
-                    { height: (data.amount / 510) * 120 },
-                    data.isToday && styles.barToday
-                  ]}
-                />
-              </View>
-              <Text style={[
-                styles.barLabel,
-                data.isToday && styles.barLabelToday
-              ]}>
-                {data.day}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderDeliveryHistory = () => (
-    <View style={styles.historySection}>
-      <Text style={styles.sectionTitle}>Delivery History</Text>
-      
-      {deliveryHistory.map((delivery) => (
-        <View key={delivery.id} style={styles.historyItem}>
-          <View style={styles.historyLeft}>
-            <Text style={styles.jobId}>{delivery.id}</Text>
-            <Text style={styles.route}>{delivery.route}</Text>
-            <Text style={styles.date}>{delivery.date}</Text>
-          </View>
-          <View style={styles.historyRight}>
-            <Text style={styles.amount}>{delivery.amount}</Text>
-            <View style={[
-              styles.statusBadge,
-              delivery.status === 'Paid' ? styles.statusPaid : styles.statusPending
-            ]}>
-              <Text style={[
-                styles.statusText,
-                delivery.status === 'Paid' ? styles.statusTextPaid : styles.statusTextPending
-              ]}>
-                {delivery.status}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
+  const completed = orders.filter((o) => ['delivered', 'completed'].includes(o.status));
+  const totalEarnings = completed.reduce((s, o) => s + (Number(o.driver_earnings) || 0), 0);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>My Earnings</Text>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.title}>Earnings</Text>
+        <Text style={styles.subtitle}>From completed jobs in your account (API data).</Text>
+
+        <View style={styles.summary}>
+          <Text style={styles.summaryLabel}>Completed jobs (loaded)</Text>
+          <Text style={styles.summaryValue}>{completed.length}</Text>
+          <Text style={styles.summaryLabel}>Sum of driver_earnings</Text>
+          <Text style={styles.summaryMoney}>{formatMoney(totalEarnings)}</Text>
         </View>
 
-        {/* Period Tabs */}
-        {renderPeriodTabs()}
+        {loading ? <ActivityIndicator style={{ marginVertical: 24 }} color="#1A73E8" /> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {/* Content based on selected period */}
-        <View style={styles.content}>
-          {selectedPeriod === 'today' && renderTodayView()}
-          {selectedPeriod === 'thisweek' && (
-            <View style={styles.placeholderView}>
-              <Text style={styles.placeholderText}>This week earnings view</Text>
+        <Text style={styles.section}>Job history</Text>
+        {orders.length === 0 && !loading ? (
+          <Text style={styles.empty}>No jobs yet.</Text>
+        ) : (
+          orders.map((o) => (
+            <View key={o.id} style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{o.order_number}</Text>
+                <Text style={styles.rowSub} numberOfLines={2}>
+                  {humanStatus(o.status)}
+                </Text>
+                <Text style={styles.rowSub} numberOfLines={1}>
+                  {o.dropoff_address || '—'}
+                </Text>
+              </View>
+              <Text style={styles.rowMoney}>{formatMoney(o.driver_earnings)}</Text>
             </View>
-          )}
-          {selectedPeriod === 'thismonth' && (
-            <View style={styles.placeholderView}>
-              <Text style={styles.placeholderText}>This month earnings view</Text>
-            </View>
-          )}
-        </View>
+          ))
+        )}
 
-        {/* Delivery History */}
-        {renderDeliveryHistory()}
+        <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
       </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>🏠</Text>
-          <Text style={styles.navText}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>📋</Text>
-          <Text style={styles.navText}>Jobs</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIconActive}>💰</Text>
-          <Text style={styles.navTextActive}>Earnings</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIcon}>👤</Text>
-          <Text style={styles.navText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 };
@@ -247,272 +107,93 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    width: width,
-    height: height,
+    width,
+    height,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+  scroll: {
+    padding: 20,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  tabActive: {
-    backgroundColor: '#1A73E8',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-  content: {
-    paddingHorizontal: 20,
-  },
-  totalEarnings: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  totalLabel: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 8,
-  },
-  totalAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#FF6B35',
-    marginBottom: 4,
-  },
-  deliveriesCount: {
-    fontSize: 14,
-    color: '#666666',
-  },
-  payoutCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  payoutTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 8,
   },
-  payoutAmount: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1A73E8',
-    marginBottom: 4,
-  },
-  payoutDate: {
+  subtitle: {
     fontSize: 14,
     color: '#666666',
-    marginBottom: 16,
-  },
-  instantPayoutButton: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  instantPayoutText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  chartSection: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  chartContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'flex-end',
-    height: 150,
-  },
-  chartBar: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  barContainer: {
-    height: 120,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  bar: {
-    width: 20,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 4,
-  },
-  barToday: {
-    backgroundColor: '#1A73E8',
-  },
-  barLabel: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  barLabelToday: {
-    color: '#1A73E8',
-    fontWeight: '600',
-  },
-  placeholderView: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 40,
-    alignItems: 'center',
     marginBottom: 20,
   },
-  placeholderText: {
-    fontSize: 16,
-    color: '#666666',
-  },
-  historySection: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-  historyItem: {
+  summary: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    marginBottom: 20,
     elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
-  historyLeft: {
-    flex: 1,
+  summaryLabel: {
+    fontSize: 13,
+    color: '#666666',
+    marginTop: 8,
   },
-  jobId: {
-    fontSize: 14,
+  summaryValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  summaryMoney: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#FF6B35',
+  },
+  error: {
+    color: '#d93025',
+    marginBottom: 12,
+  },
+  section: {
+    fontSize: 17,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#1A1A1A',
+  },
+  empty: {
+    color: '#666666',
+    marginBottom: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
+  rowTitle: {
     fontWeight: '600',
     color: '#1A1A1A',
     marginBottom: 4,
   },
-  route: {
-    fontSize: 14,
+  rowSub: {
+    fontSize: 12,
     color: '#666666',
-    marginBottom: 4,
   },
-  date: {
-    fontSize: 12,
-    color: '#999999',
-  },
-  historyRight: {
-    alignItems: 'flex-end',
-  },
-  amount: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF6B35',
-    marginBottom: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusPaid: {
-    backgroundColor: '#E8F5E8',
-  },
-  statusPending: {
-    backgroundColor: '#E8F4FF',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  statusTextPaid: {
+  rowMoney: {
+    fontWeight: '700',
     color: '#4CAF50',
+    marginLeft: 12,
   },
-  statusTextPending: {
-    color: '#1A73E8',
-  },
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingBottom: 20,
-    paddingTop: 12,
-  },
-  navItem: {
-    flex: 1,
+  back: {
+    marginTop: 24,
     alignItems: 'center',
   },
-  navIcon: {
-    fontSize: 24,
-    color: '#666666',
-    marginBottom: 4,
-  },
-  navIconActive: {
-    fontSize: 24,
+  backText: {
     color: '#1A73E8',
-    marginBottom: 4,
-  },
-  navText: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  navTextActive: {
-    fontSize: 12,
-    color: '#1A73E8',
+    fontSize: 16,
     fontWeight: '600',
   },
 });
