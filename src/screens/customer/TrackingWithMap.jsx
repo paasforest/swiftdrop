@@ -1,0 +1,583 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ActivityIndicator,
+  Linking,
+  Platform,
+} from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
+import { subscribeToDriverLocation, calculateETA } from '../../services/locationTracking';
+
+const { width, height } = Dimensions.get('window');
+
+function humanStatus(status) {
+  const statusMap = {
+    'pending': 'Finding driver',
+    'matched': 'Driver assigned',
+    'en_route_pickup': 'Driver heading to pickup',
+    'picked_up': 'Parcel picked up',
+    'en_route_delivery': 'On the way to you',
+    'delivered': 'Delivered',
+    'cancelled': 'Cancelled',
+  };
+  return statusMap[status] || status;
+}
+
+function formatMoney(n) {
+  const x = Number(n);
+  if (Number.isNaN(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+const TrackingWithMap = ({ navigation, route }) => {
+  const orderId = route?.params?.orderId;
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(Boolean(orderId));
+  const [error, setError] = useState(null);
+  const [driverLocation, setDriverLocation] = useState(null);
+  const [eta, setEta] = useState(null);
+  const mapRef = useRef(null);
+
+  // Backend returns `pickup_lat/pickup_lng` and `dropoff_lat/dropoff_lng`,
+  // but the map code expects coordinate objects.
+  const pickup_coords = useMemo(() => {
+    if (order?.pickup_lat == null || order?.pickup_lng == null) return null;
+    const lat = Number(order.pickup_lat);
+    const lng = Number(order.pickup_lng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { latitude: lat, longitude: lng };
+  }, [order?.pickup_lat, order?.pickup_lng]);
+
+  const delivery_coords = useMemo(() => {
+    if (order?.dropoff_lat == null || order?.dropoff_lng == null) return null;
+    const lat = Number(order.dropoff_lat);
+    const lng = Number(order.dropoff_lng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { latitude: lat, longitude: lng };
+  }, [order?.dropoff_lat, order?.dropoff_lng]);
+
+  // Load order details from backend
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!orderId) {
+        setOrder(null);
+        setLoading(false);
+        return;
+      }
+      const auth = getAuth();
+      if (!auth?.token) {
+        setError('Not signed in');
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (!cancelled) setOrder(data);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e.message || 'Failed to load order');
+          setOrder(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
+
+  // Subscribe to real-time driver location from Firebase
+  useEffect(() => {
+    if (!orderId) return;
+
+    console.log('[Tracking] Subscribing to driver location for order:', orderId);
+    
+    const unsubscribe = subscribeToDriverLocation(orderId, (location) => {
+      console.log('[Tracking] Driver location updated:', location);
+      setDriverLocation(location);
+
+      // Calculate ETA if we have delivery coordinates
+      if (delivery_coords) {
+        const estimatedTime = calculateETA(location, delivery_coords);
+        setEta(estimatedTime);
+      }
+
+      // Auto-zoom map to show driver
+      if (mapRef.current && location) {
+        mapRef.current.animateToRegion({
+          latitude: location.latitude,
+          longitude: location.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }, 1000);
+      }
+    });
+
+    return () => {
+      console.log('[Tracking] Unsubscribing from driver location');
+      unsubscribe();
+    };
+  }, [orderId, delivery_coords]);
+
+  const handleCall = () => {
+    const phone = order?.driver_phone;
+    if (phone) Linking.openURL(`tel:${String(phone).replace(/\s/g, '')}`);
+  };
+
+  const handleCenterMap = () => {
+    if (!mapRef.current) return;
+
+    const coordinates = [];
+    
+    if (driverLocation) {
+      coordinates.push({
+        latitude: driverLocation.latitude,
+        longitude: driverLocation.longitude,
+      });
+    }
+    
+    if (pickup_coords) {
+      coordinates.push(pickup_coords);
+    }
+    
+    if (delivery_coords) {
+      coordinates.push(delivery_coords);
+    }
+
+    if (coordinates.length > 0) {
+      mapRef.current.fitToCoordinates(coordinates, {
+        edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
+        animated: true,
+      });
+    }
+  };
+
+  if (!orderId) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>Track a delivery</Text>
+          <Text style={styles.emptySub}>
+            Open a delivery from your home screen to see live tracking.
+          </Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backBtnText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <ActivityIndicator size="large" color="#1A73E8" />
+          <Text style={styles.emptySub}>Loading order…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !order) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>⚠️ {error || 'Order not found'}</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.backBtnText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const initialRegion = driverLocation
+    ? {
+        latitude: driverLocation.latitude,
+        longitude: driverLocation.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }
+    : pickup_coords
+    ? {
+        latitude: pickup_coords.latitude,
+        longitude: pickup_coords.longitude,
+        latitudeDelta: 0.1,
+        longitudeDelta: 0.1,
+      }
+    : {
+        latitude: -33.9249,
+        longitude: 18.4241, // Cape Town default
+        latitudeDelta: 0.5,
+        longitudeDelta: 0.5,
+      };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Map */}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={initialRegion}
+        showsUserLocation={true}
+        showsMyLocationButton={false}
+        onMapReady={handleCenterMap}
+      >
+        {/* Pickup Marker */}
+        {pickup_coords && (
+          <Marker
+            coordinate={pickup_coords}
+            title="Pickup Location"
+            description={order.pickup_address}
+            pinColor="#FF6B35"
+          />
+        )}
+
+        {/* Delivery Marker */}
+        {delivery_coords && (
+          <Marker
+            coordinate={delivery_coords}
+            title="Delivery Location"
+            description={order.dropoff_address}
+            pinColor="#1A73E8"
+          />
+        )}
+
+        {/* Driver Marker (Real-time) */}
+        {driverLocation && (
+          <Marker
+            coordinate={{
+              latitude: driverLocation.latitude,
+              longitude: driverLocation.longitude,
+            }}
+            title={order.driver_name || 'Driver'}
+            description="Current location"
+            rotation={driverLocation.heading || 0}
+          >
+            <View style={styles.driverMarker}>
+              <Text style={styles.driverMarkerText}>🚗</Text>
+            </View>
+          </Marker>
+        )}
+
+        {/* Route Line */}
+        {driverLocation && delivery_coords && (
+          <Polyline
+            coordinates={[
+              {
+                latitude: driverLocation.latitude,
+                longitude: driverLocation.longitude,
+              },
+              delivery_coords,
+            ]}
+            strokeColor="#1A73E8"
+            strokeWidth={3}
+            lineDashPattern={[5, 5]}
+          />
+        )}
+      </MapView>
+
+      {/* Center Map Button */}
+      <TouchableOpacity style={styles.centerButton} onPress={handleCenterMap}>
+        <Text style={styles.centerButtonText}>📍</Text>
+      </TouchableOpacity>
+
+      {/* Status Card */}
+      <View style={styles.statusCard}>
+        {/* Status Header */}
+        <View style={styles.statusHeader}>
+          <View style={styles.statusLeft}>
+            <Text style={styles.statusTitle}>{humanStatus(order.status)}</Text>
+            {eta && (
+              <Text style={styles.eta}>
+                {eta < 1 ? 'Arriving now' : `${eta} min away`}
+              </Text>
+            )}
+          </View>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>
+              {order.status === 'delivered' ? '✓' : '●'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Driver Info */}
+        {order.driver_name && (
+          <View style={styles.driverInfo}>
+            <View style={styles.driverAvatar}>
+              <Text style={styles.driverAvatarText}>
+                {order.driver_name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <View style={styles.driverDetails}>
+              <Text style={styles.driverName}>{order.driver_name}</Text>
+              <View style={styles.driverRating}>
+                <Text style={styles.ratingText}>⭐ {order.driver_rating || '4.8'}</Text>
+                {order.driver_vehicle && (
+                  <Text style={styles.vehicleText}> • {order.driver_vehicle}</Text>
+                )}
+              </View>
+            </View>
+            {order.driver_phone && (
+              <TouchableOpacity style={styles.callButton} onPress={handleCall}>
+                <Text style={styles.callButtonText}>📞</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Order Details */}
+        <View style={styles.orderDetails}>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Order ID:</Text>
+            <Text style={styles.detailValue}>{order.id}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Delivery Tier:</Text>
+            <Text style={styles.detailValue}>{order.tier_name || 'Standard'}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Total:</Text>
+            <Text style={styles.detailValue}>{formatMoney(order.total_price)}</Text>
+          </View>
+        </View>
+
+        {/* Live Indicator */}
+        {driverLocation && (
+          <View style={styles.liveIndicator}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>Live tracking active</Text>
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  map: {
+    width: width,
+    height: height * 0.6,
+  },
+  centerButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    backgroundColor: '#FFFFFF',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  centerButtonText: {
+    fontSize: 24,
+  },
+  driverMarker: {
+    backgroundColor: '#1A73E8',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  driverMarkerText: {
+    fontSize: 20,
+  },
+  statusCard: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  statusLeft: {
+    flex: 1,
+  },
+  statusTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  eta: {
+    fontSize: 14,
+    color: '#1A73E8',
+    fontWeight: '600',
+  },
+  statusBadge: {
+    backgroundColor: '#E8F5E9',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusBadgeText: {
+    fontSize: 20,
+    color: '#4CAF50',
+  },
+  driverInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  driverAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1A73E8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  driverAvatarText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  driverDetails: {
+    flex: 1,
+  },
+  driverName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  driverRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  vehicleText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  callButton: {
+    backgroundColor: '#1A73E8',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  callButtonText: {
+    fontSize: 20,
+  },
+  orderDetails: {
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginRight: 8,
+  },
+  liveText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  backBtn: {
+    backgroundColor: '#1A73E8',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  backBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
+
+export default TrackingWithMap;

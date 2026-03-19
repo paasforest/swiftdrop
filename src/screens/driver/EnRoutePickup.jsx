@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import DriverLocationService from './DriverLocationService';
 
 const { width, height } = Dimensions.get('window');
 
-const EnRoutePickup = () => {
+const EnRoutePickup = ({ route }) => {
+  const orderId = route?.params?.orderId;
   const [eta, setEta] = useState('8 min away');
 
   const jobDetails = {
@@ -35,6 +37,7 @@ const EnRoutePickup = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {orderId ? <DriverLocationService orderId={orderId} /> : null}
       {/* Map View */}
       <View style={styles.mapContainer}>
         <View style={styles.mapPlaceholder}>

@@ -173,7 +173,16 @@ const DriverHome = ({ navigation }) => {
           ) : (
             <View style={styles.activityList}>
               {recent.map((o) => (
-                <View key={o.id} style={styles.activityItem}>
+                <TouchableOpacity
+                  key={o.id}
+                  style={styles.activityItem}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    const s = String(o.status || '').toLowerCase();
+                    const target = s.includes('delivery') ? 'EnRouteDelivery' : 'EnRoutePickup';
+                    navigation.navigate(target, { orderId: o.id });
+                  }}
+                >
                   <View style={styles.activityIcon}>
                     <Text style={styles.activityIconText}>📦</Text>
                   </View>
@@ -189,7 +198,7 @@ const DriverHome = ({ navigation }) => {
                     </Text>
                   </View>
                   <Text style={styles.activityAmount}>{formatMoney(o.driver_earnings)}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
