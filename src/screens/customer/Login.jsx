@@ -47,14 +47,16 @@ const Login = ({ navigation }) => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      if (!loginEmail.trim() || !loginPassword) {
+      const email = String(loginEmail ?? '').trim();
+      const password = String(loginPassword ?? '').trim();
+      if (!email || !password) {
         setErrorMessage('Email and password are required.');
         return;
       }
 
       const data = await postJson('/api/auth/login', {
-        email: loginEmail.trim(),
-        password: loginPassword,
+        email,
+        password,
       });
 
       setAuth({
@@ -185,6 +187,8 @@ const Login = ({ navigation }) => {
                 value={loginPassword}
                 onChangeText={setLoginPassword}
                 secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
               />
               <TouchableOpacity
                 style={styles.eyeIcon}
