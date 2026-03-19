@@ -1,39 +1,57 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
 import DriverLocationService from './DriverLocationService';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
 const EnRoutePickup = ({ route }) => {
   const orderId = route?.params?.orderId;
-  const [eta, setEta] = useState('8 min away');
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(Boolean(orderId));
+  const [error, setError] = useState(null);
 
-  const jobDetails = {
-    customerName: 'Thabo S.',
-    customerPhone: '+27 83 123 4567',
-    pickupAddress: '123 Main Street, Worcester',
-    specialInstructions: 'Please call on arrival — gate is closed'
-  };
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!orderId) return;
+      const auth = getAuth();
+      if (!auth?.token) {
+        setError('Not signed in');
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (!cancelled) setOrder(data);
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Failed to load order');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
 
   const handleBack = () => {
     console.log('Back pressed');
   };
 
-  const handleCall = () => {
-    console.log('Call customer:', jobDetails.customerPhone);
-  };
-
-  const handleMessage = () => {
-    console.log('Message customer');
-  };
-
-  const handleArrived = () => {
-    console.log('Driver arrived at pickup');
-  };
-
-  const handleCancel = () => {
-    console.log('Cancel job');
-  };
+  const statusText =
+    order?.status === 'pickup_arrived'
+      ? 'Arrived at pickup'
+      : order?.status === 'pickup_en_route'
+        ? 'Heading to pickup'
+        : order?.status
+          ? String(order.status).replace(/_/g, ' ')
+          : 'Heading to pickup';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -60,10 +78,8 @@ const EnRoutePickup = ({ route }) => {
           <TouchableOpacity onPress={handleBack}>
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.overlayTitle}>Heading to Pickup</Text>
-          <TouchableOpacity onPress={handleCancel}>
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+          <Text style={styles.overlayTitle}>Pickup</Text>
+          <View style={{ width: 70 }} />
         </View>
       </View>
 
@@ -71,63 +87,24 @@ const EnRoutePickup = ({ route }) => {
       <View style={styles.bottomPanel}>
         {/* Status Badge */}
         <View style={styles.statusBadge}>
-          <Text style={styles.statusText}>On the way to pickup</Text>
-        </View>
-
-        {/* Customer Details */}
-        <View style={styles.customerSection}>
-          <Text style={styles.sectionTitle}>Customer Details</Text>
-          
-          <View style={styles.customerInfo}>
-            <View style={styles.customerAvatar}>
-              <Text style={styles.avatarText}>👤</Text>
-            </View>
-            <View style={styles.customerDetails}>
-              <Text style={styles.customerName}>{jobDetails.customerName}</Text>
-              <Text style={styles.customerPhone}>{jobDetails.customerPhone}</Text>
-            </View>
-          </View>
-
-          {/* Contact Buttons */}
-          <View style={styles.contactButtons}>
-            <TouchableOpacity style={styles.contactButton} onPress={handleCall}>
-              <Text style={styles.contactIcon}>📞</Text>
-              <Text style={styles.contactText}>Call</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton} onPress={handleMessage}>
-              <Text style={styles.contactIcon}>💬</Text>
-              <Text style={styles.contactText}>Message</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.statusText}>{statusText}</Text>
         </View>
 
         {/* Pickup Address */}
         <View style={styles.addressSection}>
           <Text style={styles.sectionTitle}>Pickup Address</Text>
-          <Text style={styles.addressText}>{jobDetails.pickupAddress}</Text>
-          
-          {/* ETA */}
-          <View style={styles.etaContainer}>
-            <Text style={styles.etaText}>{eta}</Text>
-          </View>
+          <Text style={styles.addressText}>
+            {loading ? 'Loading…' : error ? '—' : order?.pickup_address || '—'}
+          </Text>
         </View>
 
-        {/* Special Instructions */}
-        {jobDetails.specialInstructions && (
-          <View style={styles.instructionsSection}>
-            <Text style={styles.sectionTitle}>Special Instructions</Text>
-            <View style={styles.instructionsBox}>
-              <Text style={styles.instructionsText}>
-                {jobDetails.specialInstructions}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Arrived Button */}
-        <TouchableOpacity style={styles.arrivedButton} onPress={handleArrived}>
-          <Text style={styles.arrivedButtonText}>I Have Arrived</Text>
-        </TouchableOpacity>
+        {/* Dropoff Address (for context) */}
+        <View style={styles.addressSection}>
+          <Text style={styles.sectionTitle}>Dropoff Address</Text>
+          <Text style={styles.addressText}>
+            {loading ? 'Loading…' : error ? '—' : order?.dropoff_address || '—'}
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );

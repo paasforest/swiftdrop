@@ -1,66 +1,104 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, TextInput, ScrollView } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 
 const { width, height } = Dimensions.get('window');
 
-const AddressEntry = () => {
+const DEFAULT_REGION = { latitude: -33.9249, longitude: 18.4241, latitudeDelta: 0.4, longitudeDelta: 0.4 };
+
+const AddressEntry = ({ navigation }) => {
   const [pickupAddress, setPickupAddress] = useState('Current Location');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
 
-  const recentAddresses = [
-    {
-      id: 1,
-      address: '123 Main Street, Cape Town',
-      type: 'Home'
-    },
-    {
-      id: 2,
-      address: '456 Oak Avenue, Worcester',
-      type: 'Work'
-    },
-    {
-      id: 3,
-      address: '789 Pine Road, Stellenbosch',
-      type: 'Gym'
+  const [pickupCoords, setPickupCoords] = useState(null);
+  const [dropoffCoords, setDropoffCoords] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+
+  const initialRegion = useMemo(() => {
+    if (pickupCoords) {
+      return {
+        latitude: pickupCoords.latitude,
+        longitude: pickupCoords.longitude,
+        latitudeDelta: 0.2,
+        longitudeDelta: 0.2,
+      };
     }
-  ];
+    return DEFAULT_REGION;
+  }, [pickupCoords]);
 
-  const searchSuggestions = [
-    '123 Main Street, Cape Town',
-    '456 Oak Avenue, Worcester',
-    '789 Pine Road, Stellenbosch',
-    '321 Beach Road, Bloubergstrand'
-  ];
-
-  const handleLocateMe = () => {
-    console.log('Locate me pressed');
+  const fetchLocation = async () => {
+    setLocationError(null);
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permission not granted');
+      }
+      const pos = await Location.getCurrentPositionAsync({});
+      setPickupCoords({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      setPickupAddress('Current Location');
+    } catch (e) {
+      setLocationError(e.message || 'Could not get location');
+    } finally {
+      setLocating(false);
+    }
   };
 
-  const handleAddressSelect = (address) => {
-    setDeliveryAddress(address);
-    setShowSearchSuggestions(false);
-  };
+  useEffect(() => {
+    fetchLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleRecentAddressSelect = (address) => {
-    setDeliveryAddress(address);
-  };
+  const handleLocateMe = () => fetchLocation();
 
   const handleConfirmAddresses = () => {
-    console.log('Confirm addresses:', { pickup: pickupAddress, delivery: deliveryAddress });
+    if (!pickupCoords || !dropoffCoords) return;
+    const drop = deliveryAddress.trim();
+    if (!drop) return;
+
+    navigation.navigate('ParcelDescription', {
+      pickup_address: pickupAddress,
+      pickup_lat: pickupCoords.latitude,
+      pickup_lng: pickupCoords.longitude,
+      dropoff_address: drop,
+      dropoff_lat: dropoffCoords.latitude,
+      dropoff_lng: dropoffCoords.longitude,
+    });
   };
 
-  const handleBack = () => {
-    console.log('Back pressed');
-  };
+  const handleBack = () => navigation.goBack();
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Map Background */}
       <View style={styles.mapContainer}>
+        <MapView
+          style={{ flex: 1 }}
+          initialRegion={initialRegion}
+          onPress={(e) => {
+            const c = e.nativeEvent.coordinate;
+            setDropoffCoords({ latitude: c.latitude, longitude: c.longitude });
+          }}
+        >
+          {pickupCoords && (
+            <Marker coordinate={pickupCoords} title=\"Pickup\" pinColor=\"#4CAF50\" />
+          )}
+          {dropoffCoords && (
+            <Marker coordinate={dropoffCoords} title=\"Dropoff\" pinColor=\"#FF6B35\" />
+          )}
+        </MapView>
+
+        {/* Overlay hint */}
         <View style={styles.mapPlaceholder}>
-          <Text style={styles.mapText}>📍 Map View</Text>
-          <Text style={styles.mapSubtext}>South African streets</Text>
+          <Text style={styles.mapText}>📍 Choose dropoff</Text>
+          <Text style={styles.mapSubtext}>Tap the map to place the dropoff pin</Text>
+          {locationError ? <Text style={styles.errorText}>⚠️ {locationError}</Text> : null}
+          {locating ? <Text style={styles.errorText}>Loading location…</Text> : null}
         </View>
       </View>
 
@@ -77,26 +115,23 @@ const AddressEntry = () => {
 
         {/* Address Inputs */}
         <View style={styles.addressInputs}>
-          {/* Pickup Address */}
           <View style={styles.inputContainer}>
             <View style={styles.inputRow}>
               <View style={styles.greenDot} />
               <TextInput
                 style={styles.input}
                 value={pickupAddress}
-                onChangeText={setPickupAddress}
+                editable={false}
                 placeholder="Pickup address"
               />
-              <TouchableOpacity onPress={handleLocateMe}>
+              <TouchableOpacity onPress={handleLocateMe} disabled={locating}>
                 <Text style={styles.locateIcon}>📍</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Connecting Line */}
           <View style={styles.connectingLine} />
 
-          {/* Delivery Address */}
           <View style={styles.inputContainer}>
             <View style={styles.inputRow}>
               <View style={styles.redDot} />
@@ -104,55 +139,31 @@ const AddressEntry = () => {
                 style={styles.input}
                 value={deliveryAddress}
                 onChangeText={setDeliveryAddress}
-                placeholder="Enter delivery address"
-                onFocus={() => setShowSearchSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
+                placeholder="Enter delivery address (used for display)"
               />
             </View>
           </View>
         </View>
 
-        {/* Search Suggestions */}
-        {showSearchSuggestions && (
-          <View style={styles.suggestionsContainer}>
-            {searchSuggestions.map((suggestion, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.suggestionItem}
-                onPress={() => handleAddressSelect(suggestion)}
-              >
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Recent Addresses */}
         <View style={styles.recentSection}>
-          <Text style={styles.sectionTitle}>Recent Addresses</Text>
-          {recentAddresses.map((address) => (
-            <TouchableOpacity
-              key={address.id}
-              style={styles.recentAddressItem}
-              onPress={() => handleRecentAddressSelect(address.address)}
-            >
-              <Text style={styles.addressIcon}>🕐</Text>
-              <View style={styles.addressInfo}>
-                <Text style={styles.addressText}>{address.address}</Text>
-                <Text style={styles.addressType}>{address.type}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+          <Text style={styles.sectionTitle}>Dropoff pin status</Text>
+          <Text style={styles.hintText}>
+            {dropoffCoords ? 'Pin selected on map.' : 'Tap the map above to select a dropoff pin.'}
+          </Text>
         </View>
 
         {/* Confirm Button */}
         <TouchableOpacity
           style={[
             styles.confirmButton,
-            (!deliveryAddress || deliveryAddress.trim() === '') && styles.confirmButtonDisabled
+            (!deliveryAddress ||
+              deliveryAddress.trim() === '' ||
+              !dropoffCoords ||
+              !pickupCoords) &&
+              styles.confirmButtonDisabled
           ]}
           onPress={handleConfirmAddresses}
-          disabled={!deliveryAddress || deliveryAddress.trim() === ''}
+          disabled={!deliveryAddress || deliveryAddress.trim() === '' || !dropoffCoords || !pickupCoords}
         >
           <Text style={styles.confirmButtonText}>Confirm Addresses</Text>
         </TouchableOpacity>
@@ -185,6 +196,12 @@ const styles = StyleSheet.create({
   mapSubtext: {
     fontSize: 14,
     color: '#666666',
+  },
+  errorText: {
+    marginTop: 8,
+    color: '#d93025',
+    fontSize: 13,
+    textAlign: 'center',
   },
   bottomSheet: {
     backgroundColor: '#FFFFFF',

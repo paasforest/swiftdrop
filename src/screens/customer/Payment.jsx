@@ -1,22 +1,39 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, Linking } from 'react-native';
+import { getAuth } from '../../authStore';
+import { postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const Payment = () => {
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('wallet');
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
 
-  const orderDetails = {
-    from: '123 Main Street, Worcester',
-    to: '456 Oak Avenue, Cape Town',
-    deliveryType: 'Express',
-    estimatedTime: '1-2 hours',
-    deliveryFee: 200,
-    insurance: 15,
-    total: 215
-  };
+const Payment = ({ navigation, route }) => {
+  const params = route?.params || {};
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('payfast');
+  const auth = getAuth();
+
+  const {
+    pickup_address,
+    dropoff_address,
+    delivery_tier,
+    parcel_value,
+    insurance_selected,
+    delivery_total,
+    delivery_base_price,
+    delivery_insurance_fee,
+  } = params;
 
   const paymentMethods = [
+    {
+      id: 'payfast',
+      name: 'PayFast',
+      icon: '💳',
+      description: 'Pay with card/e-wallet'
+    },
     {
       id: 'card',
       name: 'Credit/Debit Card',
@@ -42,13 +59,73 @@ const Payment = () => {
     setSelectedPaymentMethod(methodId);
   };
 
-  const handlePay = () => {
-    console.log('Pay with method:', selectedPaymentMethod, orderDetails);
+  const handlePay = async () => {
+    try {
+      if (!auth?.token) {
+        navigation.navigate('Login');
+        return;
+      }
+
+      const res = await postJson(
+        '/api/orders',
+        {
+          pickup_address: params.pickup_address,
+          pickup_lat: params.pickup_lat,
+          pickup_lng: params.pickup_lng,
+          dropoff_address: params.dropoff_address,
+          dropoff_lat: params.dropoff_lat,
+          dropoff_lng: params.dropoff_lng,
+          parcel_type: params.parcel_type,
+          parcel_size: params.parcel_size,
+          parcel_value: params.parcel_value,
+          special_handling: params.special_handling,
+          delivery_tier: params.delivery_tier,
+          insurance_selected: params.insurance_selected,
+          payment_method: selectedPaymentMethod,
+        },
+        { token: auth.token }
+      );
+
+      const orderId = res?.id;
+      if (orderId && selectedPaymentMethod === 'payfast') {
+        try {
+          const pay = await postJson(
+            '/api/payments/payfast/initiate',
+            {
+              order_id: orderId,
+              amount: res?.total_price ?? total,
+              item_name: `SwiftDrop ${res?.order_number ?? `Order ${orderId}`}`,
+            },
+            { token: auth.token }
+          );
+          if (pay?.payment_url) {
+            await Linking.openURL(String(pay.payment_url));
+          } else {
+            alert(pay?.error || 'Could not initiate PayFast');
+          }
+        } catch (e) {
+          // Order is already created; matching/tracking can still proceed.
+          alert(e.message || 'PayFast initiation failed');
+        }
+      }
+
+      if (orderId) navigation.navigate('Tracking', { orderId });
+    } catch (e) {
+      console.error('Pay error:', e.message);
+      alert(e.message || 'Payment failed');
+    }
   };
 
   const handleBack = () => {
-    console.log('Back pressed');
+    navigation.goBack();
   };
+
+  const total = useMemo(() => {
+    if (delivery_total != null) return delivery_total;
+    return null;
+  }, [delivery_total]);
+
+  const totalPriceText = total != null ? formatMoney(total) : '—';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -69,17 +146,17 @@ const Payment = () => {
           <View style={styles.addressSection}>
             <View style={styles.addressRow}>
               <Text style={styles.addressLabel}>From:</Text>
-              <Text style={styles.addressText}>{orderDetails.from}</Text>
+              <Text style={styles.addressText}>{pickup_address || 'Pickup'}</Text>
             </View>
             <View style={styles.addressRow}>
               <Text style={styles.addressLabel}>To:</Text>
-              <Text style={styles.addressText}>{orderDetails.to}</Text>
+              <Text style={styles.addressText}>{dropoff_address || 'Delivery'}</Text>
             </View>
           </View>
 
           <View style={styles.deliveryInfo}>
-            <Text style={styles.deliveryType}>{orderDetails.deliveryType}</Text>
-            <Text style={styles.estimatedTime}>⏱ {orderDetails.estimatedTime}</Text>
+            <Text style={styles.deliveryType}>{delivery_tier ? delivery_tier[0].toUpperCase() + delivery_tier.slice(1) : 'Delivery'}</Text>
+            <Text style={styles.estimatedTime}>⏱ Pricing from your route</Text>
           </View>
         </View>
 
@@ -87,15 +164,17 @@ const Payment = () => {
         <View style={styles.priceBreakdown}>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Delivery fee</Text>
-            <Text style={styles.priceValue}>R{orderDetails.deliveryFee}</Text>
+            <Text style={styles.priceValue}>{delivery_base_price != null ? formatMoney(delivery_base_price) : '—'}</Text>
           </View>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Insurance</Text>
-            <Text style={styles.priceValue}>R{orderDetails.insurance}</Text>
+            <Text style={styles.priceValue}>
+              {delivery_insurance_fee != null ? formatMoney(delivery_insurance_fee) : '—'}
+            </Text>
           </View>
           <View style={[styles.priceRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>R{orderDetails.total}</Text>
+            <Text style={styles.totalValue}>{totalPriceText}</Text>
           </View>
         </View>
 
@@ -143,7 +222,9 @@ const Payment = () => {
       {/* Pay Button */}
       <View style={styles.bottomContainer}>
         <TouchableOpacity style={styles.payButton} onPress={handlePay}>
-          <Text style={styles.payButtonText}>Pay R{orderDetails.total} & Request Driver</Text>
+          <Text style={styles.payButtonText}>
+            Pay {totalPriceText} & Request Driver
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

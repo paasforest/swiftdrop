@@ -104,8 +104,12 @@ async function createOrder(req, res) {
           [customerId, totalPrice, orderNumber]
         );
         await db.query(`UPDATE orders SET status = 'matching', updated_at = NOW() WHERE id = $1`, [order.id]);
-        runMatching(order.id);
       }
+
+      // Start driver matching regardless of payment method.
+      // This ensures tracking works the same way in production-like testing.
+      await db.query(`UPDATE orders SET status = 'matching', updated_at = NOW() WHERE id = $1`, [order.id]);
+      runMatching(order.id);
 
       const out = {
         ...order,

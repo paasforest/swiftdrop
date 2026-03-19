@@ -19,13 +19,26 @@ const { width, height } = Dimensions.get('window');
 
 function humanStatus(status) {
   const statusMap = {
+    // Backend statuses (see orders.status CHECK constraint)
     'pending': 'Finding driver',
+    'matching': 'Matching driver',
+    'accepted': 'Driver accepted',
+    'pickup_en_route': 'Driver heading to pickup',
+    'pickup_arrived': 'Driver arrived for pickup',
+    'collected': 'Parcel collected',
+    'delivery_en_route': 'On the way to you',
+    'delivery_arrived': 'Driver arrived for delivery',
+    'delivered': 'Delivered',
+    'completed': 'Completed',
+    'cancelled': 'Cancelled',
+    'disputed': 'Disputed',
+    'unmatched': 'No drivers available',
+
+    // Backward-compat
     'matched': 'Driver assigned',
     'en_route_pickup': 'Driver heading to pickup',
     'picked_up': 'Parcel picked up',
     'en_route_delivery': 'On the way to you',
-    'delivered': 'Delivered',
-    'cancelled': 'Cancelled',
   };
   return statusMap[status] || status;
 }

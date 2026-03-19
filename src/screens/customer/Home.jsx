@@ -52,16 +52,16 @@ const Home = ({ navigation }) => {
       id: 'standard',
       name: 'Standard',
       icon: '🕐',
-      time: '2-5 hrs',
-      price: 'From R80',
+      time: 'Estimated',
+      price: 'Pricing shown next',
       color: '#4CAF50',
     },
     {
       id: 'express',
       name: 'Express',
       icon: '⚡',
-      time: '1-2 hrs',
-      price: 'From R150',
+      time: 'Estimated',
+      price: 'Pricing shown next',
       color: '#1A73E8',
       popular: true,
     },
@@ -69,8 +69,8 @@ const Home = ({ navigation }) => {
       id: 'urgent',
       name: 'Urgent',
       icon: '🔥',
-      time: 'Under 1hr',
-      price: 'From R280',
+      time: 'Estimated',
+      price: 'Pricing shown next',
       color: '#FF6B35',
     },
   ];
@@ -107,7 +107,8 @@ const Home = ({ navigation }) => {
   };
 
   const handleTierSelect = () => {
-    navigation.navigate('DeliveryTiers');
+    // Start the real address -> order flow
+    navigation.navigate('AddressEntry');
   };
 
   const handleDeliveryPress = (order) => {

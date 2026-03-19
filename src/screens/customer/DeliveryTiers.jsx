@@ -1,63 +1,119 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import { postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const DeliveryTiers = () => {
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+const DeliveryTiers = ({ navigation, route }) => {
+  const params = route?.params || {};
+  const {
+    pickup_lat,
+    pickup_lng,
+    dropoff_lat,
+    dropoff_lng,
+    parcel_value,
+    insurance_selected: insuranceSelectedFromNav,
+  } = params;
+
   const [selectedTier, setSelectedTier] = useState('express');
   const [insurance, setInsurance] = useState(false);
+  const [estimate, setEstimate] = useState(null);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateError, setEstimateError] = useState(null);
 
-  const deliveryOptions = [
-    {
-      id: 'standard',
-      name: 'Standard',
-      icon: '🕐',
-      iconColor: '#4CAF50',
-      description: 'Route match — 2-5 hours',
-      price: 'R120',
-      details: 'Driver already going your way',
-      available: true
-    },
-    {
-      id: 'express',
-      name: 'Express',
-      icon: '⚡',
-      iconColor: '#1A73E8',
-      description: 'Nearby driver — 1-2 hours',
-      price: 'R200',
-      details: 'Quick pickup and delivery',
-      popular: true,
-      available: true
-    },
-    {
-      id: 'urgent',
-      name: 'Urgent',
-      icon: '🔥',
-      iconColor: '#FF6B35',
-      description: 'Dedicated driver — under 1 hour',
-      price: 'R350',
-      details: 'Priority service',
-      available: true
+  useEffect(() => {
+    if (typeof insuranceSelectedFromNav === 'boolean') {
+      setInsurance(insuranceSelectedFromNav);
     }
-  ];
+  }, [insuranceSelectedFromNav]);
+
+  const deliveryOptions = useMemo(
+    () => [
+      {
+        id: 'standard',
+        name: 'Standard',
+        icon: '🕐',
+        iconColor: '#4CAF50',
+        description: 'Route match — 2-5 hours',
+      },
+      {
+        id: 'express',
+        name: 'Express',
+        icon: '⚡',
+        iconColor: '#1A73E8',
+        description: 'Nearby driver — 1-2 hours',
+        popular: true,
+      },
+      {
+        id: 'urgent',
+        name: 'Urgent',
+        icon: '🔥',
+        iconColor: '#FF6B35',
+        description: 'Dedicated driver — under 1 hour',
+      },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null) return;
+      if (parcel_value == null) return;
+
+      setEstimateLoading(true);
+      setEstimateError(null);
+      try {
+        const data = await postJson('/api/orders/price-estimate', {
+          pickup_lat,
+          pickup_lng,
+          dropoff_lat,
+          dropoff_lng,
+          parcel_value,
+          insurance_selected: insurance,
+        });
+        if (!cancelled) setEstimate(data ?? {});
+      } catch (e) {
+        if (!cancelled) setEstimateError(e.message || 'Could not estimate price');
+      } finally {
+        if (!cancelled) setEstimateLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value, insurance]);
 
   const handleTierSelect = (tierId) => {
-    if (deliveryOptions.find(t => t.id === tierId)?.available) {
-      setSelectedTier(tierId);
-    }
+    setSelectedTier(tierId);
   };
 
   const handleContinue = () => {
-    const selected = deliveryOptions.find(t => t.id === selectedTier);
-    console.log('Continue with tier:', selected, { insurance });
+    navigation.navigate('Payment', {
+      ...params,
+      delivery_tier: selectedTier,
+      insurance_selected: insurance,
+      delivery_total: estimate?.estimates?.[selectedTier]?.total ?? null,
+      delivery_base_price: estimate?.estimates?.[selectedTier]?.base_price ?? null,
+      delivery_insurance_fee: estimate?.estimates?.[selectedTier]?.insurance_fee ?? null,
+    });
   };
 
   const handleBack = () => {
     console.log('Back pressed');
   };
 
-  const selectedOption = deliveryOptions.find(t => t.id === selectedTier);
-  const totalPrice = selectedOption ? parseInt(selectedOption.price.replace('R', '')) + (insurance ? 15 : 0) : 0;
+  const selectedTotal = estimate?.estimates?.[selectedTier]?.total;
+  const totalPrice = typeof selectedTotal === 'number' ? selectedTotal : 0;
+  const insuranceFee =
+    estimate?.estimates?.[selectedTier]?.insurance_fee ?? null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -73,7 +129,9 @@ const DeliveryTiers = () => {
 
         {/* Route Info */}
         <View style={styles.routeInfo}>
-          <Text style={styles.routeText}>Worcester to Cape Town • 112km</Text>
+          <Text style={styles.routeText}>
+            {estimateLoading ? 'Calculating route…' : estimate?.distance_km != null ? `${estimate.distance_km} km` : 'Select delivery speed'}
+          </Text>
         </View>
 
         {/* Progress Bar */}
@@ -92,10 +150,8 @@ const DeliveryTiers = () => {
               style={[
                 styles.optionCard,
                 selectedTier === option.id && styles.optionCardSelected,
-                !option.available && styles.optionCardUnavailable
               ]}
               onPress={() => handleTierSelect(option.id)}
-              disabled={!option.available}
             >
               <View style={styles.optionHeader}>
                 <View style={styles.optionLeft}>
@@ -113,15 +169,11 @@ const DeliveryTiers = () => {
                       <Text style={styles.popularText}>Popular</Text>
                     </View>
                   )}
-                  <Text style={styles.optionPrice}>{option.price}</Text>
+                  <Text style={styles.optionPrice}>
+                    {estimate?.estimates?.[option.id]?.total != null ? formatMoney(estimate.estimates[option.id].total) : '—'}
+                  </Text>
                 </View>
               </View>
-              {option.details && (
-                <Text style={styles.optionDetails}>{option.details}</Text>
-              )}
-              {!option.available && (
-                <Text style={styles.unavailableText}>No route match available right now</Text>
-              )}
               {selectedTier === option.id && (
                 <View style={styles.checkmark}>
                   <Text style={styles.checkmarkText}>✓</Text>
@@ -140,7 +192,13 @@ const DeliveryTiers = () => {
             <View style={styles.insuranceLeft}>
               <Text style={styles.insuranceTitle}>Parcel Insurance</Text>
               <View style={styles.insuranceInfo}>
-                <Text style={styles.insurancePrice}>R15</Text>
+                <Text style={styles.insurancePrice}>
+                  {insurance
+                    ? insuranceFee != null
+                      ? formatMoney(insuranceFee)
+                      : '—'
+                    : 'R0.00'}
+                </Text>
                 <TouchableOpacity style={styles.infoButton}>
                   <Text style={styles.infoIcon}>ℹ️</Text>
                 </TouchableOpacity>
@@ -157,9 +215,16 @@ const DeliveryTiers = () => {
       <View style={styles.bottomContainer}>
         <View style={styles.priceSummary}>
           <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalPrice}>R{totalPrice}</Text>
+          <Text style={styles.totalPrice}>{formatMoney(totalPrice)}</Text>
         </View>
-        <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
+        <TouchableOpacity
+          style={[
+            styles.continueButton,
+            (estimateLoading || estimate == null) && { opacity: 0.6 },
+          ]}
+          onPress={handleContinue}
+          disabled={estimateLoading || estimate == null}
+        >
           <Text style={styles.continueButtonText}>Continue to Payment</Text>
         </TouchableOpacity>
       </View>

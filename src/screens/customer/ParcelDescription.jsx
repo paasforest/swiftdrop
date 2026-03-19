@@ -3,7 +3,31 @@ import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, Scr
 
 const { width, height } = Dimensions.get('window');
 
-const ParcelDescription = ({ navigation }) => {
+function parseEstimatedValueToNumber(range) {
+  const v = String(range ?? '').trim();
+  if (!v) return null;
+
+  if (v.toLowerCase().startsWith('under')) {
+    // Under R200 -> 200
+    const m = v.match(/R(\d+(?:\.\d+)?)/i);
+    return m ? Number(m[1]) : null;
+  }
+
+  // R200-R500 / R500-R1000 / R1000-R2000
+  const parts = v.replace(/to/gi, '-').split('-').map((x) => x.replace(/[^\d.]/g, ''));
+  if (parts.length === 2) {
+    const a = Number(parts[0]);
+    const b = Number(parts[1]);
+    if (!Number.isNaN(a) && !Number.isNaN(b)) return Math.round((a + b) / 2);
+  }
+
+  // Fallback: try to find any number
+  const m = v.match(/R(\d+(?:\.\d+)?)/i);
+  return m ? Number(m[1]) : null;
+}
+
+const ParcelDescription = ({ navigation, route }) => {
+  const baseParams = route?.params || {};
   const [selectedCategory, setSelectedCategory] = useState('Documents');
   const [selectedSize, setSelectedSize] = useState('medium');
   const [estimatedValue, setEstimatedValue] = useState('R200-R500');
@@ -66,7 +90,16 @@ const ParcelDescription = ({ navigation }) => {
     if (!prohibitedConfirmed) {
       setShowProhibitedModal(true);
     } else {
-      navigation.navigate('DeliveryTiers');
+      const parcel_value = parseEstimatedValueToNumber(estimatedValue);
+      const special_handling = JSON.stringify({ fragile, upright, careful });
+
+      navigation.navigate('DeliveryTiers', {
+        ...baseParams,
+        parcel_type: selectedCategory,
+        parcel_size: selectedSize,
+        parcel_value,
+        special_handling,
+      });
     }
   };
 
@@ -77,7 +110,16 @@ const ParcelDescription = ({ navigation }) => {
   const handleProhibitedConfirm = () => {
     setProhibitedConfirmed(true);
     setShowProhibitedModal(false);
-    navigation.navigate('DeliveryTiers');
+    const parcel_value = parseEstimatedValueToNumber(estimatedValue);
+    const special_handling = JSON.stringify({ fragile, upright, careful });
+
+    navigation.navigate('DeliveryTiers', {
+      ...baseParams,
+      parcel_type: selectedCategory,
+      parcel_size: selectedSize,
+      parcel_value,
+      special_handling,
+    });
   };
 
   return (
