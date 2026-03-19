@@ -8,6 +8,29 @@ function safeJsonParse(text) {
   }
 }
 
+export async function getJson(path, { token } = {}) {
+  const url = `${API_BASE_URL}${path}`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    const text = await res.text();
+    const json = safeJsonParse(text);
+    if (!res.ok) {
+      const message = json?.error || json?.message || `Request failed with ${res.status}`;
+      throw new Error(message);
+    }
+    return json ?? {};
+  } catch (err) {
+    console.error('[API] GET Error:', err.message);
+    throw err;
+  }
+}
+
 export async function postJson(path, body, { token } = {}) {
   const url = `${API_BASE_URL}${path}`;
   console.log('[API] POST', url);

@@ -21,6 +21,10 @@ function generateOrderNumber() {
 
 async function createOrder(req, res) {
   try {
+    if (req.user.user_type !== 'customer') {
+      return res.status(403).json({ error: 'Only customers can create delivery orders' });
+    }
+
     const {
       pickup_address, pickup_lat, pickup_lng,
       dropoff_address, dropoff_lat, dropoff_lng,
@@ -179,6 +183,10 @@ async function getOrderById(req, res) {
 
 async function getCustomerOrders(req, res) {
   try {
+    if (req.user.user_type !== 'customer') {
+      return res.status(403).json({ error: 'Customers only' });
+    }
+
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
@@ -528,11 +536,122 @@ async function uploadDeliveryPhoto(req, res) {
   }
 }
 
+/** Assigned / historical jobs for the logged-in driver */
+async function getDriverOrders(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const rows = await db.query(
+      `SELECT o.*, c.full_name AS customer_name, c.phone AS customer_phone
+       FROM orders o
+       LEFT JOIN users c ON c.id = o.customer_id
+       WHERE o.driver_id = $1
+       ORDER BY o.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [req.user.id, limit, offset]
+    );
+    const countRes = await db.query(
+      `SELECT COUNT(*)::int AS c FROM orders WHERE driver_id = $1`,
+      [req.user.id]
+    );
+    const total = countRes.rows[0]?.c || 0;
+    return res.json({ orders: rows.rows, total, page, limit });
+  } catch (err) {
+    console.error('getDriverOrders:', err);
+    return res.status(500).json({ error: 'Failed to fetch driver orders' });
+  }
+}
+
+/** Summary stats + recent activity for driver home */
+async function getDriverDashboard(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const driverId = req.user.id;
+
+    const tierRes = await db.query(
+      `SELECT tier_name, deliveries_completed, current_rating
+       FROM driver_tiers WHERE driver_id = $1`,
+      [driverId]
+    );
+    const tier = tierRes.rows[0] || {
+      tier_name: 'new',
+      deliveries_completed: 0,
+      current_rating: null,
+    };
+
+    const todayRes = await db.query(
+      `SELECT
+         COUNT(*) FILTER (
+           WHERE status IN ('delivered','completed')
+             AND (updated_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+         )::int AS deliveries_today,
+         COALESCE(
+           SUM(driver_earnings) FILTER (
+             WHERE status IN ('delivered','completed')
+               AND (updated_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+           ),
+           0
+         ) AS earnings_today
+       FROM orders
+       WHERE driver_id = $1`,
+      [driverId]
+    );
+    const today = todayRes.rows[0] || { deliveries_today: 0, earnings_today: 0 };
+
+    const completedRes = await db.query(
+      `SELECT COUNT(*)::int AS c
+       FROM orders
+       WHERE driver_id = $1 AND status IN ('delivered','completed')`,
+      [driverId]
+    );
+    const totalDeliveries = completedRes.rows[0]?.c ?? 0;
+
+    const recentRes = await db.query(
+      `SELECT o.id, o.order_number, o.dropoff_address, o.status,
+              o.driver_earnings, o.updated_at, o.total_price
+       FROM orders o
+       WHERE o.driver_id = $1
+       ORDER BY o.updated_at DESC
+       LIMIT 8`,
+      [driverId]
+    );
+
+    return res.json({
+      user: {
+        id: req.user.id,
+        full_name: req.user.full_name,
+        phone: req.user.phone,
+      },
+      tier: tier.tier_name,
+      deliveries_completed: tier.deliveries_completed,
+      current_rating: tier.current_rating != null ? parseFloat(tier.current_rating) : null,
+      today: {
+        deliveries: today.deliveries_today,
+        earnings: parseFloat(today.earnings_today) || 0,
+      },
+      total_deliveries_completed: totalDeliveries,
+      recent_orders: recentRes.rows,
+    });
+  } catch (err) {
+    console.error('getDriverDashboard:', err);
+    return res.status(500).json({ error: 'Failed to load driver dashboard' });
+  }
+}
+
 module.exports = {
   createOrder,
   calculatePrice,
   getOrderById,
   getCustomerOrders,
+  getDriverOrders,
+  getDriverDashboard,
   cancelOrder,
   getOrderTracking,
   acceptOrder,
@@ -540,4 +659,6 @@ module.exports = {
   updateOrderStatus,
   confirmPickupOTP,
   confirmDeliveryOTP,
+  uploadPickupPhoto,
+  uploadDeliveryPhoto,
 };
