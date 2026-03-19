@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, TextInput } from 'react-native';
+import { postJson } from '../../apiClient';
+import { setAuth } from '../../authStore';
 
 const { width, height } = Dimensions.get('window');
 
-const OTPScreen = () => {
-  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
-  const [codeConfirmed, setCodeConfirmed] = useState(false);
+const OTPScreen = ({ navigation, route }) => {
+  const phone = route?.params?.phone;
 
-  const otpCode = '7429';
-  const driverInfo = {
-    name: 'Sipho M.',
-    photo: '👨‍💼',
-    vehicle: 'Toyota Corolla',
-    plate: 'CA 123-456'
-  };
+  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
+  const [otp, setOtp] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -35,38 +33,61 @@ const OTPScreen = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleCodeConfirm = () => {
-    setCodeConfirmed(true);
-    console.log('Code confirmed - parcel collected');
-  };
+  const handleVerify = async () => {
+    setErrorMessage(null);
+    setIsVerifying(true);
+    try {
+      if (!phone) {
+        setErrorMessage('Missing phone number for verification.');
+        return;
+      }
+      if (!otp || otp.length < 4) {
+        setErrorMessage('Please enter the 4-digit OTP.');
+        return;
+      }
 
-  const renderOTPDigit = (digit, index) => (
-    <View key={index} style={styles.otpDigit}>
-      <Text style={styles.otpDigitText}>{digit}</Text>
-    </View>
-  );
+      const data = await postJson('/api/auth/verify-phone', {
+        phone,
+        otp,
+      });
+
+      setAuth({
+        token: data.token,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      });
+
+      navigation.navigate('Home');
+    } catch (err) {
+      setErrorMessage(err.message || 'OTP verification failed.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Title */}
-        <Text style={styles.title}>Driver Has Arrived</Text>
-
-        {/* Driver Illustration */}
-        <View style={styles.illustrationContainer}>
-          <Text style={styles.illustration}>🚚🚪</Text>
-        </View>
+        <Text style={styles.title}>Verify your phone</Text>
 
         {/* OTP Info Box */}
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>
-            Read this code to your driver to confirm pickup
+            Enter the 4-digit code we sent to your phone.
           </Text>
         </View>
 
-        {/* OTP Display */}
-        <View style={styles.otpContainer}>
-          {otpCode.split('').map((digit, index) => renderOTPDigit(digit, index))}
+        {/* OTP Input */}
+        <View style={styles.otpInputRow}>
+          <TextInput
+            style={styles.otpInput}
+            value={otp}
+            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 4))}
+            keyboardType="number-pad"
+            placeholder="1234"
+            editable={!isVerifying && timeRemaining > 0}
+            maxLength={4}
+          />
         </View>
 
         {/* Expiry Notice */}
@@ -74,32 +95,19 @@ const OTPScreen = () => {
           This code expires in {formatTime(timeRemaining)}
         </Text>
 
-        {/* Driver Details Card */}
-        <View style={styles.driverCard}>
-          <View style={styles.driverHeader}>
-            <View style={styles.driverPhoto}>
-              <Text style={styles.driverAvatar}>{driverInfo.photo}</Text>
-            </View>
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>{driverInfo.name}</Text>
-              <Text style={styles.driverVehicle}>
-                {driverInfo.vehicle} • {driverInfo.plate}
-              </Text>
-            </View>
-          </View>
-        </View>
+        {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
         {/* Confirm Button */}
         <TouchableOpacity
           style={[
             styles.confirmButton,
-            codeConfirmed && styles.confirmButtonPressed
+            isVerifying && { opacity: 0.7 }
           ]}
-          onPress={handleCodeConfirm}
-          disabled={codeConfirmed}
+          onPress={handleVerify}
+          disabled={isVerifying || timeRemaining <= 0}
         >
           <Text style={styles.confirmButtonText}>
-            {codeConfirmed ? '✓ Code Confirmed' : 'Code Confirmed — Parcel Collected'}
+            {isVerifying ? 'Verifying...' : 'Confirm OTP'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -127,13 +135,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 40,
   },
-  illustrationContainer: {
-    marginBottom: 40,
-  },
-  illustration: {
-    fontSize: 80,
-    textAlign: 'center',
-  },
   infoBox: {
     backgroundColor: '#E8F4FF',
     borderRadius: 12,
@@ -147,26 +148,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  otpDigit: {
-    width: 60,
-    height: 60,
-    backgroundColor: '#E8F4FF',
-    borderWidth: 2,
-    borderColor: '#1A73E8',
-    borderRadius: 12,
-    justifyContent: 'center',
+  otpInputRow: {
+    marginBottom: 12,
+    width: '100%',
     alignItems: 'center',
-    marginHorizontal: 8,
   },
-  otpDigitText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1A73E8',
+  otpInput: {
+    width: '60%',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    fontSize: 22,
+    textAlign: 'center',
   },
   expiryText: {
     fontSize: 14,
@@ -174,43 +170,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 40,
   },
-  driverCard: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    padding: 16,
-    width: '100%',
-    marginBottom: 40,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  driverHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  driverPhoto: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#E0E0E0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  driverAvatar: {
-    fontSize: 24,
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  driverVehicle: {
+  errorText: {
+    color: '#d93025',
     fontSize: 14,
-    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   confirmButton: {
     backgroundColor: '#4CAF50',
@@ -218,9 +182,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     width: '100%',
-  },
-  confirmButtonPressed: {
-    backgroundColor: '#45A049',
   },
   confirmButtonText: {
     color: '#FFFFFF',

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import { postJson } from '../../apiClient';
+import { setAuth } from '../../authStore';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,14 +21,102 @@ const Login = ({ navigation }) => {
   const [registerPassword, setRegisterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleLogin = () => {
-    // Navigate to Home screen after "login"
-    navigation.navigate('Home');
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const normalizePhoneForApi = (phoneInput) => {
+    let v = String(phoneInput ?? '').trim();
+    v = v.replace(/\s+/g, '');
+
+    // Drop '+' for normalization
+    if (v.startsWith('+')) v = v.slice(1);
+
+    // If local format starts with 0, convert to +27
+    if (v.startsWith('0')) v = `27${v.slice(1)}`;
+
+    // If they typed full country code "27..."
+    if (v.startsWith('27')) return `+${v}`;
+
+    // If they typed something starting with 7 (e.g. 7xxxxxxxxx), treat as local
+    if (v.startsWith('7')) return `+27${v}`;
+
+    return '';
   };
 
-  const handleRegister = () => {
-    // Navigate to Home screen after "registration"
-    navigation.navigate('Home');
+  const handleLogin = async () => {
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    try {
+      if (!loginEmail.trim() || !loginPassword) {
+        setErrorMessage('Email and password are required.');
+        return;
+      }
+
+      const data = await postJson('/api/auth/login', {
+        email: loginEmail.trim(),
+        password: loginPassword,
+      });
+
+      setAuth({
+        token: data.token,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      });
+
+      navigation.navigate('Home');
+    } catch (err) {
+      setErrorMessage(err.message || 'Login failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    console.log('[Register] Button pressed');
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    try {
+      console.log('[Register] Validating fields...');
+      if (!registerName || !registerEmail || !registerPassword || !confirmPassword) {
+        console.log('[Register] Missing fields');
+        setErrorMessage('Please fill in all registration fields.');
+        return;
+      }
+      if (registerPassword.length < 8) {
+        console.log('[Register] Password too short');
+        setErrorMessage('Password must be at least 8 characters.');
+        return;
+      }
+      if (registerPassword !== confirmPassword) {
+        console.log('[Register] Passwords do not match');
+        setErrorMessage('Passwords do not match.');
+        return;
+      }
+
+      const phone = normalizePhoneForApi(registerPhone);
+      console.log('[Register] Normalized phone:', phone);
+      if (!phone) {
+        setErrorMessage('Enter a valid South African phone number.');
+        return;
+      }
+
+      console.log('[Register] Calling API...');
+      const data = await postJson('/api/auth/register-customer', {
+        full_name: registerName,
+        email: registerEmail.trim(),
+        phone,
+        password: registerPassword,
+      });
+
+      console.log('[Register] Success! Navigating to OTP...');
+      // Backend sends OTP on register; next step is verify-phone.
+      navigation.navigate('OTPScreen', { phone });
+    } catch (err) {
+      console.error('[Register] Error:', err.message);
+      setErrorMessage(err.message || 'Registration failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGoogleSignIn = () => {
@@ -97,8 +187,14 @@ const Login = ({ navigation }) => {
               <Text style={styles.forgotPassword}>Forgot Password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.loginButtonText}>Login</Text>
+            {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+
+            <TouchableOpacity
+              style={[styles.loginButton, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.loginButtonText}>{isSubmitting ? 'Logging in...' : 'Login'}</Text>
             </TouchableOpacity>
 
             <View style={styles.divider}>
@@ -175,8 +271,14 @@ const Login = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.registerButton} onPress={handleRegister}>
-              <Text style={styles.registerButtonText}>Create Account</Text>
+            {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+
+            <TouchableOpacity
+              style={[styles.registerButton, isSubmitting && { opacity: 0.7 }]}
+              onPress={handleRegister}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.registerButtonText}>{isSubmitting ? 'Registering...' : 'Create Account'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -342,6 +444,12 @@ const styles = StyleSheet.create({
     color: '#666666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  errorText: {
+    color: '#d93025',
+    fontSize: 14,
+    marginBottom: 16,
+    textAlign: 'center',
   },
 });
 

@@ -8,6 +8,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const ACCESS_EXPIRY = '1h';
 const REFRESH_EXPIRY = '7d';
 
+/** If false, login/refresh work without phone OTP verification (testing only). Default: true. */
+function requirePhoneVerificationForAuth() {
+  const v = process.env.REQUIRE_PHONE_VERIFICATION;
+  if (v === undefined || v === null || String(v).trim() === '') return true;
+  const lowered = String(v).trim().toLowerCase();
+  if (lowered === 'false' || lowered === '0' || lowered === 'no') return false;
+  return true;
+}
+
 function sanitizeUser(user) {
   if (!user) return null;
   const { password_hash, ...rest } = user;
@@ -148,16 +157,20 @@ async function login(req, res) {
       return res.status(400).json({ error: 'email or phone, and password are required' });
     }
 
+    const verifiedSql = requirePhoneVerificationForAuth() ? 'AND is_verified = true' : '';
     const userResult = await db.query(
       `SELECT * FROM users
        WHERE (email = $1 OR phone = $1)
          AND is_active = true
-         AND is_verified = true`,
+         ${verifiedSql}`,
       [identifier]
     );
     const user = userResult.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      return res.status(401).json({ error: 'Invalid credentials or phone not verified' });
+      const msg = requirePhoneVerificationForAuth()
+        ? 'Invalid credentials or phone not verified'
+        : 'Invalid credentials';
+      return res.status(401).json({ error: msg });
     }
 
     let extra = {};
@@ -256,10 +269,11 @@ async function refreshToken(req, res) {
       return res.status(401).json({ error: 'Invalid refresh token' });
     }
 
+    const verifiedSql = requirePhoneVerificationForAuth() ? 'AND is_verified = true' : '';
     const userResult = await db.query(
       `SELECT id, full_name, email, phone, user_type, is_verified, profile_photo_url, wallet_balance
        FROM users
-       WHERE id = $1 AND is_active = true AND is_verified = true`,
+       WHERE id = $1 AND is_active = true ${verifiedSql}`,
       [decoded.userId]
     );
     const user = userResult.rows[0];
