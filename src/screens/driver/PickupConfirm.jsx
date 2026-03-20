@@ -1,60 +1,289 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, TextInput, ScrollView } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  TextInput,
+  ScrollView,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { API_BASE_URL } from '../../apiConfig';
+import { getAuth } from '../../authStore';
+import { getJson, postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const PickupConfirm = () => {
-  const [currentStep, setCurrentStep] = useState(1);
+const PickupConfirm = ({ navigation, route }) => {
+  const orderId = route?.params?.orderId;
+
+  const [arrivalMarked, setArrivalMarked] = useState(false);
+  const [markingArrival, setMarkingArrival] = useState(true);
+  const [arrivalError, setArrivalError] = useState(null);
+  const [arrivalRetryKey, setArrivalRetryKey] = useState(0);
+  const [order, setOrder] = useState(null);
+  const [orderLoaded, setOrderLoaded] = useState(false);
+
   const [otp, setOtp] = useState(['', '', '', '']);
   const [otpConfirmed, setOtpConfirmed] = useState(false);
-  const [photoTaken, setPhotoTaken] = useState(false);
+  const [otpSubmitting, setOtpSubmitting] = useState(false);
+  const [otpError, setOtpError] = useState(null);
 
-  const inputRefs = [];
+  const [capturingPhoto, setCapturingPhoto] = useState(false);
+  const [photoAsset, setPhotoAsset] = useState(null); // { uri, type, fileName }
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0); // 0..1
+  const [uploadError, setUploadError] = useState(null);
+
+  const inputRefs = useRef([]);
+
+  const otpString = useMemo(() => otp.join(''), [otp]);
 
   const handleOtpChange = (value, index) => {
+    const digit = String(value ?? '')
+      .replace(/[^\d]/g, '')
+      .slice(-1); // keep last digit only
     const newOtp = [...otp];
-    newOtp[index] = value;
+    newOtp[index] = digit;
     setOtp(newOtp);
 
     // Auto-focus next input
-    if (value && index < 3) {
-      inputRefs[index + 1].focus();
+    if (digit && index < 3) {
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleOtpKeyPress = (e, index) => {
     // Handle backspace
     if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs[index - 1].focus();
+      inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const handleConfirmOtp = () => {
-    const otpString = otp.join('');
-    if (otpString.length === 4) {
-      setOtpConfirmed(true);
-      console.log('OTP confirmed:', otpString);
+  const markArrivedAtPickup = async () => {
+    if (!orderId) throw new Error('Missing orderId');
+    const auth = getAuth();
+    if (!auth?.token) throw new Error('Not signed in');
+
+    setMarkingArrival(true);
+    setArrivalError(null);
+
+    const url = `${API_BASE_URL}/api/orders/${orderId}/status`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ status: 'pickup_arrived' }),
+    });
+
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
     }
+
+    if (!res.ok) {
+      throw new Error(json?.error || json?.message || `Request failed with HTTP ${res.status}`);
+    }
+
+    setArrivalMarked(true);
   };
 
-  const handleTakePhoto = () => {
-    setPhotoTaken(true);
-    console.log('Photo taken');
-  };
-
-  const handleConfirmDelivery = () => {
-    console.log('Pickup confirmed, starting delivery');
-  };
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-      if (currentStep === 2) {
-        setOtpConfirmed(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOrder() {
+      if (!orderId) return;
+      const auth = getAuth();
+      if (!auth?.token) {
+        setOrderLoaded(true);
+        return;
       }
-    } else {
-      console.log('Back to navigation');
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (cancelled) return;
+        setOrder(data);
+        if (data?.status === 'pickup_arrived') {
+          setArrivalMarked(true);
+          setArrivalError(null);
+          setMarkingArrival(false);
+        }
+      } catch {
+        // Best-effort; if it fails we still allow marking arrival normally.
+      } finally {
+        if (!cancelled) setOrderLoaded(true);
+      }
     }
+
+    loadOrder();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!orderId) return;
+      if (arrivalMarked) return;
+      if (!orderLoaded) return;
+      try {
+        await markArrivedAtPickup();
+        if (cancelled) return;
+      } catch (e) {
+        if (cancelled) return;
+        setArrivalError(e.message || 'Failed to mark arrival');
+      } finally {
+        if (!cancelled) setMarkingArrival(false);
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderId, arrivalRetryKey, arrivalMarked, orderLoaded]);
+
+  const handleConfirmOtp = async () => {
+    if (!orderId) return;
+    if (otpString.length !== 4) return;
+    if (otpSubmitting) return;
+
+    setOtpSubmitting(true);
+    setOtpError(null);
+    try {
+      const auth = getAuth();
+      if (!auth?.token) throw new Error('Not signed in');
+
+      await postJson(`/api/orders/${orderId}/pickup-otp`, { otp: otpString }, { token: auth.token });
+      setOtpConfirmed(true);
+    } catch (e) {
+      const msg = e.message || '';
+      if (msg.includes('Invalid OTP')) {
+        setOtpError('Incorrect code. Ask sender to check their SMS.');
+      } else {
+        setOtpError(msg || 'OTP verification failed');
+      }
+    } finally {
+      setOtpSubmitting(false);
+    }
+  };
+
+  const ensureCameraPermission = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission?.granted) {
+      throw new Error('Camera permission is required');
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    if (capturingPhoto || uploading) return;
+    setUploadError(null);
+    setOtpError(null);
+
+    try {
+      setCapturingPhoto(true);
+      await ensureCameraPermission();
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+      });
+
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) throw new Error('No photo captured');
+
+      setPhotoAsset({
+        uri: asset.uri,
+        type: asset.type || 'image/jpeg',
+        fileName: asset.fileName || `pickup-${Date.now()}.jpg`,
+      });
+    } catch (e) {
+      setUploadError(e.message || 'Failed to capture photo');
+    } finally {
+      setCapturingPhoto(false);
+    }
+  };
+
+  const handleUploadPickupPhoto = async () => {
+    if (!orderId || !photoAsset) return;
+    if (uploading) return;
+
+    const auth = getAuth();
+    if (!auth?.token) throw new Error('Not signed in');
+
+    setUploading(true);
+    setUploadError(null);
+    setUploadProgress(0);
+
+    const url = `${API_BASE_URL}/api/orders/${orderId}/pickup-photo`;
+
+    try {
+      await new Promise((resolve, reject) => {
+        const formData = new FormData();
+        formData.append('photo', {
+          uri: photoAsset.uri,
+          type: photoAsset.type,
+          name: photoAsset.fileName,
+        });
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.setRequestHeader('Authorization', `Bearer ${auth.token}`);
+
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const p = evt.loaded / evt.total;
+            setUploadProgress(p);
+          }
+        };
+
+        xhr.onload = () => {
+          const statusOk = xhr.status >= 200 && xhr.status < 300;
+          const text = xhr.responseText || '';
+          let json = null;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            json = null;
+          }
+
+          if (!statusOk) {
+            reject(new Error(json?.error || json?.message || `Upload failed with HTTP ${xhr.status}`));
+            return;
+          }
+
+          resolve(json ?? {});
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Upload failed'));
+        };
+
+        xhr.send(formData);
+      });
+
+      navigation.navigate('EnRouteDelivery', { orderId });
+    } catch (e) {
+      setUploadError(e?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRetakePhoto = () => {
+    setPhotoAsset(null);
+    setUploadError(null);
+    setUploadProgress(0);
   };
 
   const renderOtpStep = () => (
@@ -73,7 +302,7 @@ const PickupConfirm = () => {
         {otp.map((digit, index) => (
           <TextInput
             key={index}
-            ref={(ref) => (inputRefs[index] = ref)}
+            ref={(ref) => (inputRefs.current[index] = ref)}
             style={styles.otpInput}
             value={digit}
             onChangeText={(value) => handleOtpChange(value, index)}
@@ -87,28 +316,18 @@ const PickupConfirm = () => {
         ))}
       </View>
 
+      {otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
+
       <TouchableOpacity
         style={[
           styles.confirmButton,
-          otp.join('').length !== 4 && styles.confirmButtonDisabled
+          (otpString.length !== 4 || otpSubmitting) && styles.confirmButtonDisabled,
         ]}
         onPress={handleConfirmOtp}
-        disabled={otp.join('').length !== 4}
+        disabled={otpString.length !== 4 || otpSubmitting}
       >
-        <Text style={styles.confirmButtonText}>Confirm OTP</Text>
+        <Text style={styles.confirmButtonText}>{otpSubmitting ? 'Verifying...' : 'Confirm OTP'}</Text>
       </TouchableOpacity>
-
-      {/* Next Step Preview */}
-      <View style={styles.nextStepPreview}>
-        <View style={styles.lockedStep}>
-          <Text style={styles.lockedStepNumber}>2 of 2</Text>
-          <Text style={styles.lockedStepTitle}>Take Parcel Photo</Text>
-          <View style={styles.lockedContent}>
-            <Text style={styles.lockedIcon}>📷</Text>
-            <Text style={styles.lockedText}>Take a clear photo of the parcel before you leave</Text>
-          </View>
-        </View>
-      </View>
     </View>
   );
 
@@ -119,35 +338,51 @@ const PickupConfirm = () => {
         <Text style={styles.stepTitle}>Take Parcel Photo</Text>
       </View>
 
-      <Text style={styles.instructionText}>
-        Take a clear photo of the parcel before you leave
-      </Text>
+      <Text style={styles.instructionText}>Take a clear photo of the parcel before you leave</Text>
+
+      <View style={styles.successRow}>
+        <Text style={styles.successTick}>✓</Text>
+        <Text style={styles.successText}>OTP verified. Photo upload required.</Text>
+      </View>
 
       {/* Camera Area */}
       <View style={styles.cameraContainer}>
-        {photoTaken ? (
-          <View style={styles.photoPreview}>
-            <Text style={styles.photoIcon}>📦</Text>
-            <Text style={styles.photoText}>Photo captured</Text>
-            <TouchableOpacity style={styles.retakeButton} onPress={() => setPhotoTaken(false)}>
-              <Text style={styles.retakeText}>Retake</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto}>
+        {!photoAsset ? (
+          <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto} disabled={capturingPhoto || uploading}>
             <View style={styles.cameraInner}>
               <Text style={styles.cameraIcon}>📷</Text>
-              <Text style={styles.cameraText}>Tap to capture</Text>
+              <Text style={styles.cameraText}>{capturingPhoto ? 'Capturing...' : 'Tap to capture'}</Text>
             </View>
           </TouchableOpacity>
+        ) : (
+          <View style={styles.photoPreview}>
+            <Image source={{ uri: photoAsset.uri }} style={styles.previewImage} resizeMode="cover" />
+            <Text style={styles.photoText}>Photo captured</Text>
+
+            {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
+
+            {uploading ? (
+              <View style={styles.progressBlock}>
+                <ActivityIndicator color="#1A73E8" />
+                <Text style={styles.progressText}>{`Uploading ${Math.round(uploadProgress * 100)}%`}</Text>
+              </View>
+            ) : (
+              <View style={styles.photoButtonRow}>
+                <TouchableOpacity style={[styles.retakeButton, { flex: 1 }]} onPress={handleRetakePhoto} disabled={uploading}>
+                  <Text style={styles.retakeText}>Retake</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.usePhotoButton, { flex: 1 }]}
+                  onPress={handleUploadPickupPhoto}
+                  disabled={uploading}
+                >
+                  <Text style={styles.usePhotoButtonText}>Use This Photo</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         )}
       </View>
-
-      {photoTaken && (
-        <TouchableOpacity style={styles.finalConfirmButton} onPress={handleConfirmDelivery}>
-          <Text style={styles.finalConfirmButtonText}>Confirm & Start Delivery</Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 
@@ -155,7 +390,7 @@ const PickupConfirm = () => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack}>
+        <TouchableOpacity onPress={() => navigation?.goBack?.()}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Confirm Pickup</Text>
@@ -163,11 +398,27 @@ const PickupConfirm = () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Step 1 - OTP */}
-        {!otpConfirmed && renderOtpStep()}
-
-        {/* Step 2 - Photo */}
-        {otpConfirmed && renderPhotoStep()}
+        {!arrivalMarked ? (
+          <View style={styles.stepContainer}>
+            {markingArrival ? (
+              <>
+                <ActivityIndicator size="large" color="#1A73E8" />
+                <Text style={styles.hintText}>Marking you as arrived at pickup...</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.errorText}>{arrivalError || 'Could not start pickup confirmation'}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={() => setArrivalRetryKey((k) => k + 1)}>
+                  <Text style={styles.retryButtonText}>Try Again</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        ) : !otpConfirmed ? (
+          renderOtpStep()
+        ) : (
+          renderPhotoStep()
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -259,40 +510,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  nextStepPreview: {
-    marginTop: 20,
-  },
-  lockedStep: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    padding: 20,
-    opacity: 0.6,
-  },
-  lockedStepNumber: {
+  errorText: {
+    marginBottom: 12,
+    marginTop: -4,
+    color: '#D32F2F',
     fontSize: 14,
-    color: '#999999',
     textAlign: 'center',
-    marginBottom: 4,
   },
-  lockedStepTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#999999',
+  hintText: {
+    marginTop: 12,
     textAlign: 'center',
-    marginBottom: 16,
+    color: '#666666',
+    fontSize: 14,
   },
-  lockedContent: {
-    flexDirection: 'row',
+  retryButton: {
+    marginTop: 18,
+    backgroundColor: '#1A73E8',
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
-  lockedIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  lockedText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#999999',
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   cameraContainer: {
     marginBottom: 32,
@@ -324,6 +565,14 @@ const styles = StyleSheet.create({
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 10,
+    backgroundColor: '#E0E0E0',
+    marginBottom: 10,
   },
   photoIcon: {
     fontSize: 48,
@@ -337,24 +586,61 @@ const styles = StyleSheet.create({
   },
   retakeButton: {
     backgroundColor: '#E0E0E0',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 8,
+    marginRight: 10,
   },
   retakeText: {
     fontSize: 14,
     color: '#666666',
   },
-  finalConfirmButton: {
+  successRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  successTick: {
+    color: '#4CAF50',
+    fontSize: 28,
+    marginRight: 10,
+    fontWeight: '700',
+  },
+  successText: {
+    color: '#4CAF50',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  photoButtonRow: {
+    flexDirection: 'row',
+    width: '100%',
+    marginTop: 6,
+  },
+  usePhotoButton: {
     backgroundColor: '#4CAF50',
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  usePhotoButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  progressBlock: {
+    marginTop: 8,
     alignItems: 'center',
   },
-  finalConfirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  progressText: {
+    marginTop: 8,
+    color: '#1A73E8',
+    fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

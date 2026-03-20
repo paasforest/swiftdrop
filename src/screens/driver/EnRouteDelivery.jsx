@@ -6,7 +6,7 @@ import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const EnRouteDelivery = ({ route }) => {
+const EnRouteDelivery = ({ route, navigation }) => {
   const orderId = route?.params?.orderId;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
@@ -53,6 +53,9 @@ const EnRouteDelivery = ({ route }) => {
           ? String(order.status).replace(/_/g, ' ')
           : 'Delivering parcel';
 
+  const canConfirmDelivery =
+    order?.status === 'delivery_en_route' || order?.status === 'delivery_arrived';
+
   return (
     <SafeAreaView style={styles.container}>
       {orderId ? <DriverLocationService orderId={orderId} /> : null}
@@ -97,6 +100,15 @@ const EnRouteDelivery = ({ route }) => {
             {loading ? 'Loading…' : error ? '—' : order?.dropoff_address || '—'}
           </Text>
         </View>
+
+        {canConfirmDelivery && (
+          <TouchableOpacity
+            style={styles.arrivedButton}
+            onPress={() => navigation.navigate('DeliveryConfirm', { orderId })}
+          >
+            <Text style={styles.arrivedButtonText}>I have arrived at delivery</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );

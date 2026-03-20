@@ -4,6 +4,7 @@ const { generateOTP } = require('../utils/otpHelper');
 const { runMatching } = require('../services/matchingService');
 const { releaseEscrow } = require('../services/paymentService');
 const { sendPushNotification } = require('../services/notificationService');
+const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 
 const PRICING = {
@@ -388,6 +389,27 @@ async function updateOrderStatus(req, res) {
       );
     }
 
+    if (status === 'delivery_arrived') {
+      const [customerRes, driverRes] = await Promise.all([
+        db.query(`SELECT phone FROM users WHERE id = $1`, [order.customer_id]),
+        db.query(`SELECT full_name FROM users WHERE id = $1`, [order.driver_id]),
+      ]);
+
+      const customerPhone = customerRes.rows[0]?.phone;
+      const driverFullName = driverRes.rows[0]?.full_name;
+
+      await sendPushNotification(
+        order.customer_id,
+        'Delivery arrival',
+        `Driver has arrived with your parcel. Your delivery code is: ${order.delivery_otp}`,
+        { orderId: id, type: 'delivery_arrived' }
+      );
+
+      if (customerPhone && order.delivery_otp && driverFullName) {
+        await smsService.sendDeliveryOTP(customerPhone, order.delivery_otp, driverFullName);
+      }
+    }
+
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     return res.json(updated.rows[0]);
   } catch (err) {
@@ -448,8 +470,6 @@ async function confirmDeliveryOTP(req, res) {
       `UPDATE orders SET status = 'delivered', delivery_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [id]
     );
-
-    await releaseEscrow(id);
 
     await sendPushNotification(
       order.customer_id,
@@ -519,6 +539,9 @@ async function uploadDeliveryPhoto(req, res) {
 
     const result = await uploadImage(file);
     const url = result.secure_url;
+
+    // Release payment only after delivery photo evidence is successfully uploaded.
+    await releaseEscrow(id);
 
     await db.query(
       `UPDATE orders SET delivery_photo_url = $1, status = 'completed', updated_at = NOW() WHERE id = $2`,

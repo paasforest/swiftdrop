@@ -6,7 +6,7 @@ import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const EnRoutePickup = ({ route }) => {
+const EnRoutePickup = ({ route, navigation }) => {
   const orderId = route?.params?.orderId;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
@@ -52,6 +52,9 @@ const EnRoutePickup = ({ route }) => {
         : order?.status
           ? String(order.status).replace(/_/g, ' ')
           : 'Heading to pickup';
+
+  const canConfirmPickup =
+    order?.status === 'accepted' || order?.status === 'pickup_en_route' || order?.status === 'pickup_arrived';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -105,6 +108,15 @@ const EnRoutePickup = ({ route }) => {
             {loading ? 'Loading…' : error ? '—' : order?.dropoff_address || '—'}
           </Text>
         </View>
+
+        {canConfirmPickup && (
+          <TouchableOpacity
+            style={styles.arrivedButton}
+            onPress={() => navigation.navigate('PickupConfirm', { orderId })}
+          >
+            <Text style={styles.arrivedButtonText}>I have arrived at pickup</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
