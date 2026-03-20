@@ -15,6 +15,7 @@ import DriverMatching from './src/screens/customer/DriverMatching';
 import TrackingWithMap from './src/screens/customer/TrackingWithMap';
 import OTPScreen from './src/screens/customer/OTPScreen';
 import DeliveryConfirmed from './src/screens/customer/DeliveryConfirmed';
+import OrderDetail from './src/screens/customer/OrderDetail';
 
 // Driver Screens
 import DriverRegister from './src/screens/driver/DriverRegister';
@@ -59,6 +60,7 @@ export default function App() {
         <Stack.Screen name="Tracking" component={TrackingWithMap} />
         <Stack.Screen name="OTPScreen" component={OTPScreen} />
         <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
+        <Stack.Screen name="OrderDetail" component={OrderDetail} />
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />

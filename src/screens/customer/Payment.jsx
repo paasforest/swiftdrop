@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, Linking } from 'react-native';
+import React, { useMemo, useState, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, Modal, ActivityIndicator } from 'react-native';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
+import { WebView } from 'react-native-webview';
 
 const { width, height } = Dimensions.get('window');
 
@@ -15,6 +16,48 @@ const Payment = ({ navigation, route }) => {
   const params = route?.params || {};
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('payfast');
   const auth = getAuth();
+  const [payfastModalVisible, setPayfastModalVisible] = useState(false);
+  const [payfastUrl, setPayfastUrl] = useState(null);
+  const [payfastReturnUrl, setPayfastReturnUrl] = useState(null);
+  const [payfastCancelUrl, setPayfastCancelUrl] = useState(null);
+  const [pendingOrderId, setPendingOrderId] = useState(null);
+  const [paymentMessage, setPaymentMessage] = useState(null);
+  const [payfastLoading, setPayfastLoading] = useState(true);
+  const payHandledRef = useRef(false);
+
+  const closePayfast = () => {
+    setPayfastModalVisible(false);
+    setPaymentMessage('Payment cancelled');
+    setPayfastUrl(null);
+    setPayfastReturnUrl(null);
+    setPayfastCancelUrl(null);
+    setPendingOrderId(null);
+    payHandledRef.current = false;
+  };
+
+  const handlePayfastSuccess = () => {
+    if (payHandledRef.current) return;
+    payHandledRef.current = true;
+    setPayfastModalVisible(false);
+    const orderId = pendingOrderId;
+    setPendingOrderId(null);
+    if (orderId) navigation.navigate('Tracking', { orderId });
+  };
+
+  const handlePayfastNavStateChange = (navState) => {
+    const url = navState?.url ? String(navState.url) : '';
+    if (!url) return;
+
+    if (payfastReturnUrl && url.startsWith(payfastReturnUrl)) {
+      handlePayfastSuccess();
+      return;
+    }
+
+    if (payfastCancelUrl && url.startsWith(payfastCancelUrl)) {
+      closePayfast();
+      return;
+    }
+  };
 
   const {
     pickup_address,
@@ -87,29 +130,41 @@ const Payment = ({ navigation, route }) => {
       );
 
       const orderId = res?.id;
-      if (orderId && selectedPaymentMethod === 'payfast') {
-        try {
-          const pay = await postJson(
-            '/api/payments/payfast/initiate',
-            {
-              order_id: orderId,
-              amount: res?.total_price ?? total,
-              item_name: `SwiftDrop ${res?.order_number ?? `Order ${orderId}`}`,
-            },
-            { token: auth.token }
-          );
-          if (pay?.payment_url) {
-            await Linking.openURL(String(pay.payment_url));
-          } else {
-            alert(pay?.error || 'Could not initiate PayFast');
-          }
-        } catch (e) {
-          // Order is already created; matching/tracking can still proceed.
-          alert(e.message || 'PayFast initiation failed');
+
+      if (!orderId) throw new Error('Could not create order');
+
+      // Gap 2: PayFast in-app WebView (wait for return_url)
+      if (selectedPaymentMethod === 'payfast') {
+        setPaymentMessage(null);
+        setPendingOrderId(orderId);
+        setPayfastLoading(true);
+
+        const pay = await postJson(
+          '/api/payments/payfast/initiate',
+          {
+            order_id: orderId,
+            amount: res?.total_price ?? total,
+            item_name: `SwiftDrop ${res?.order_number ?? `Order ${orderId}`}`,
+          },
+          { token: auth.token }
+        );
+
+        if (!pay?.payment_url) {
+          alert(pay?.error || 'Could not initiate PayFast');
+          setPayfastLoading(false);
+          return;
         }
+
+        setPayfastUrl(String(pay.payment_url));
+        setPayfastReturnUrl(pay.return_url ? String(pay.return_url) : null);
+        setPayfastCancelUrl(pay.cancel_url ? String(pay.cancel_url) : null);
+        setPayfastModalVisible(true);
+        setPayfastLoading(false);
+        return;
       }
 
-      if (orderId) navigation.navigate('Tracking', { orderId });
+      // Wallet payment: navigate immediately after deduction.
+      navigation.navigate('Tracking', { orderId });
     } catch (e) {
       console.error('Pay error:', e.message);
       alert(e.message || 'Payment failed');
@@ -138,6 +193,12 @@ const Payment = ({ navigation, route }) => {
           <Text style={styles.title}>Payment</Text>
           <View style={styles.placeholder} />
         </View>
+
+        {paymentMessage ? (
+          <View style={styles.paymentMessageBox}>
+            <Text style={styles.paymentMessageText}>{paymentMessage}</Text>
+          </View>
+        ) : null}
 
         {/* Order Summary */}
         <View style={styles.orderSummary}>
@@ -227,6 +288,37 @@ const Payment = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={payfastModalVisible}
+        animationType="slide"
+        onRequestClose={closePayfast}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.payfastHeader}>
+            <Text style={styles.payfastHeaderTitle}>PayFast Payment</Text>
+            <TouchableOpacity style={styles.payfastCloseBtn} onPress={closePayfast}>
+              <Text style={styles.payfastCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {payfastLoading && (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator size="large" color="#1A73E8" />
+              <Text style={styles.modalLoadingText}>Loading payment…</Text>
+            </View>
+          )}
+
+          {payfastUrl ? (
+            <WebView
+              source={{ uri: payfastUrl }}
+              onNavigationStateChange={handlePayfastNavStateChange}
+              startInLoadingState
+              style={styles.webview}
+            />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -441,6 +533,68 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  paymentMessageBox: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#FFF1F1',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F6C7C7',
+  },
+  paymentMessageText: {
+    color: '#d93025',
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  payfastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  payfastHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#1A1A1A',
+  },
+  payfastCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  payfastCloseText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#d93025',
+  },
+  modalLoading: {
+    padding: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '600',
+  },
+  webview: {
+    flex: 1,
   },
 });
 

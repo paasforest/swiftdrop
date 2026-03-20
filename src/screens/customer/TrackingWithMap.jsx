@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAuth } from '../../authStore';
-import { getJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
+import { API_BASE_URL } from '../../apiConfig';
 import { subscribeToDriverLocation, calculateETA } from '../../services/locationTracking';
 
 const { width, height } = Dimensions.get('window');
@@ -57,6 +58,30 @@ const TrackingWithMap = ({ navigation, route }) => {
   const [driverLocation, setDriverLocation] = useState(null);
   const [eta, setEta] = useState(null);
   const mapRef = useRef(null);
+  const lastStatusRef = useRef(null);
+  const deliveredReachedRef = useRef(false);
+  const deliveredNavigatedRef = useRef(false);
+
+  const [unmatchedModalVisible, setUnmatchedModalVisible] = useState(false);
+  const [stopPolling, setStopPolling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const pollingErrorRef = useRef(null);
+
+  function computeTimeTakenString(orderData) {
+    try {
+      const startRaw = orderData?.pickup_confirmed_at || orderData?.created_at;
+      const endRaw = orderData?.delivery_confirmed_at || orderData?.updated_at;
+      if (!startRaw || !endRaw) return null;
+      const start = new Date(startRaw).getTime();
+      const end = new Date(endRaw).getTime();
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+      const mins = Math.max(0, Math.round((end - start) / 60000));
+      return `${mins} min`;
+    } catch {
+      return null;
+    }
+  }
 
   // Backend returns `pickup_lat/pickup_lng` and `dropoff_lat/dropoff_lng`,
   // but the map code expects coordinate objects.
@@ -95,7 +120,36 @@ const TrackingWithMap = ({ navigation, route }) => {
       setError(null);
       try {
         const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
-        if (!cancelled) setOrder(data);
+        if (!cancelled) {
+          lastStatusRef.current = data?.status ?? null;
+          if (data?.status === 'delivered' || data?.status === 'completed') deliveredReachedRef.current = true;
+          setOrder(data);
+
+            // If the order is already unmatched when the user opens tracking, show the modal immediately.
+            if (data?.status === 'unmatched') {
+              setUnmatchedModalVisible(true);
+              setStopPolling(true);
+            }
+
+          // If the order is already delivered when the user opens tracking, route them immediately.
+          if (data?.status === 'delivered' && !deliveredNavigatedRef.current) {
+            deliveredNavigatedRef.current = true;
+            setStopPolling(true);
+            navigation.navigate('DeliveryConfirmed', {
+              orderId: data.id,
+              driverName: data.driver_name,
+              driverRating: data.driver_rating,
+              deliveryPhoto: data.delivery_photo_url,
+              fromAddress: data.pickup_address,
+              toAddress: data.dropoff_address,
+              totalPrice: data.total_price,
+              timeTaken: computeTimeTakenString(data),
+              basePrice: data.base_price,
+              insuranceFee: data.insurance_fee,
+              commissionAmount: data.commission_amount,
+            });
+          }
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e.message || 'Failed to load order');
@@ -113,7 +167,7 @@ const TrackingWithMap = ({ navigation, route }) => {
 
   // Subscribe to real-time driver location from Firebase
   useEffect(() => {
-    if (!orderId) return;
+    if (!orderId || stopPolling) return;
 
     console.log('[Tracking] Subscribing to driver location for order:', orderId);
     
@@ -142,7 +196,70 @@ const TrackingWithMap = ({ navigation, route }) => {
       console.log('[Tracking] Unsubscribing from driver location');
       unsubscribe();
     };
-  }, [orderId, delivery_coords]);
+  }, [orderId, delivery_coords, stopPolling]);
+
+  // Poll order status every 10 seconds to handle auto-navigation + unmatched flow.
+  useEffect(() => {
+    if (!orderId) return;
+    if (stopPolling) return;
+    if (unmatchedModalVisible) return;
+
+    const auth = getAuth();
+    if (!auth?.token) return;
+
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (cancelled) return;
+
+        const prevStatus = lastStatusRef.current;
+        const nextStatus = data?.status ?? null;
+
+        lastStatusRef.current = nextStatus;
+        setOrder(data);
+
+        // Gap 4: Unmatched -> stop polling + show modal overlay
+        if (nextStatus === 'unmatched' && prevStatus !== 'unmatched') {
+          setUnmatchedModalVisible(true);
+          setStopPolling(true);
+          return;
+        }
+
+        // Gap 1: delivered -> DeliveryConfirmed
+        if (nextStatus === 'delivered' && prevStatus !== 'delivered' && !deliveredNavigatedRef.current) {
+          deliveredNavigatedRef.current = true;
+          setStopPolling(true);
+          navigation.navigate('DeliveryConfirmed', {
+            orderId: data.id,
+            driverName: data.driver_name,
+            driverRating: data.driver_rating,
+            deliveryPhoto: data.delivery_photo_url,
+            fromAddress: data.pickup_address,
+            toAddress: data.dropoff_address,
+            totalPrice: data.total_price,
+            timeTaken: computeTimeTakenString(data),
+            basePrice: data.base_price,
+            insuranceFee: data.insurance_fee,
+            commissionAmount: data.commission_amount,
+          });
+        }
+      } catch (e) {
+        // Polling shouldn't hard-crash the whole screen; store error for debugging UI if needed.
+        pollingErrorRef.current = e?.message || 'Polling failed';
+      }
+    }
+
+    // Immediate tick, then every 10s.
+    tick();
+    const intervalId = setInterval(tick, 10000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [orderId, stopPolling, unmatchedModalVisible, navigation]);
 
   const handleCall = () => {
     const phone = order?.driver_phone;
@@ -174,6 +291,66 @@ const TrackingWithMap = ({ navigation, route }) => {
         edgePadding: { top: 100, right: 50, bottom: 300, left: 50 },
         animated: true,
       });
+    }
+  };
+
+  const handleRetryMatching = async () => {
+    if (!orderId) return;
+    const auth = getAuth();
+    if (!auth?.token) {
+      navigation.navigate('Login');
+      return;
+    }
+
+    setRetrying(true);
+    try {
+      await postJson(`/api/orders/${orderId}/retry-matching`, {}, { token: auth.token });
+      setUnmatchedModalVisible(false);
+      setStopPolling(false);
+      deliveredReachedRef.current = false;
+      deliveredNavigatedRef.current = false;
+      lastStatusRef.current = 'matching';
+    } catch (e) {
+      console.error('retry-matching failed:', e.message);
+      alert(e.message || 'Could not retry matching');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!orderId) return;
+    const auth = getAuth();
+    if (!auth?.token) {
+      navigation.navigate('Login');
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.token}`,
+        },
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || json?.message || 'Cancel failed');
+
+      const refund = json?.refund;
+      const refundMessage = refund != null ? `Refund: ${formatMoney(refund)}` : (json?.message || 'Order cancelled');
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home', params: { refundMessage } }],
+      });
+    } catch (e) {
+      console.error('cancel order failed:', e.message);
+      alert(e.message || 'Could not cancel the order');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -377,6 +554,39 @@ const TrackingWithMap = ({ navigation, route }) => {
           </View>
         )}
       </View>
+
+      {unmatchedModalVisible && (
+        <View style={styles.unmatchedOverlay}>
+          <View style={styles.unmatchedModal}>
+            <Text style={styles.unmatchedTitle}>No driver available right now</Text>
+            <Text style={styles.unmatchedBody}>
+              We searched for 10 minutes but could not find a driver for your route.
+            </Text>
+
+            <View style={styles.unmatchedButtonRow}>
+              <TouchableOpacity
+                style={[styles.unmatchedButton, styles.unmatchedPrimaryButton]}
+                onPress={handleRetryMatching}
+                disabled={retrying}
+              >
+                <Text style={styles.unmatchedButtonText}>
+                  {retrying ? 'Searching…' : 'Keep Searching'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.unmatchedButton, styles.unmatchedDangerButton]}
+                onPress={handleCancelOrder}
+                disabled={cancelling}
+              >
+                <Text style={styles.unmatchedButtonText}>
+                  {cancelling ? 'Cancelling…' : 'Cancel Order'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -559,6 +769,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  unmatchedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  unmatchedModal: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  unmatchedTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    marginBottom: 8,
+  },
+  unmatchedBody: {
+    fontSize: 14,
+    color: '#666666',
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  unmatchedButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  unmatchedButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unmatchedPrimaryButton: {
+    backgroundColor: '#1A73E8',
+  },
+  unmatchedDangerButton: {
+    backgroundColor: '#d93025',
+  },
+  unmatchedButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   emptyWrap: {
     flex: 1,

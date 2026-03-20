@@ -10,7 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
@@ -46,6 +46,8 @@ const Home = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [displayName, setDisplayName] = useState('there');
+  const route = useRoute();
+  const refundMessage = route?.params?.refundMessage;
 
   const deliveryTiers = [
     {
@@ -112,6 +114,11 @@ const Home = ({ navigation }) => {
   };
 
   const handleDeliveryPress = (order) => {
+    const isCompleted = order?.status === 'delivered' || order?.status === 'completed';
+    if (isCompleted) {
+      navigation.navigate('OrderDetail', { orderId: order.id });
+      return;
+    }
     navigation.navigate('Tracking', { orderId: order.id });
   };
 
@@ -133,6 +140,12 @@ const Home = ({ navigation }) => {
             <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
         </View>
+
+        {refundMessage ? (
+          <View style={styles.refundBanner}>
+            <Text style={styles.refundBannerText}>{refundMessage}</Text>
+          </View>
+        ) : null}
 
         <TouchableOpacity style={styles.searchBar} onPress={handleNewDelivery}>
           <Text style={styles.searchIcon}>📍</Text>
@@ -258,6 +271,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#d93025',
     fontWeight: '600',
+  },
+  refundBanner: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    padding: 14,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  refundBannerText: {
+    fontSize: 14,
+    color: '#1B5E20',
+    fontWeight: '800',
+    lineHeight: 18,
   },
   searchBar: {
     flexDirection: 'row',

@@ -1,49 +1,149 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, TextInput } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  TextInput,
+  Image,
+  Animated,
+} from 'react-native';
+import { getAuth } from '../../authStore';
+import { getJson, postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const DeliveryConfirmed = () => {
-  const [rating, setRating] = useState(4);
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+const DeliveryConfirmed = ({ navigation, route }) => {
+  const params = route?.params || {};
+
+  const orderId = params.orderId;
+  const driverName = params.driverName || 'your driver';
+  const driverRating = params.driverRating;
+  const deliveryPhoto = params.deliveryPhoto;
+  const fromAddress = params.fromAddress;
+  const toAddress = params.toAddress;
+  const totalPrice = params.totalPrice;
+  const timeTaken = params.timeTaken;
+  const basePrice = params.basePrice;
+  const insuranceFee = params.insuranceFee;
+  const commissionAmount = params.commissionAmount;
+
+  const [orderDetails, setOrderDetails] = useState(null);
+
+  const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const deliveryDetails = {
-    address: '456 Oak Avenue, Cape Town',
-    timeTaken: '47 minutes',
-    driverName: 'Sipho M.',
-    deliveryId: '#SD2024031801'
+  const checkScale = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.timing(checkScale, {
+      toValue: 1,
+      duration: 700,
+      useNativeDriver: true,
+    }).start();
+  }, [checkScale]);
+
+  useEffect(() => {
+    if (!orderId) return;
+    const auth = getAuth();
+    if (!auth?.token) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    async function fetchOnce() {
+      attempts += 1;
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        if (cancelled) return;
+        setOrderDetails(data);
+
+        if (data?.delivery_photo_url) return;
+        if (attempts < 10) setTimeout(fetchOnce, 3000);
+      } catch {
+        // If fetching fails, keep showing the best data we already have.
+      }
+    }
+
+    fetchOnce();
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId]);
+
+  const displayDriverName = orderDetails?.driver_name || driverName;
+  const displayDriverRating = orderDetails?.driver_rating ?? driverRating;
+  const displayDeliveryPhoto = orderDetails?.delivery_photo_url || deliveryPhoto;
+  const displayFromAddress = orderDetails?.pickup_address || fromAddress;
+  const displayToAddress = orderDetails?.dropoff_address || toAddress;
+  const displayTotalPrice = orderDetails?.total_price ?? totalPrice;
+  const displayTimeTaken = timeTaken || null;
+  const displayBasePrice = orderDetails?.base_price ?? basePrice;
+  const displayInsuranceFee = orderDetails?.insurance_fee ?? insuranceFee;
+  const currentDriverStars = useMemo(() => {
+    const v = Number(displayDriverRating);
+    if (!Number.isFinite(v) || v <= 0) return 0;
+    return Math.max(1, Math.min(5, Math.round(v)));
+  }, [displayDriverRating]);
+
+  const handleSubmitRating = async () => {
+    if (!orderId) {
+      alert('Missing order id');
+      return;
+    }
+    if (rating < 1) {
+      alert('Please choose a star rating (1 to 5).');
+      return;
+    }
+
+    const auth = getAuth();
+    if (!auth?.token) {
+      navigation.navigate('Login');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await postJson(
+        '/api/ratings',
+        { orderId, rating, comment: comment || null },
+        { token: auth.token }
+      );
+      setSubmitted(true);
+    } catch (e) {
+      alert(e.message || 'Rating submission failed');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleStarPress = (starRating) => {
-    setRating(starRating);
-  };
-
-  const handleSubmit = () => {
-    setSubmitted(true);
-    console.log('Rating submitted:', { rating, comment, deliveryDetails });
-  };
-
-  const handleSkip = () => {
-    console.log('Rating skipped');
-  };
-
-  const handleViewPhoto = () => {
-    console.log('View delivery photo');
-  };
-
-  const renderStars = () => {
+  const renderRatingStars = (interactive) => {
+    const filled = interactive ? rating : currentDriverStars;
     return [1, 2, 3, 4, 5].map((star) => (
       <TouchableOpacity
         key={star}
-        onPress={() => handleStarPress(star)}
+        disabled={!interactive}
+        onPress={() => interactive && setRating(star)}
         style={styles.starButton}
       >
-        <Text style={[
-          styles.star,
-          star <= rating && styles.starFilled
-        ]}>
-          {star <= rating ? '⭐' : '☆'}
+        <Text
+          style={[
+            styles.star,
+            star <= filled ? styles.starFilled : styles.starEmpty,
+          ]}
+        >
+          {star <= filled ? '★' : '☆'}
         </Text>
       </TouchableOpacity>
     ));
@@ -53,61 +153,61 @@ const DeliveryConfirmed = () => {
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
-          {/* Success Animation */}
           <View style={styles.successContainer}>
-            <View style={styles.successCircle}>
+            <Animated.View style={[styles.successCircle, { transform: [{ scale: checkScale }] }]}>
               <Text style={styles.checkmark}>✓</Text>
-            </View>
+            </Animated.View>
           </View>
 
-          {/* Success Message */}
           <Text style={styles.successTitle}>Delivered!</Text>
           <Text style={styles.successSubtitle}>
             Your parcel has been successfully delivered
           </Text>
 
-          {/* Delivery Summary */}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryTitle}>Delivery Summary</Text>
-            
+
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Delivered to:</Text>
-              <Text style={styles.summaryValue}>{deliveryDetails.address}</Text>
-            </View>
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Time taken:</Text>
-              <Text style={styles.summaryValue}>{deliveryDetails.timeTaken}</Text>
-            </View>
-            
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Driver:</Text>
-              <Text style={styles.summaryValue}>{deliveryDetails.driverName}</Text>
+              <Text style={styles.summaryLabel}>From:</Text>
+              <Text style={styles.summaryValue} numberOfLines={1}>{displayFromAddress || '-'}</Text>
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Delivery ID:</Text>
-              <Text style={styles.summaryValue}>{deliveryDetails.deliveryId}</Text>
+              <Text style={styles.summaryLabel}>To:</Text>
+              <Text style={styles.summaryValue} numberOfLines={1}>{displayToAddress || '-'}</Text>
+            </View>
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Time taken:</Text>
+              <Text style={styles.summaryValue}>{displayTimeTaken || '-'}</Text>
+            </View>
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Driver:</Text>
+              <Text style={styles.summaryValue} numberOfLines={1}>{displayDriverName}</Text>
             </View>
           </View>
 
-          {/* Proof of Delivery */}
-          <TouchableOpacity style={styles.photoContainer} onPress={handleViewPhoto}>
+          <View style={styles.photoContainer}>
             <View style={styles.photoThumbnail}>
               <Text style={styles.photoIcon}>📷</Text>
             </View>
-            <Text style={styles.photoText}>Proof of Delivery — tap to view</Text>
-          </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.photoText}>Proof of Delivery</Text>
+              {displayDeliveryPhoto ? (
+                <Image source={{ uri: displayDeliveryPhoto }} style={styles.deliveryImage} />
+              ) : (
+                <Text style={styles.photoMissing}>Loading delivery photo…</Text>
+              )}
+            </View>
+          </View>
 
-          {/* Rating Section */}
-          {!submitted && (
+          {!submitted ? (
             <View style={styles.ratingSection}>
-              <Text style={styles.ratingTitle}>
-                How was your experience with {deliveryDetails.driverName}?
-              </Text>
-              
+              <Text style={styles.ratingTitle}>How was your experience with {displayDriverName}?</Text>
+
               <View style={styles.starsContainer}>
-                {renderStars()}
+                {renderRatingStars(true)}
               </View>
 
               <TextInput
@@ -119,33 +219,45 @@ const DeliveryConfirmed = () => {
                 numberOfLines={3}
                 textAlignVertical="top"
               />
-            </View>
-          )}
 
-          {/* Submitted Confirmation */}
-          {submitted && (
+              <TouchableOpacity
+                style={[styles.submitButton, submitting && { opacity: 0.7 }]}
+                onPress={handleSubmitRating}
+                disabled={submitting}
+              >
+                <Text style={styles.submitButtonText}>
+                  {submitting ? 'Submitting…' : 'Submit Rating'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
             <View style={styles.submittedContainer}>
               <Text style={styles.submittedText}>Thank you for your feedback!</Text>
             </View>
           )}
 
-          {/* Action Buttons */}
-          <View style={styles.buttonContainer}>
-            {!submitted ? (
-              <>
-                <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-                  <Text style={styles.submitButtonText}>Submit Rating</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-                  <Text style={styles.skipButtonText}>Skip</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity style={styles.doneButton} onPress={() => console.log('Go to home')}>
-                <Text style={styles.doneButtonText}>Done</Text>
-              </TouchableOpacity>
-            )}
+          <View style={styles.priceBreakdown}>
+            <Text style={styles.priceTitle}>Price breakdown</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Delivery fee</Text>
+              <Text style={styles.priceValue}>{formatMoney(displayBasePrice)}</Text>
+            </View>
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Insurance</Text>
+              <Text style={styles.priceValue}>{formatMoney(displayInsuranceFee)}</Text>
+            </View>
+            <View style={[styles.priceRow, styles.priceTotalRow]}>
+              <Text style={[styles.priceLabel, { color: '#1A1A1A', fontWeight: '900' }]}>Total</Text>
+              <Text style={[styles.priceValue, { color: '#1A1A1A', fontWeight: '900' }]}>{formatMoney(displayTotalPrice)}</Text>
+            </View>
           </View>
+
+          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.reset({
+            index: 0,
+            routes: [{ name: 'Home' }],
+          })}>
+            <Text style={styles.doneButtonText}>Back to Home</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -282,11 +394,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   star: {
-    fontSize: 40,
-    color: '#E0E0E0',
+    fontSize: 38,
   },
   starFilled: {
     color: '#FFA500',
+  },
+  starEmpty: {
+    color: '#E0E0E0',
   },
   commentInput: {
     backgroundColor: '#F8F9FA',
@@ -311,45 +425,78 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '500',
   },
-  buttonContainer: {
-    width: '100%',
-    paddingHorizontal: 20,
-  },
   submitButton: {
     backgroundColor: '#1A73E8',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 12,
   },
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  skipButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  skipButtonText: {
-    color: '#666666',
-    fontSize: 16,
-    fontWeight: '500',
-  },
   doneButton: {
     backgroundColor: '#4CAF50',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    marginTop: 18,
+    width: '100%',
   },
   doneButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  deliveryImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 12,
+    marginTop: 10,
+    backgroundColor: '#F0F0F0',
+  },
+  photoMissing: {
+    fontSize: 13,
+    color: '#999999',
+    marginTop: 10,
+  },
+  priceBreakdown: {
+    width: '100%',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    padding: 16,
+    marginBottom: 18,
+  },
+  priceTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginBottom: 10,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  priceLabel: {
+    fontSize: 13,
+    color: '#666666',
+    fontWeight: '700',
+  },
+  priceValue: {
+    fontSize: 13,
+    color: '#1A1A1A',
+    fontWeight: '900',
+  },
+  priceTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    paddingTop: 10,
+    marginBottom: 0,
   },
 });
 

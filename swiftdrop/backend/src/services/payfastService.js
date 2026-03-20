@@ -107,6 +107,8 @@ async function initiatePayFastPayment({ order, customer, amount, item_name }) {
   return {
     payment_url,
     payment_id,
+    return_url,
+    cancel_url,
   };
 }
 

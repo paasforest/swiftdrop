@@ -7,6 +7,16 @@ const ROUTE_RADIUS_KM = 15;
 const NEARBY_RADIUS_KM = 10;
 const INTERCITY_RADIUS_KM = 30;
 const MAX_NEARBY_DRIVERS = 5;
+const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+function zoneForDistance(distanceKm) {
+  const d = Number(distanceKm);
+  if (!Number.isFinite(d) || d < 0) return 'city';
+  if (d <= 30) return 'city';
+  if (d <= 80) return 'regional';
+  if (d <= 150) return 'intercity';
+  return 'long_distance';
+}
 
 async function getOrder(orderId) {
   const r = await db.query(`SELECT * FROM orders WHERE id = $1`, [orderId]);
@@ -167,23 +177,6 @@ async function tryStep3(orderId) {
     return;
   }
 
-  if (order.delivery_tier !== 'urgent') {
-    const dist = haversineKm(
-      parseFloat(order.pickup_lat), parseFloat(order.pickup_lng),
-      parseFloat(order.dropoff_lat), parseFloat(order.dropoff_lng)
-    );
-    const basePrice = 250 + dist * 1.8;
-    const commission = basePrice * 0.15;
-    const driverEarnings = basePrice - commission;
-    const insuranceFee = parseFloat(order.insurance_fee) || 0;
-    const totalPrice = basePrice + insuranceFee;
-    await db.query(
-      `UPDATE orders SET delivery_tier = 'urgent', base_price = $1, commission_amount = $2,
-       driver_earnings = $3, total_price = $4, updated_at = NOW() WHERE id = $5`,
-      [basePrice, commission, driverEarnings, totalPrice, orderId]
-    );
-  }
-
   await offerToDriversOneByOne(orderId, toOffer, 0, () => tryStep4(orderId));
 }
 
@@ -210,4 +203,92 @@ function runMatching(orderId) {
   tryStep1(orderId).catch((err) => console.error('Matching error:', err));
 }
 
-module.exports = { runMatching };
+async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
+  const order = await getOrder(orderId);
+  if (!order) return;
+  if (!driverId) return;
+
+  const pickupLat = parseFloat(order.pickup_lat);
+  const pickupLng = parseFloat(order.pickup_lng);
+  const dropoffLat = parseFloat(order.dropoff_lat);
+  const dropoffLng = parseFloat(order.dropoff_lng);
+  if (![pickupLat, pickupLng, dropoffLat, dropoffLng].every((x) => Number.isFinite(x))) return;
+
+  const dist = haversineKm(pickupLat, pickupLng, dropoffLat, dropoffLng);
+  const zone = zoneForDistance(dist);
+  if (zone !== 'intercity') return;
+
+  // Find an unassigned order that is roughly the opposite direction:
+  // - candidate pickup is within 20km of the current order dropoff
+  // - candidate dropoff is within 20km of the current order pickup
+  // This keeps return load driver-side only (customer pricing is unaffected).
+  const candidatesRes = await db.query(
+    `SELECT id, order_number,
+            pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+            status, driver_earnings
+     FROM orders
+     WHERE id != $1
+       AND driver_id IS NULL
+       AND status IN ('matching','unmatched','pending')
+     ORDER BY created_at DESC
+     LIMIT 30`,
+    [orderId]
+  );
+
+  const candidates = candidatesRes.rows || [];
+  const oppositeOrders = candidates
+    .map((c) => {
+      const cPickupLat = parseFloat(c.pickup_lat);
+      const cPickupLng = parseFloat(c.pickup_lng);
+      const cDropoffLat = parseFloat(c.dropoff_lat);
+      const cDropoffLng = parseFloat(c.dropoff_lng);
+      if (![cPickupLat, cPickupLng, cDropoffLat, cDropoffLng].every((x) => Number.isFinite(x))) return null;
+
+      const distPickupToPickup = haversineKm(dropoffLat, dropoffLng, cPickupLat, cPickupLng);
+      const distDropoffToPickup = haversineKm(pickupLat, pickupLng, cDropoffLat, cDropoffLng);
+      return {
+        candidate: c,
+        distPickupToPickup,
+        distDropoffToPickup,
+        score: distPickupToPickup + distDropoffToPickup,
+      };
+    })
+    .filter(Boolean)
+    .filter((x) => x.distPickupToPickup <= 20 && x.distDropoffToPickup <= 20)
+    .sort((a, b) => a.score - b.score);
+
+  const best = oppositeOrders[0]?.candidate;
+  if (!best) return;
+
+  const existing = await db.query(
+    `SELECT id FROM job_offers
+     WHERE order_id = $1 AND driver_id = $2 AND status = 'pending'`,
+    [best.id, driverId]
+  );
+  if (existing.rows.length > 0) return;
+
+  // Ensure it's in `matching` state so the driver can accept it using the
+  // existing accept endpoint.
+  if (String(best.status) !== 'matching') {
+    await db.query(`UPDATE orders SET status = 'matching', updated_at = NOW() WHERE id = $1`, [best.id]);
+  }
+
+  const expiresAt = new Date(Date.now() + RETURN_LOAD_OFFER_TIMEOUT_MS);
+  await db.query(
+    `INSERT INTO job_offers (order_id, driver_id, status, expires_at)
+     VALUES ($1, $2, 'pending', $3)`,
+    [best.id, driverId, expiresAt]
+  );
+
+  const earnAmount = Number(best.driver_earnings) || Number(order.driver_earnings) || Number(best.total_price) || 0;
+  const earnText = Number.isFinite(earnAmount) ? earnAmount.toFixed(2) : '0.00';
+
+  await sendPushNotification(
+    driverId,
+    'Return load available',
+    `Return load available — earn R${earnText} on your way back. Tap to view.`,
+    { orderId: best.id, type: 'return_load_offer', returnLoadForOrderId: orderId }
+  );
+}
+
+module.exports = { runMatching, offerReturnLoadAfterIntercityPickup };

@@ -10,6 +10,16 @@ function formatMoney(n) {
   return `R${x.toFixed(2)}`;
 }
 
+function zoneLabel(zone) {
+  if (!zone) return '';
+  const z = String(zone);
+  if (z === 'city') return 'City';
+  if (z === 'regional') return 'Regional';
+  if (z === 'intercity') return 'Intercity';
+  if (z === 'long_distance') return 'Intercity';
+  return z;
+}
+
 const DeliveryTiers = ({ navigation, route }) => {
   const params = route?.params || {};
   const {
@@ -18,20 +28,12 @@ const DeliveryTiers = ({ navigation, route }) => {
     dropoff_lat,
     dropoff_lng,
     parcel_value,
-    insurance_selected: insuranceSelectedFromNav,
   } = params;
 
   const [selectedTier, setSelectedTier] = useState('express');
-  const [insurance, setInsurance] = useState(false);
   const [estimate, setEstimate] = useState(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
   const [estimateError, setEstimateError] = useState(null);
-
-  useEffect(() => {
-    if (typeof insuranceSelectedFromNav === 'boolean') {
-      setInsurance(insuranceSelectedFromNav);
-    }
-  }, [insuranceSelectedFromNav]);
 
   const deliveryOptions = useMemo(
     () => [
@@ -76,7 +78,6 @@ const DeliveryTiers = ({ navigation, route }) => {
           dropoff_lat,
           dropoff_lng,
           parcel_value,
-          insurance_selected: insurance,
         });
         if (!cancelled) setEstimate(data ?? {});
       } catch (e) {
@@ -89,20 +90,25 @@ const DeliveryTiers = ({ navigation, route }) => {
     return () => {
       cancelled = true;
     };
-  }, [pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value, insurance]);
+  }, [pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value]);
 
   const handleTierSelect = (tierId) => {
     setSelectedTier(tierId);
   };
 
   const handleContinue = () => {
+    const selectedPrice = estimate?.[selectedTier]?.price ?? null;
+    const valueComponent = estimate?.value_component ?? 0;
+    const basePrice = typeof selectedPrice === 'number' ? selectedPrice - valueComponent : null;
+
     navigation.navigate('Payment', {
       ...params,
       delivery_tier: selectedTier,
-      insurance_selected: insurance,
-      delivery_total: estimate?.estimates?.[selectedTier]?.total ?? null,
-      delivery_base_price: estimate?.estimates?.[selectedTier]?.base_price ?? null,
-      delivery_insurance_fee: estimate?.estimates?.[selectedTier]?.insurance_fee ?? null,
+      // backend ignores this for pricing now, but we keep it for compatibility.
+      insurance_selected: true,
+      delivery_total: selectedPrice,
+      delivery_base_price: basePrice,
+      delivery_insurance_fee: valueComponent,
     });
   };
 
@@ -110,10 +116,8 @@ const DeliveryTiers = ({ navigation, route }) => {
     console.log('Back pressed');
   };
 
-  const selectedTotal = estimate?.estimates?.[selectedTier]?.total;
-  const totalPrice = typeof selectedTotal === 'number' ? selectedTotal : 0;
-  const insuranceFee =
-    estimate?.estimates?.[selectedTier]?.insurance_fee ?? null;
+  const totalPrice = estimate?.[selectedTier]?.price ?? 0;
+  const valueComponent = estimate?.value_component ?? 0;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -130,7 +134,11 @@ const DeliveryTiers = ({ navigation, route }) => {
         {/* Route Info */}
         <View style={styles.routeInfo}>
           <Text style={styles.routeText}>
-            {estimateLoading ? 'Calculating route…' : estimate?.distance_km != null ? `${estimate.distance_km} km` : 'Select delivery speed'}
+            {estimateLoading
+              ? 'Calculating route…'
+              : estimate?.distance_km != null
+                ? `${estimate.distance_km} km · ${zoneLabel(estimate.zone)}`
+                : 'Select delivery speed'}
           </Text>
         </View>
 
@@ -150,6 +158,7 @@ const DeliveryTiers = ({ navigation, route }) => {
               style={[
                 styles.optionCard,
                 selectedTier === option.id && styles.optionCardSelected,
+                estimate?.[option.id]?.available === false && styles.optionCardUnavailable,
               ]}
               onPress={() => handleTierSelect(option.id)}
             >
@@ -160,7 +169,9 @@ const DeliveryTiers = ({ navigation, route }) => {
                   </View>
                   <View style={styles.optionInfo}>
                     <Text style={styles.optionName}>{option.name}</Text>
-                    <Text style={styles.optionDescription}>{option.description}</Text>
+                    <Text style={styles.optionDescription}>
+                      {estimate?.[option.id]?.time ?? option.description}
+                    </Text>
                   </View>
                 </View>
                 <View style={styles.optionRight}>
@@ -170,10 +181,25 @@ const DeliveryTiers = ({ navigation, route }) => {
                     </View>
                   )}
                   <Text style={styles.optionPrice}>
-                    {estimate?.estimates?.[option.id]?.total != null ? formatMoney(estimate.estimates[option.id].total) : '—'}
+                    {estimate?.[option.id]?.price != null ? formatMoney(estimate[option.id].price) : '—'}
                   </Text>
+
+                  {estimate?.[option.id]?.driver_earns != null && (
+                    <Text style={styles.driverEarnsText}>
+                      Driver earns {formatMoney(estimate[option.id].driver_earns)}
+                    </Text>
+                  )}
                 </View>
               </View>
+
+              <View style={styles.priceLockBadge}>
+                <Text style={styles.priceLockBadgeText}>This price is guaranteed — never changes</Text>
+              </View>
+
+              {estimate?.[option.id]?.available === false ? (
+                <Text style={styles.unavailableText}>Unavailable right now</Text>
+              ) : null}
+
               {selectedTier === option.id && (
                 <View style={styles.checkmark}>
                   <Text style={styles.checkmarkText}>✓</Text>
@@ -183,31 +209,19 @@ const DeliveryTiers = ({ navigation, route }) => {
           ))}
         </View>
 
-        {/* Insurance Option */}
-        <View style={styles.insuranceSection}>
-          <TouchableOpacity
-            style={styles.insuranceItem}
-            onPress={() => setInsurance(!insurance)}
-          >
-            <View style={styles.insuranceLeft}>
-              <Text style={styles.insuranceTitle}>Parcel Insurance</Text>
-              <View style={styles.insuranceInfo}>
-                <Text style={styles.insurancePrice}>
-                  {insurance
-                    ? insuranceFee != null
-                      ? formatMoney(insuranceFee)
-                      : '—'
-                    : 'R0.00'}
-                </Text>
-                <TouchableOpacity style={styles.infoButton}>
-                  <Text style={styles.infoIcon}>ℹ️</Text>
-                </TouchableOpacity>
-              </View>
+        {/* Protection + upgrade callouts */}
+        <View style={styles.protectionSection}>
+          <View style={styles.protectionBadge}>
+            <Text style={styles.protectionText}>R500 parcel protection included</Text>
+          </View>
+
+          {Number(parcel_value) > 500 ? (
+            <View style={styles.upgradeBox}>
+              <Text style={styles.upgradeTitle}>Upgrade options</Text>
+              <Text style={styles.upgradeLine}>Upgrade to R2000 cover for R25</Text>
+              <Text style={styles.upgradeLine}>Upgrade to R5000 cover for R65</Text>
             </View>
-            <View style={[styles.toggle, insurance && styles.toggleOn]}>
-              <View style={[styles.toggleKnob, insurance && styles.toggleKnobOn]} />
-            </View>
-          </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -374,6 +388,69 @@ const styles = StyleSheet.create({
     color: '#FF6B35',
     marginTop: 8,
     fontWeight: '500',
+  },
+  priceLockBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 16,
+    right: 16,
+    backgroundColor: '#E8F4FF',
+    borderWidth: 1,
+    borderColor: '#B9DDFF',
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  priceLockBadgeText: {
+    color: '#1A73E8',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  driverEarnsText: {
+    fontSize: 12,
+    color: '#444444',
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  protectionSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  protectionBadge: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#C8E6C9',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  protectionText: {
+    color: '#1B5E20',
+    fontWeight: '900',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  upgradeBox: {
+    backgroundColor: '#F8F9FA',
+    borderColor: '#E0E0E0',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  upgradeTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  upgradeLine: {
+    fontSize: 13,
+    color: '#666666',
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   checkmark: {
     position: 'absolute',

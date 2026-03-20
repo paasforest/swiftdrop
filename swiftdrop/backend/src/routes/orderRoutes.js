@@ -17,6 +17,8 @@ router.post('/', auth, order.createOrder);
 
 router.get('/:id/tracking', auth, order.getOrderTracking);
 router.post('/:id/cancel', auth, order.cancelOrder);
+router.delete('/:id', auth, order.cancelOrder);
+router.post('/:id/retry-matching', auth, order.retryMatching);
 router.post('/:id/accept', auth, order.acceptOrder);
 router.post('/:id/decline', auth, order.declineOrder);
 router.patch('/:id/status', auth, order.updateOrderStatus);

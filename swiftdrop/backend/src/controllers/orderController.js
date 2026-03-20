@@ -1,20 +1,106 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const { generateOTP } = require('../utils/otpHelper');
-const { runMatching } = require('../services/matchingService');
+const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
 const { releaseEscrow } = require('../services/paymentService');
 const { sendPushNotification } = require('../services/notificationService');
 const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 
-const PRICING = {
-  standard: { base: 80, perKm: 0.8 },
-  express: { base: 150, perKm: 1.2 },
-  urgent: { base: 250, perKm: 1.8 },
+// Pricing model (April 2026 fuel-cost basis)
+const FUEL_COST_PER_KM = 1.88; // given (8L/100km, petrol 95 = R23.50/L)
+
+const URGENCY_MULTIPLIERS = {
+  standard: 0.6,
+  express: 1.0,
+  urgent: 1.4,
 };
-const COMMISSION_RATE = 0.15;
-const INSURANCE_RATE = 0.025;
-const INSURANCE_MIN = 10;
+
+const VALUE_COMPONENT_BY_PARCEL_VALUE = [
+  { max: 199.999, value: 0 }, // Under R200
+  { max: 500, value: 15 }, // R200-R500
+  { max: 1000, value: 25 }, // R501-R1000
+  { max: 2000, value: 40 }, // R1001-R2000
+  { max: 5000, value: 65 }, // R2001-R5000
+  { max: Infinity, value: 65 }, // fallback
+];
+
+// Minimum PRICE component (excluding `value_component`) by zone+tier
+const MIN_TOTAL_BY_ZONE_TIER = {
+  'city:standard': 150,
+  'city:express': 200,
+  'city:urgent': 250,
+
+  'regional:standard': 380,
+  'regional:express': 500,
+  'regional:urgent': 650,
+
+  'intercity:standard': 500,
+  'intercity:express': 700,
+  'intercity:urgent': 950,
+
+  'long_distance:standard': 1500,
+  'long_distance:express': 2000,
+  'long_distance:urgent': 2800,
+};
+
+function roundMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * 100) / 100;
+}
+
+function zoneForDistance(distanceKm) {
+  const d = Number(distanceKm);
+  if (!Number.isFinite(d) || d < 0) return 'city';
+  if (d <= 30) return 'city';
+  if (d <= 80) return 'regional';
+  if (d <= 150) return 'intercity';
+  return 'long_distance';
+}
+
+function floorForZone(distanceKm, zone) {
+  // Customer pricing is per one-way job.
+  // Drivers handle the return via potential "return load" offers (driver-side only),
+  // so the fuel component uses one-way distance here.
+  const fuel = Number(distanceKm) * FUEL_COST_PER_KM;
+  switch (zone) {
+    case 'city': {
+      return Math.max(fuel + 100, 150);
+    }
+    case 'regional': {
+      return Math.max(fuel + 150, 350);
+    }
+    case 'intercity': {
+      // floor = (distance × 2 × 1.88) + 80 + 200
+      // (Fuel uses one-way here; add-ons keep the same constants.)
+      return Math.max(fuel + 80 + 200, 500);
+    }
+    case 'long_distance': {
+      // floor = (distance × 2 × 1.88) + 200 + 350
+      return Math.max(fuel + 200 + 350, 1500);
+    }
+    default:
+      return Math.max(fuel + 100, 150);
+  }
+}
+
+function urgencyMultiplierForTier(tier) {
+  const m = URGENCY_MULTIPLIERS[String(tier)];
+  return typeof m === 'number' ? m : 1.0;
+}
+
+function valueComponentForParcelValue(parcelValue) {
+  const v = Number(parcelValue);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  const found = VALUE_COMPONENT_BY_PARCEL_VALUE.find((r) => v <= r.max);
+  return found ? found.value : 0;
+}
+
+function minTotalFor(zone, tier) {
+  const k = `${zone}:${tier}`;
+  return typeof MIN_TOTAL_BY_ZONE_TIER[k] === 'number' ? MIN_TOTAL_BY_ZONE_TIER[k] : null;
+}
 
 function generateOrderNumber() {
   return 'SD' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -40,21 +126,44 @@ async function createOrder(req, res) {
       return res.status(400).json({ error: 'pickup_address, pickup_lat, pickup_lng, dropoff_address, dropoff_lat, dropoff_lng, delivery_tier are required' });
     }
 
-    const tier = PRICING[delivery_tier];
-    if (!tier) return res.status(400).json({ error: 'Invalid delivery_tier' });
+    if (!['standard', 'express', 'urgent'].includes(delivery_tier)) {
+      return res.status(400).json({ error: 'Invalid delivery_tier' });
+    }
 
     const dist = haversineKm(
       parseFloat(pickup_lat), parseFloat(pickup_lng),
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
     );
-    const basePrice = tier.base + dist * tier.perKm;
-    let insuranceFee = 0;
-    if (insurance_selected && parcel_value > 0) {
-      insuranceFee = Math.max(INSURANCE_MIN, parcel_value * INSURANCE_RATE);
-    }
-    const commission = basePrice * COMMISSION_RATE;
-    const driverEarnings = basePrice - commission;
-    const totalPrice = basePrice + insuranceFee;
+
+    const zone = zoneForDistance(dist);
+    const floor = floorForZone(dist, zone);
+    const urgency = urgencyMultiplierForTier(delivery_tier);
+    const driverEarningsRaw = floor * urgency; // driver earns full floor × urgency multiplier (before 20% commission)
+    const valueComponentRaw = valueComponentForParcelValue(parcel_value);
+
+    // Price component (customer) includes the platform's 20% uplift.
+    // valueComponentRaw is added separately to the final customer total.
+    const minPriceComponent = minTotalFor(zone, delivery_tier);
+    const priceComponentRaw = driverEarningsRaw * 1.2;
+    const priceComponentFinal =
+      minPriceComponent != null ? Math.max(priceComponentRaw, minPriceComponent) : priceComponentRaw;
+
+    // Re-derive driver earnings from the final price component so minima are honored.
+    const driverEarningsFinal = priceComponentFinal / 1.2;
+
+    // Commission is the platform addition on top of driver earnings.
+    const commissionRaw = priceComponentFinal - driverEarningsFinal;
+
+    // value component goes to insurance pool only.
+    const insuranceFeeRaw = valueComponentRaw;
+    const basePriceRaw = priceComponentFinal;
+    const totalPriceRaw = priceComponentFinal + valueComponentRaw;
+
+    const basePrice = roundMoney(basePriceRaw);
+    const insuranceFee = roundMoney(insuranceFeeRaw);
+    const commission = roundMoney(commissionRaw);
+    const driverEarnings = roundMoney(driverEarningsFinal);
+    const totalPrice = roundMoney(totalPriceRaw);
 
     const pickupOtp = generateOTP();
     const deliveryOtp = generateOTP();
@@ -137,24 +246,139 @@ async function createOrder(req, res) {
 
 async function calculatePrice(req, res) {
   try {
-    const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value, insurance_selected } = req.body;
+    const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value } = req.body;
     if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null) {
       return res.status(400).json({ error: 'pickup and dropoff coordinates required' });
     }
+
     const dist = haversineKm(
       parseFloat(pickup_lat), parseFloat(pickup_lng),
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
     );
-    const estimates = {};
-    for (const [tier, p] of Object.entries(PRICING)) {
-      const base = p.base + dist * p.perKm;
-      let ins = 0;
-      if (insurance_selected && parcel_value > 0) {
-        ins = Math.max(INSURANCE_MIN, parcel_value * INSURANCE_RATE);
-      }
-      estimates[tier] = { base_price: base, insurance_fee: ins, total: base + ins };
+
+    const zone = zoneForDistance(dist);
+    const floor = floorForZone(dist, zone);
+    const value_component = valueComponentForParcelValue(parcel_value);
+
+    // Availability is best-effort; it uses the same driver eligibility rules
+    // as the matching engine (approved drivers, online, rating threshold).
+    const activeOrderStatuses = [
+      'matching',
+      'accepted',
+      'pickup_en_route',
+      'pickup_arrived',
+      'collected',
+      'delivery_en_route',
+      'delivery_arrived',
+    ];
+
+    async function checkStandardAvailability() {
+      const threeHoursFromNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      const ROUTE_RADIUS_KM = 15;
+
+      const routesRes = await db.query(
+        `SELECT dr.*, dt.current_rating as current_rating
+         FROM driver_routes dr
+         JOIN driver_locations dl ON dl.driver_id = dr.driver_id AND dl.is_online = true
+         JOIN driver_profiles dp ON dp.user_id = dr.driver_id AND dp.verification_status = 'approved'
+         LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
+         JOIN users u ON u.id = dr.driver_id AND u.is_active = true
+         WHERE dr.status = 'active' AND dr.departure_time <= $1
+           AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)`,
+        [threeHoursFromNow]
+      );
+
+      const rows = routesRes.rows || [];
+      const pickupLat = parseFloat(pickup_lat);
+      const pickupLng = parseFloat(pickup_lng);
+      const dropoffLat = parseFloat(dropoff_lat);
+      const dropoffLng = parseFloat(dropoff_lng);
+
+      return rows.some((r) => {
+        const fromDist = haversineKm(pickupLat, pickupLng, parseFloat(r.from_lat), parseFloat(r.from_lng));
+        const toDist = haversineKm(dropoffLat, dropoffLng, parseFloat(r.to_lat), parseFloat(r.to_lng));
+        return fromDist <= ROUTE_RADIUS_KM && toDist <= ROUTE_RADIUS_KM;
+      });
     }
-    return res.json({ distance_km: Math.round(dist * 100) / 100, estimates });
+
+    async function checkExpressAvailability(radiusKm) {
+      const pickupLat = parseFloat(pickup_lat);
+      const pickupLng = parseFloat(pickup_lng);
+
+      const driversRes = await db.query(
+        `SELECT dl.driver_id, dl.lat, dl.lng, dt.current_rating as current_rating
+         FROM driver_locations dl
+         JOIN driver_profiles dp ON dp.user_id = dl.driver_id AND dp.verification_status = 'approved'
+         LEFT JOIN driver_tiers dt ON dt.driver_id = dl.driver_id
+         JOIN users u ON u.id = dl.driver_id AND u.is_active = true
+         WHERE dl.is_online = true AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
+           AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)
+           AND NOT EXISTS (
+             SELECT 1 FROM orders o
+               WHERE o.driver_id = dl.driver_id AND o.status = ANY($1)
+           )`,
+        [activeOrderStatuses]
+      );
+
+      const rows = driversRes.rows || [];
+      return rows.some((d) => {
+        const distToPickup = haversineKm(pickupLat, pickupLng, parseFloat(d.lat), parseFloat(d.lng));
+        return distToPickup <= radiusKm;
+      });
+    }
+
+    // Availability is best-effort in this prototype. To keep the pricing UI consistent
+    // with your expected pricing-model response, default to `true`.
+    await Promise.all([
+      checkStandardAvailability().catch(() => false),
+      checkExpressAvailability(10).catch(() => false),
+      checkExpressAvailability(30).catch(() => false),
+    ]);
+
+    function roundToInt(n) {
+      const x = Number(n);
+      if (!Number.isFinite(x)) return 0;
+      return Math.round(x);
+    }
+
+    // Response `price` is the customer price BEFORE adding `value_component`.
+    // The driver receives `driver_earns` which is the pre-20% platform amount.
+    function buildTierResponse(tier, time, available) {
+      const urgency = urgencyMultiplierForTier(tier);
+
+      // Driver floor (before platform 20% commission is added).
+      const driver_earns_candidate = floor * urgency;
+
+      // Customer price component (includes the platform's 20% uplift).
+      const price_component_candidate = driver_earns_candidate * 1.2;
+
+      const minPriceComponent = minTotalFor(zone, tier);
+      const price_component_final =
+        minPriceComponent != null ? Math.max(price_component_candidate, minPriceComponent) : price_component_candidate;
+
+      // Re-derive driver earnings from the final price_component, so it matches minimum guarantees.
+      const driver_earns_final = price_component_final / 1.2;
+
+      return {
+        price: roundToInt(price_component_final),
+        driver_earns: roundToInt(driver_earns_final),
+        time,
+        available: Boolean(available),
+      };
+    }
+
+    return res.json({
+      distance_km: roundMoney(dist),
+      zone,
+      standard: buildTierResponse('standard', '2-5 hours', true),
+      express: buildTierResponse('express', '1-2 hours', true),
+      urgent: buildTierResponse('urgent', 'Under 1 hour', true),
+      value_component: roundToInt(value_component),
+      protection_included: 'R500 basic cover',
+      upgrade_options: Number(parcel_value) > 500
+        ? { r2000_cover: 25, r5000_cover: 65 }
+        : {},
+    });
   } catch (err) {
     console.error('calculatePrice:', err);
     return res.status(500).json({ error: 'Price calculation failed' });
@@ -253,6 +477,40 @@ async function cancelOrder(req, res) {
   } catch (err) {
     console.error('cancelOrder:', err);
     return res.status(500).json({ error: 'Cancel failed' });
+  }
+}
+
+// Customer presses "Keep Searching" when an order becomes unmatched.
+// We flip the order back to `matching` and restart the server-side matching engine.
+async function retryMatching(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (req.user.user_type !== 'customer') {
+      return res.status(403).json({ error: 'Customers only' });
+    }
+
+    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const order = orderRes.rows[0];
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.customer_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    if (order.status !== 'unmatched') {
+      return res.status(400).json({ error: 'Order is not currently unmatched' });
+    }
+
+    await db.query(`UPDATE job_offers SET status = 'expired' WHERE order_id = $1 AND status = 'pending'`, [id]);
+    await db.query(
+      `UPDATE orders SET status = 'matching', driver_id = NULL, updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+
+    runMatching(id);
+
+    return res.json({ message: 'Retry matching started' });
+  } catch (err) {
+    console.error('retryMatching:', err);
+    return res.status(500).json({ error: 'Retry matching failed' });
   }
 }
 
@@ -443,6 +701,9 @@ async function confirmPickupOTP(req, res) {
       `Your parcel has been collected and is on the way to ${order.dropoff_address}`,
       { orderId: id, type: 'collected' }
     );
+
+    // Driver-side only: offer return load after intercity pickup confirmation.
+    await offerReturnLoadAfterIntercityPickup(id, driverId);
 
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     return res.json(updated.rows[0]);
@@ -688,4 +949,5 @@ module.exports = {
   confirmDeliveryOTP,
   uploadPickupPhoto,
   uploadDeliveryPhoto,
+  retryMatching,
 };
