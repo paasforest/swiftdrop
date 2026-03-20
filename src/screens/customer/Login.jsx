@@ -224,6 +224,24 @@ const Login = ({ navigation }) => {
               <Text style={styles.loginButtonText}>{isSubmitting ? 'Logging in...' : 'Login'}</Text>
             </TouchableOpacity>
 
+            {/* Driver registration */}
+            <TouchableOpacity
+              style={styles.driverRegisterButton}
+              onPress={() => navigation.navigate('DriverRegister')}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.driverRegisterButtonText}>Register as Driver</Text>
+            </TouchableOpacity>
+
+            {/* Customer registration */}
+            <TouchableOpacity
+              onPress={() => setActiveTab('register')}
+              disabled={isSubmitting}
+              style={styles.customerRegisterLink}
+            >
+              <Text style={styles.customerRegisterLinkText}>Register as Customer</Text>
+            </TouchableOpacity>
+
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or</Text>
@@ -432,6 +450,30 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  driverRegisterButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#1A73E8',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  driverRegisterButtonText: {
+    color: '#1A73E8',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  customerRegisterLink: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  customerRegisterLinkText: {
+    color: '#1A73E8',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   registerButton: {
     backgroundColor: '#FF6B35',

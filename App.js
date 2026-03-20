@@ -26,6 +26,7 @@ import PickupConfirm from './src/screens/driver/PickupConfirm';
 import EnRouteDelivery from './src/screens/driver/EnRouteDelivery';
 import DeliveryConfirm from './src/screens/driver/DeliveryConfirm';
 import Earnings from './src/screens/driver/Earnings';
+import DriverOTPScreen from './src/screens/driver/DriverOTPScreen';
 
 // Admin Screens
 import AdminOverview from './src/screens/admin/AdminOverview';
@@ -61,6 +62,7 @@ export default function App() {
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
+        <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
         <Stack.Screen name="DriverHome" component={DriverHome} />
         <Stack.Screen name="PostRoute" component={PostRoute} />
         <Stack.Screen name="JobOffer" component={JobOffer} />

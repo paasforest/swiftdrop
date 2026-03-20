@@ -4,6 +4,7 @@ const cors = require('cors');
 const authRoutes = require('./src/routes/authRoutes');
 const orderRoutes = require('./src/routes/orderRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
+const adminDriverRoutes = require('./src/routes/adminDriverRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/admin', adminDriverRoutes);
 
 app.get('/', (req, res) => {
   res.json({ name: 'SwiftDrop API', version: '1.0.0' });

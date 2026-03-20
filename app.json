@@ -11,10 +11,18 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.swiftdrop.app"
+      "bundleIdentifier": "com.swiftdrop.app",
+      "config": {
+        "googleMapsApiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
+      }
     },
     "android": {
-      "package": "com.swiftdrop.app"
+      "package": "com.swiftdrop.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
+        }
+      }
     }
   }
 }

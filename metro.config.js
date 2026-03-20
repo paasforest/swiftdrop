@@ -7,4 +7,12 @@ if (!Array.prototype.toReversed) {
 
 const { getDefaultConfig } = require('expo/metro-config');
 
-module.exports = getDefaultConfig(__dirname);
+const config = getDefaultConfig(__dirname);
+
+// Keep Metro from recursively watching unrelated nested dependencies
+// that can exhaust Linux inotify watchers (ENOSPC).
+config.resolver.blockList = [
+  /swiftdrop\/admin\/node_modules\/.*/,
+];
+
+module.exports = config;

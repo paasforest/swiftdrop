@@ -150,9 +150,37 @@ async function registerDriver(req, res) {
         [user.id]
       );
       await client.query('COMMIT');
+      
+      // Testing / relaxed mode: skip OTP and return tokens.
+      if (!requirePhoneVerificationForAuth()) {
+        const accessToken = jwt.sign(
+          { userId: user.id, userType: user.user_type },
+          JWT_SECRET,
+          { expiresIn: ACCESS_EXPIRY }
+        );
+        const refreshToken = jwt.sign(
+          { userId: user.id, type: 'refresh' },
+          JWT_SECRET,
+          { expiresIn: REFRESH_EXPIRY }
+        );
+
+        return res.status(201).json({
+          message: 'Driver registration successful.',
+          user: sanitizeUser(user),
+          phoneVerificationRequired: false,
+          token: accessToken,
+          refreshToken,
+        });
+      }
+
+      const otp = generateOTP();
+      await storeOTP(user.id, phoneNorm, otp, 'verify_phone');
+      await sendSMS(phoneNorm, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
+
       return res.status(201).json({
-        message: 'Driver registration successful. Upload documents to complete verification.',
+        message: 'Driver registration successful. Please verify your phone with the OTP sent.',
         user: sanitizeUser(user),
+        phoneVerificationRequired: true,
       });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -264,7 +292,16 @@ async function login(req, res) {
         `SELECT verification_status FROM driver_profiles WHERE user_id = $1`,
         [user.id]
       );
-      extra.verification_status = profile.rows[0]?.verification_status || 'pending';
+      const verificationStatus = profile.rows[0]?.verification_status || 'pending';
+      extra.verification_status = verificationStatus;
+
+      // Drivers can only log in after admin approval.
+      if (verificationStatus !== 'approved') {
+        return res.status(403).json({
+          error: 'Driver account is under review. Please try again later.',
+          verification_status: verificationStatus,
+        });
+      }
     }
 
     const accessToken = jwt.sign(

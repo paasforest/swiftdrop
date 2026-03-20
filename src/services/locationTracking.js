@@ -73,18 +73,16 @@ export function stopDriverLocationTracking() {
  */
 export function subscribeToDriverLocation(orderId, callback) {
   const locationRef = ref(database, `active_deliveries/${orderId}/driver_location`);
-  
-  onValue(locationRef, (snapshot) => {
+
+  // onValue returns an unsubscribe function. Use it to avoid stale listeners.
+  const unsubscribe = onValue(locationRef, (snapshot) => {
     const location = snapshot.val();
-    if (location) {
+    if (location && typeof location.latitude === 'number' && typeof location.longitude === 'number') {
       callback(location);
     }
   });
 
-  // Return unsubscribe function
-  return () => {
-    off(locationRef);
-  };
+  return () => unsubscribe();
 }
 
 /**
