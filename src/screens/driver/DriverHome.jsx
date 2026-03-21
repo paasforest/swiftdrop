@@ -206,7 +206,7 @@ const DriverHome = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <GradientHeader style={styles.heroGradient}>
+      <GradientHeader>
         <View style={styles.header}>
           <View style={styles.driverInfo}>
             <Text style={styles.driverNameLight}>{userName}</Text>
@@ -359,11 +359,6 @@ const styles = StyleSheet.create({
     width,
     minHeight: height,
     paddingBottom: 72,
-  },
-  heroGradient: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
   },
   header: {
     flexDirection: 'row',

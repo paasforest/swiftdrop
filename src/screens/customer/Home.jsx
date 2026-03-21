@@ -126,7 +126,7 @@ const Home = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <GradientHeader style={styles.heroGradient}>
+      <GradientHeader>
         <View style={styles.heroInner}>
           <View style={{ flex: 1 }}>
             <AppText variant="h2" color="textWhite">
@@ -244,11 +244,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     paddingBottom: 72,
-  },
-  heroGradient: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
   },
   heroInner: {
     flexDirection: 'row',
