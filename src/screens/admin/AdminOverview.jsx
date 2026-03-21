@@ -1,190 +1,131 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R0';
+  return `R${x.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
 const AdminOverview = () => {
-  const kpiData = {
-    activeDeliveries: 12,
-    onlineDrivers: 8,
-    todayRevenue: 'R4,820',
-    openDisputes: 2
-  };
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const unmatchedJobs = [
-    {
-      id: '#JOB001',
-      route: 'Worcester to Cape Town',
-      urgency: 'High',
-      time: '5 min ago'
-    },
-    {
-      id: '#JOB002',
-      route: 'Stellenbosch to Somerset West',
-      urgency: 'Medium',
-      time: '12 min ago'
+  const load = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setError('Not signed in');
+      setLoading(false);
+      return;
     }
-  ];
-
-  const recentActivity = [
-    {
-      action: 'New driver registration',
-      details: 'John D. - Cape Town',
-      time: '2 min ago',
-      type: 'driver'
-    },
-    {
-      action: 'Delivery completed',
-      details: 'Order #SD123 - R150',
-      time: '5 min ago',
-      type: 'delivery'
-    },
-    {
-      action: 'Payment processed',
-      details: 'Driver payout - R850',
-      time: '8 min ago',
-      type: 'payment'
-    },
-    {
-      action: 'New dispute opened',
-      details: 'Order #SD124 - Late delivery',
-      time: '15 min ago',
-      type: 'dispute'
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await getJson('/api/admin/dashboard-stats', { token: auth.token });
+      setStats(data);
+    } catch (e) {
+      setError(e.message || 'Failed to load dashboard');
+      setStats(null);
+    } finally {
+      setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const s = stats || {};
+
+  const cards = [
+    {
+      key: 'active',
+      label: 'Active deliveries',
+      value: s.active_deliveries ?? '—',
+      color: '#1A73E8',
+      border: '#1A73E8',
+    },
+    {
+      key: 'online',
+      label: 'Online drivers',
+      value: s.online_drivers ?? '—',
+      color: '#16A34A',
+      border: '#16A34A',
+    },
+    {
+      key: 'revenue',
+      label: 'Today revenue',
+      value: formatMoney(s.today_revenue),
+      color: '#EA580C',
+      border: '#EA580C',
+    },
+    {
+      key: 'disputes',
+      label: 'Open disputes',
+      value: s.open_disputes ?? '—',
+      color: '#DC2626',
+      border: '#DC2626',
+      badge: Number(s.open_disputes) > 0,
+    },
+    {
+      key: 'pending',
+      label: 'Pending applications',
+      value: s.pending_driver_applications ?? '—',
+      color: '#CA8A04',
+      border: '#EAB308',
+    },
+    {
+      key: 'unmatched',
+      label: 'Unmatched orders',
+      value: s.unmatched_orders ?? '—',
+      color: '#64748B',
+      border: '#94A3B8',
+    },
   ];
-
-  const renderKPIs = () => (
-    <View style={styles.kpiContainer}>
-      <View style={styles.kpiCard}>
-        <Text style={styles.kpiNumber}>{kpiData.activeDeliveries}</Text>
-        <Text style={styles.kpiLabel}>Active Deliveries</Text>
-        <View style={styles.kpiTrend}>
-          <Text style={styles.trendIcon}>↑</Text>
-          <Text style={styles.trendText}>+12%</Text>
-        </View>
-      </View>
-
-      <View style={[styles.kpiCard, styles.kpiGreen]}>
-        <Text style={styles.kpiNumber}>{kpiData.onlineDrivers}</Text>
-        <Text style={styles.kpiLabel}>Online Drivers</Text>
-        <View style={styles.kpiTrend}>
-          <Text style={styles.trendIcon}>↑</Text>
-          <Text style={styles.trendText}>+8%</Text>
-        </View>
-      </View>
-
-      <View style={[styles.kpiCard, styles.kpiOrange]}>
-        <Text style={styles.kpiNumber}>{kpiData.todayRevenue}</Text>
-        <Text style={styles.kpiLabel}>Today Revenue</Text>
-        <View style={styles.kpiTrend}>
-          <Text style={styles.trendIcon}>↑</Text>
-          <Text style={styles.trendText}>+23%</Text>
-        </View>
-      </View>
-
-      <View style={[styles.kpiCard, styles.kpiRed]}>
-        <Text style={styles.kpiNumber}>{kpiData.openDisputes}</Text>
-        <Text style={styles.kpiLabel}>Open Disputes</Text>
-        <View style={styles.kpiTrend}>
-          <Text style={styles.trendIcon}>↓</Text>
-          <Text style={styles.trendText}>-15%</Text>
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderLiveMap = () => (
-    <View style={styles.mapContainer}>
-      <Text style={styles.mapTitle}>Live Delivery Map</Text>
-      <View style={styles.mapPlaceholder}>
-        <View style={styles.mapBackground}>
-          {/* Simulated map elements */}
-          <View style={[styles.mapDriver, { left: '20%', top: '30%' }]} />
-          <View style={[styles.mapDriver, { left: '60%', top: '50%' }]} />
-          <View style={[styles.mapDriver, { left: '40%', top: '70%' }]} />
-          <View style={[styles.mapDriver, { left: '80%', top: '20%' }]} />
-          
-          <View style={[styles.mapDelivery, { left: '25%', top: '35%' }]} />
-          <View style={[styles.mapDelivery, { left: '65%', top: '45%' }]} />
-          <View style={[styles.mapDelivery, { left: '35%', top: '75%' }]} />
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderUnmatchedJobs = () => (
-    <View style={styles.alertSection}>
-      <Text style={styles.alertTitle}>Unmatched Jobs</Text>
-      {unmatchedJobs.map((job) => (
-        <View key={job.id} style={styles.alertItem}>
-          <View style={styles.alertLeft}>
-            <Text style={styles.alertId}>{job.id}</Text>
-            <Text style={styles.alertRoute}>{job.route}</Text>
-            <Text style={styles.alertTime}>{job.time}</Text>
-          </View>
-          <View style={[
-            styles.urgencyBadge,
-            job.urgency === 'High' ? styles.urgencyHigh : styles.urgencyMedium
-          ]}>
-            <Text style={styles.urgencyText}>{job.urgency}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
-  const renderRecentActivity = () => (
-    <View style={styles.activitySection}>
-      <Text style={styles.activityTitle}>Recent Activity</Text>
-      {recentActivity.map((activity, index) => (
-        <View key={index} style={styles.activityItem}>
-          <View style={[
-            styles.activityIcon,
-            activity.type === 'driver' && styles.iconDriver,
-            activity.type === 'delivery' && styles.iconDelivery,
-            activity.type === 'payment' && styles.iconPayment,
-            activity.type === 'dispute' && styles.iconDispute
-          ]}>
-            <Text style={styles.activityIconText}>
-              {activity.type === 'driver' ? '👤' :
-               activity.type === 'delivery' ? '📦' :
-               activity.type === 'payment' ? '💰' : '⚠️'}
-            </Text>
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityAction}>{activity.action}</Text>
-            <Text style={styles.activityDetails}>{activity.details}</Text>
-            <Text style={styles.activityTime}>{activity.time}</Text>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Dashboard Overview</Text>
         <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* KPI Cards */}
-        {renderKPIs()}
+      {loading ? (
+        <ActivityIndicator size="large" color="#1A73E8" style={{ marginTop: 40 }} />
+      ) : error ? (
+        <Text style={styles.errorText}>{error}</Text>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.kpiContainer}>
+            {cards.map((c) => (
+              <View
+                key={c.key}
+                style={[styles.kpiCard, { borderTopColor: c.border, borderTopWidth: 4 }]}
+              >
+                <View style={styles.kpiTop}>
+                  <Text style={[styles.kpiNumber, { color: c.color }]}>{c.value}</Text>
+                  {c.badge ? <View style={styles.alertDot} /> : null}
+                </View>
+                <Text style={styles.kpiLabel}>{c.label}</Text>
+              </View>
+            ))}
+          </View>
 
-        {/* Live Map */}
-        {renderLiveMap()}
-
-        {/* Bottom Sections */}
-        <View style={styles.bottomSections}>
-          {/* Unmatched Jobs */}
-          {renderUnmatchedJobs()}
-
-          {/* Recent Activity */}
-          {renderRecentActivity()}
-        </View>
-      </ScrollView>
+          <View style={styles.mapContainer}>
+            <Text style={styles.mapTitle}>Operations</Text>
+            <View style={styles.mapPlaceholder}>
+              <Text style={styles.mapSub}>
+                Live map can be added here. Stats above refresh when you open this screen.
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -194,7 +135,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
     width: width,
-    height: height,
+    minHeight: height,
   },
   header: {
     flexDirection: 'row',
@@ -213,62 +154,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
   },
+  errorText: {
+    color: '#B91C1C',
+    padding: 24,
+  },
   kpiContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 24,
-    marginBottom: 24,
-    gap: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
   },
   kpiCard: {
     flex: 1,
-    minWidth: '45%',
+    minWidth: width > 500 ? '30%' : '45%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
-  kpiGreen: {
-    borderTopWidth: 4,
-    borderTopColor: '#4CAF50',
-  },
-  kpiOrange: {
-    borderTopWidth: 4,
-    borderTopColor: '#FF6B35',
-  },
-  kpiRed: {
-    borderTopWidth: 4,
-    borderTopColor: '#F44336',
+  kpiTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   kpiNumber: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: 'bold',
-    color: '#1A1A1A',
     marginBottom: 4,
   },
   kpiLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666666',
-    marginBottom: 8,
   },
-  kpiTrend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trendIcon: {
-    fontSize: 12,
-    color: '#4CAF50',
-    marginRight: 4,
-  },
-  trendText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '500',
+  alertDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#DC2626',
+    marginBottom: 4,
   },
   mapContainer: {
     marginHorizontal: 24,
@@ -278,171 +206,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#1A1A1A',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   mapPlaceholder: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    height: 300,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
-  },
-  mapBackground: {
-    flex: 1,
-    backgroundColor: '#E8F4F8',
-    position: 'relative',
-  },
-  mapDriver: {
-    position: 'absolute',
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#1A73E8',
-  },
-  mapDelivery: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF6B35',
-  },
-  bottomSections: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginBottom: 24,
-    gap: 16,
-  },
-  alertSection: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  alertTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  alertItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  alertLeft: {
-    flex: 1,
-  },
-  alertId: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 2,
-  },
-  alertRoute: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 2,
-  },
-  alertTime: {
-    fontSize: 11,
-    color: '#999999',
-  },
-  urgencyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  urgencyHigh: {
-    backgroundColor: '#FFEBEE',
-  },
-  urgencyMedium: {
-    backgroundColor: '#FFF3E0',
-  },
-  urgencyText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  urgencyHigh: {
-    color: '#F44336',
-  },
-  urgencyMedium: {
-    color: '#FF9800',
-  },
-  activitySection: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F0F0F0',
+    minHeight: 100,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
   },
-  iconDriver: {
-    backgroundColor: '#E3F2FD',
-  },
-  iconDelivery: {
-    backgroundColor: '#E8F5E8',
-  },
-  iconPayment: {
-    backgroundColor: '#FFF3E0',
-  },
-  iconDispute: {
-    backgroundColor: '#FFEBEE',
-  },
-  activityIconText: {
-    fontSize: 16,
-  },
-  activityContent: {
-    flex: 1,
-  },
-  activityAction: {
+  mapSub: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#1A1A1A',
-    marginBottom: 2,
-  },
-  activityDetails: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 2,
-  },
-  activityTime: {
-    fontSize: 11,
-    color: '#999999',
+    color: '#64748B',
+    lineHeight: 20,
   },
 });
 

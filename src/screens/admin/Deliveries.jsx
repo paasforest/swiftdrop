@@ -1,409 +1,326 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  ActivityIndicator,
+} from 'react-native';
+import { getAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
+const STATUS_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'active', label: 'Active' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'disputed', label: 'Disputed' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R0.00';
+  return `R${x.toFixed(2)}`;
+}
+
+function formatWhen(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return '—';
+  }
+}
+
+function statusBadgeStyle(status) {
+  const s = String(status || '').toLowerCase();
+  if (['delivered', 'completed'].includes(s)) return { bg: '#E8F5E8', fg: '#16A34A' };
+  if (s === 'disputed') return { bg: '#FFEBEE', fg: '#DC2626' };
+  if (s === 'cancelled') return { bg: '#F5F5F5', fg: '#757575' };
+  return { bg: '#E8F4FF', fg: '#1A73E8' };
+}
+
 const Deliveries = () => {
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const searchDebounce = useRef(null);
 
-  const statusOptions = ['All', 'Active', 'Completed', 'Disputed', 'Cancelled'];
+  const [deliveries, setDeliveries] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(null);
 
-  const deliveries = [
-    {
-      id: '#SD2024031801',
-      customer: 'Thabo S.',
-      driver: 'Sipho M.',
-      route: 'Worcester to Cape Town',
-      status: 'Active',
-      amount: 'R200',
-      time: '2:30 PM',
-      pickupPhoto: 'pickup_1.jpg',
-      deliveryPhoto: null,
-      otpTimestamps: {
-        pickup: '2:15 PM',
-        delivery: null
-      }
-    },
-    {
-      id: '#SD2024031802',
-      customer: 'Zanele M.',
-      driver: 'John D.',
-      route: 'Stellenbosch to Somerset West',
-      status: 'Completed',
-      amount: 'R120',
-      time: '11:15 AM',
-      pickupPhoto: 'pickup_2.jpg',
-      deliveryPhoto: 'delivery_2.jpg',
-      otpTimestamps: {
-        pickup: '10:45 AM',
-        delivery: '11:10 AM'
-      }
-    },
-    {
-      id: '#SD2024031803',
-      customer: 'Peter K.',
-      driver: 'Mary J.',
-      route: 'Cape Town CBD to Sea Point',
-      status: 'Completed',
-      amount: 'R85',
-      time: '9:45 AM',
-      pickupPhoto: 'pickup_3.jpg',
-      deliveryPhoto: 'delivery_3.jpg',
-      otpTimestamps: {
-        pickup: '9:20 AM',
-        delivery: '9:40 AM'
-      }
-    },
-    {
-      id: '#SD2024031804',
-      customer: 'Sarah L.',
-      driver: 'David R.',
-      route: 'Paarl to Wellington',
-      status: 'Disputed',
-      amount: 'R150',
-      time: 'Yesterday',
-      pickupPhoto: 'pickup_4.jpg',
-      deliveryPhoto: 'delivery_4.jpg',
-      otpTimestamps: {
-        pickup: '3:30 PM',
-        delivery: '4:15 PM'
-      }
-    },
-    {
-      id: '#SD2024031805',
-      customer: 'Mike T.',
-      driver: 'Lisa S.',
-      route: 'Durbanville to Bellville',
-      status: 'Cancelled',
-      amount: 'R95',
-      time: 'Yesterday',
-      pickupPhoto: null,
-      deliveryPhoto: null,
-      otpTimestamps: {
-        pickup: null,
-        delivery: null
-      }
-    },
-    {
-      id: '#SD2024031806',
-      customer: 'Anna B.',
-      driver: 'Tom W.',
-      route: 'Somerset West to Strand',
-      status: 'Active',
-      amount: 'R110',
-      time: '1:20 PM',
-      pickupPhoto: 'pickup_6.jpg',
-      deliveryPhoto: null,
-      otpTimestamps: {
-        pickup: '1:05 PM',
-        delivery: null
-      }
-    },
-    {
-      id: '#SD2024031807',
-      customer: 'Chris D.',
-      driver: 'Emma K.',
-      route: 'Cape Town to Milnerton',
-      status: 'Completed',
-      amount: 'R130',
-      time: '12:00 PM',
-      pickupPhoto: 'pickup_7.jpg',
-      deliveryPhoto: 'delivery_7.jpg',
-      otpTimestamps: {
-        pickup: '11:35 AM',
-        delivery: '11:55 AM'
-      }
-    },
-    {
-      id: '#SD2024031808',
-      customer: 'Laura M.',
-      driver: 'Kevin P.',
-      route: 'Goodwood to Parow',
-      status: 'Active',
-      amount: 'R75',
-      time: '3:45 PM',
-      pickupPhoto: 'pickup_8.jpg',
-      deliveryPhoto: null,
-      otpTimestamps: {
-        pickup: '3:30 PM',
-        delivery: null
-      }
+  const [selectedId, setSelectedId] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(searchDebounce.current);
+  }, [searchInput]);
+
+  const load = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setError('Not signed in');
+      setLoading(false);
+      return;
     }
-  ];
+    setError(null);
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
+    try {
+      const qs = new URLSearchParams({
+        page: String(page),
+        limit: '20',
+        status: selectedStatus,
+      });
+      if (search) qs.set('search', search);
+      const data = await getJson(`/api/admin/deliveries?${qs.toString()}`, { token: auth.token });
+      const rows = Array.isArray(data.deliveries) ? data.deliveries : [];
+      setTotal(Number(data.total) || 0);
+      if (page === 1) {
+        setDeliveries(rows);
+      } else {
+        setDeliveries((prev) => [...prev, ...rows]);
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to load');
+      if (page === 1) setDeliveries([]);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [page, selectedStatus, search]);
 
-  const handleStatusFilter = (status) => {
-    setSelectedStatus(status.toLowerCase());
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const handleViewDelivery = (delivery) => {
-    setSelectedDelivery(delivery);
-  };
-
-  const handleCloseDetail = () => {
-    setSelectedDelivery(null);
-  };
-
-  const handleDispute = (deliveryId) => {
-    console.log('Open dispute for delivery:', deliveryId);
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Active': return '#1A73E8';
-      case 'Completed': return '#4CAF50';
-      case 'Disputed': return '#F44336';
-      case 'Cancelled': return '#757575';
-      default: return '#757575';
+  const openDetail = async (row) => {
+    const auth = getAuth();
+    if (!auth?.token) return;
+    setSelectedId(row.id);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const o = await getJson(`/api/orders/${row.id}`, { token: auth.token });
+      setDetail(o);
+    } catch {
+      setDetail(row);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
-  const getStatusBg = (status) => {
-    switch (status) {
-      case 'Active': return '#E8F4FF';
-      case 'Completed': return '#E8F5E8';
-      case 'Disputed': return '#FFEBEE';
-      case 'Cancelled': return '#F5F5F5';
-      default: return '#F5F5F5';
-    }
+  const closeDetail = () => {
+    setSelectedId(null);
+    setDetail(null);
   };
 
-  const filteredDeliveries = selectedStatus === 'all' 
-    ? deliveries 
-    : deliveries.filter(d => d.status.toLowerCase() === selectedStatus);
+  const d = detail;
 
-  const renderFilterBar = () => (
-    <View style={styles.filterBar}>
-      <View style={styles.filterLeft}>
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Deliveries</Text>
+      </View>
+
+      <View style={styles.filterBar}>
         <View style={styles.searchBox}>
           <Text style={styles.searchIcon}>🔍</Text>
-          <Text style={styles.searchPlaceholder}>Search deliveries...</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Order # or customer name"
+            placeholderTextColor="#999"
+            value={searchInput}
+            onChangeText={setSearchInput}
+          />
         </View>
-      </View>
-      
-      <View style={styles.filterRight}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {statusOptions.map((status) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
+          {STATUS_OPTIONS.map((opt) => (
             <TouchableOpacity
-              key={status}
+              key={opt.key}
               style={[
                 styles.filterChip,
-                selectedStatus === status.toLowerCase() && styles.filterChipActive
+                selectedStatus === opt.key && styles.filterChipActive,
               ]}
-              onPress={() => handleStatusFilter(status)}
+              onPress={() => {
+                setSelectedStatus(opt.key);
+                setPage(1);
+              }}
             >
-              <Text style={[
-                styles.filterChipText,
-                selectedStatus === status.toLowerCase() && styles.filterChipTextActive
-              ]}>
-                {status}
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedStatus === opt.key && styles.filterChipTextActive,
+                ]}
+              >
+                {opt.label}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
-    </View>
-  );
 
-  const renderDeliveryTable = () => (
-    <View style={styles.tableContainer}>
-      <View style={styles.tableHeader}>
-        <Text style={styles.headerCell}>ID</Text>
-        <Text style={styles.headerCell}>Customer</Text>
-        <Text style={styles.headerCell}>Driver</Text>
-        <Text style={styles.headerCell}>Route</Text>
-        <Text style={styles.headerCell}>Status</Text>
-        <Text style={styles.headerCell}>Amount</Text>
-        <Text style={styles.headerCell}>Time</Text>
-        <Text style={styles.headerCell}>Actions</Text>
-      </View>
-      
-      {filteredDeliveries.map((delivery, index) => (
-        <View key={delivery.id} style={[
-          styles.tableRow,
-          index % 2 === 0 && styles.tableRowStriped
-        ]}>
-          <Text style={styles.tableCell}>{delivery.id}</Text>
-          <Text style={styles.tableCell}>{delivery.customer}</Text>
-          <Text style={styles.tableCell}>{delivery.driver}</Text>
-          <Text style={styles.tableCell} numberOfLines={1}>{delivery.route}</Text>
-          <View style={styles.statusCell}>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusBg(delivery.status) }
-            ]}>
-              <Text style={[
-                styles.statusText,
-                { color: getStatusColor(delivery.status) }
-              ]}>
-                {delivery.status}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.tableCell}>{delivery.amount}</Text>
-          <Text style={styles.tableCell}>{delivery.time}</Text>
-          <TouchableOpacity
-            style={styles.viewButton}
-            onPress={() => handleViewDelivery(delivery)}
-          >
-            <Text style={styles.viewButtonText}>View</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
-    </View>
-  );
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {loading ? <ActivityIndicator color="#1A73E8" style={{ marginTop: 16 }} /> : null}
 
-  const renderDetailPanel = () => {
-    if (!selectedDelivery) return null;
-
-    return (
-      <View style={styles.detailPanel}>
-        <View style={styles.detailHeader}>
-          <Text style={styles.detailTitle}>Delivery Details</Text>
-          <TouchableOpacity onPress={handleCloseDetail}>
-            <Text style={styles.closeButton}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Basic Info */}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailSectionTitle}>Basic Information</Text>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Delivery ID:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.id}</Text>
+      <View style={styles.mainRow}>
+        <ScrollView style={styles.tableScroll} horizontal>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.cell, styles.headerCell, { width: 120 }]}>Order</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 100 }]}>Customer</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 100 }]}>Driver</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 160 }]}>From</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 160 }]}>To</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 90 }]}>Status</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 80 }]}>Amount</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 130 }]}>Created</Text>
+              <Text style={[styles.cell, styles.headerCell, { width: 72 }]}> </Text>
             </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Customer:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.customer}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Driver:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.driver}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Route:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.route}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Amount:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.amount}</Text>
-            </View>
-          </View>
-
-          {/* Addresses */}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailSectionTitle}>Addresses</Text>
-            <View style={styles.addressBlock}>
-              <Text style={styles.addressLabel}>Pickup:</Text>
-              <Text style={styles.addressText}>123 Main Street, Worcester</Text>
-            </View>
-            <View style={styles.addressBlock}>
-              <Text style={styles.addressLabel}>Delivery:</Text>
-              <Text style={styles.addressText}>456 Oak Avenue, Cape Town</Text>
-            </View>
-          </View>
-
-          {/* Photos */}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailSectionTitle}>Photos</Text>
-            <View style={styles.photosContainer}>
-              <View style={styles.photoBlock}>
-                <Text style={styles.photoLabel}>Pickup Photo</Text>
-                {selectedDelivery.pickupPhoto ? (
-                  <View style={styles.photoThumbnail}>
-                    <Text style={styles.photoIcon}>📷</Text>
+            {deliveries.map((row) => {
+              const st = statusBadgeStyle(row.status);
+              return (
+                <View key={String(row.id)} style={styles.tableRow}>
+                  <Text style={[styles.cell, { width: 120 }]} numberOfLines={1}>
+                    {row.order_number || `#${row.id}`}
+                  </Text>
+                  <Text style={[styles.cell, { width: 100 }]} numberOfLines={1}>
+                    {row.customer_name || '—'}
+                  </Text>
+                  <Text style={[styles.cell, { width: 100 }]} numberOfLines={1}>
+                    {row.driver_name || '—'}
+                  </Text>
+                  <Text style={[styles.cell, { width: 160 }]} numberOfLines={2}>
+                    {row.pickup_address || '—'}
+                  </Text>
+                  <Text style={[styles.cell, { width: 160 }]} numberOfLines={2}>
+                    {row.dropoff_address || '—'}
+                  </Text>
+                  <View style={{ width: 90, justifyContent: 'center' }}>
+                    <View style={[styles.badge, { backgroundColor: st.bg }]}>
+                      <Text style={[styles.badgeText, { color: st.fg }]} numberOfLines={1}>
+                        {row.status}
+                      </Text>
+                    </View>
                   </View>
-                ) : (
-                  <Text style={styles.noPhotoText}>No pickup photo</Text>
-                )}
-              </View>
-              <View style={styles.photoBlock}>
-                <Text style={styles.photoLabel}>Delivery Photo</Text>
-                {selectedDelivery.deliveryPhoto ? (
-                  <View style={styles.photoThumbnail}>
-                    <Text style={styles.photoIcon}>📷</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.noPhotoText}>No delivery photo</Text>
-                )}
-              </View>
-            </View>
+                  <Text style={[styles.cell, { width: 80 }]}>
+                    {formatMoney(row.payment_amount ?? row.total_price)}
+                  </Text>
+                  <Text style={[styles.cell, { width: 130, fontSize: 11 }]}>
+                    {formatWhen(row.created_at)}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.viewBtn, { width: 72 }]}
+                    onPress={() => openDetail(row)}
+                  >
+                    <Text style={styles.viewBtnText}>View</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
+        </ScrollView>
 
-          {/* OTP Timestamps */}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailSectionTitle}>OTP Confirmation</Text>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Pickup OTP:</Text>
-              <Text style={styles.detailValue}>
-                {selectedDelivery.otpTimestamps.pickup || 'Not confirmed'}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Delivery OTP:</Text>
-              <Text style={styles.detailValue}>
-                {selectedDelivery.otpTimestamps.delivery || 'Not confirmed'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Payment Breakdown */}
-          <View style={styles.detailSection}>
-            <Text style={styles.detailSectionTitle}>Payment Breakdown</Text>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Delivery Fee:</Text>
-              <Text style={styles.detailValue}>{selectedDelivery.amount}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Commission:</Text>
-              <Text style={styles.detailValue}>R{parseInt(selectedDelivery.amount.replace('R', '')) * 0.15}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Driver Earnings:</Text>
-              <Text style={styles.detailValue}>R{parseInt(selectedDelivery.amount.replace('R', '')) * 0.85}</Text>
-            </View>
-          </View>
-
-          {/* Actions */}
-          <View style={styles.detailActions}>
-            {selectedDelivery.status === 'Active' && (
-              <TouchableOpacity
-                style={styles.disputeButton}
-                onPress={() => handleDispute(selectedDelivery.id)}
-              >
-                <Text style={styles.disputeButtonText}>Open Dispute</Text>
+        {selectedId && (
+          <View style={styles.detailPanel}>
+            <View style={styles.detailHeader}>
+              <Text style={styles.detailTitle}>Delivery detail</Text>
+              <TouchableOpacity onPress={closeDetail}>
+                <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
-            )}
+            </View>
+            {detailLoading ? (
+              <ActivityIndicator color="#1A73E8" style={{ marginTop: 20 }} />
+            ) : d ? (
+              <ScrollView>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>Order: </Text>
+                  {d.order_number || d.id}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>Customer: </Text>
+                  {d.customer_name || '—'}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>Driver: </Text>
+                  {d.driver_name || '—'}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>From: </Text>
+                  {d.pickup_address}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>To: </Text>
+                  {d.dropoff_address}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>Status: </Text>
+                  {d.status}
+                </Text>
+                <Text style={styles.dLine}>
+                  <Text style={styles.dLab}>Total: </Text>
+                  {formatMoney(d.total_price)}
+                </Text>
+                <Text style={styles.dSection}>Photos</Text>
+                <View style={styles.photoRow}>
+                  <View style={styles.photoCol}>
+                    <Text style={styles.photoLab}>Pickup</Text>
+                    {d.pickup_photo_url ? (
+                      <Image source={{ uri: d.pickup_photo_url }} style={styles.photoImg} />
+                    ) : (
+                      <Text style={styles.noPh}>No photo</Text>
+                    )}
+                  </View>
+                  <View style={styles.photoCol}>
+                    <Text style={styles.photoLab}>Delivery</Text>
+                    {d.delivery_photo_url ? (
+                      <Image source={{ uri: d.delivery_photo_url }} style={styles.photoImg} />
+                    ) : (
+                      <Text style={styles.noPh}>No photo</Text>
+                    )}
+                  </View>
+                </View>
+                <Text style={styles.dSection}>OTP times</Text>
+                <Text style={styles.dLine}>Pickup confirmed: {formatWhen(d.pickup_confirmed_at)}</Text>
+                <Text style={styles.dLine}>Delivery confirmed: {formatWhen(d.delivery_confirmed_at)}</Text>
+                <Text style={styles.dSection}>Payment</Text>
+                <Text style={styles.dLine}>Commission: {formatMoney(d.commission_amount)}</Text>
+                <Text style={styles.dLine}>Driver earnings: {formatMoney(d.driver_earnings)}</Text>
+              </ScrollView>
+            ) : null}
           </View>
-        </ScrollView>
+        )}
       </View>
-    );
-  };
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Deliveries</Text>
-        <TouchableOpacity style={styles.exportButton}>
-          <Text style={styles.exportText}>Export</Text>
+      {!loading && deliveries.length < total ? (
+        <TouchableOpacity
+          style={styles.moreBtn}
+          onPress={() => setPage((p) => p + 1)}
+          disabled={loadingMore}
+        >
+          {loadingMore ? (
+            <ActivityIndicator color="#1A73E8" />
+          ) : (
+            <Text style={styles.moreBtnText}>Load more</Text>
+          )}
         </TouchableOpacity>
-      </View>
-
-      {/* Filter Bar */}
-      {renderFilterBar()}
-
-      {/* Main Content */}
-      <View style={styles.content}>
-        {/* Table */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {renderDeliveryTable()}
-        </ScrollView>
-
-        {/* Detail Panel */}
-        {renderDetailPanel()}
-      </View>
+      ) : null}
     </View>
   );
 };
@@ -412,39 +329,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    width: width,
-    height: height,
+    minHeight: height,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 20,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#1A1A1A',
   },
-  exportButton: {
-    backgroundColor: '#1A73E8',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  exportText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
   filterBar: {
-    paddingHorizontal: 24,
-    marginBottom: 16,
-  },
-  filterLeft: {
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
   searchBox: {
     flexDirection: 'row',
@@ -453,25 +352,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E0E0',
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    marginBottom: 10,
   },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  searchPlaceholder: {
-    fontSize: 14,
-    color: '#999999',
-  },
-  filterRight: {
-    flexDirection: 'row',
-  },
+  searchIcon: { fontSize: 16, marginRight: 8 },
+  searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: '#111' },
+  chipsRow: { flexGrow: 0 },
   filterChip: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E0E0E0',
     borderRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     marginRight: 8,
   },
@@ -479,195 +371,69 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A73E8',
     borderColor: '#1A73E8',
   },
-  filterChipText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
-  tableContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    minWidth: 800,
-  },
+  filterChipText: { fontSize: 13, color: '#666', fontWeight: '500' },
+  filterChipTextActive: { color: '#FFFFFF' },
+  errorText: { color: '#B91C1C', paddingHorizontal: 16 },
+  mainRow: { flex: 1, flexDirection: width > 700 ? 'row' : 'column' },
+  tableScroll: { flex: 1 },
+  table: { minWidth: width > 700 ? width - 420 : width - 32, paddingHorizontal: 8 },
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  headerCell: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    flex: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingBottom: 8,
+    marginBottom: 4,
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F0F0F0',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  tableRowStriped: {
-    backgroundColor: '#FAFAFA',
-  },
-  tableCell: {
-    fontSize: 12,
-    color: '#1A1A1A',
-    flex: 1,
-  },
-  statusCell: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  viewButton: {
+  cell: { fontSize: 11, color: '#333', paddingRight: 6 },
+  headerCell: { fontWeight: '800', color: '#111', fontSize: 11 },
+  badge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
+  badgeText: { fontSize: 9, fontWeight: '700' },
+  viewBtn: {
     backgroundColor: '#1A73E8',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
     alignItems: 'center',
   },
-  viewButtonText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '500',
-  },
+  viewBtnText: { color: '#FFF', fontWeight: '700', fontSize: 11 },
   detailPanel: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 400,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
+    width: width > 700 ? 380 : '100%',
+    maxHeight: width > 700 ? height - 100 : 320,
+    backgroundColor: '#FFF',
+    borderTopWidth: width > 700 ? 0 : 1,
+    borderLeftWidth: width > 700 ? 1 : 0,
+    borderColor: '#E5E7EB',
+    padding: 12,
   },
   detailHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  detailTitle: { fontSize: 16, fontWeight: '800' },
+  closeButton: { fontSize: 20, color: '#666' },
+  dLine: { fontSize: 13, color: '#333', marginBottom: 6, lineHeight: 18 },
+  dLab: { fontWeight: '700', color: '#555' },
+  dSection: { fontWeight: '800', marginTop: 12, marginBottom: 6, color: '#111' },
+  photoRow: { flexDirection: 'row' },
+  photoCol: { flex: 1, marginRight: 12 },
+  photoLab: { fontSize: 12, color: '#666', marginBottom: 4 },
+  photoImg: { width: '100%', height: 100, borderRadius: 8, backgroundColor: '#F0F0F0' },
+  noPh: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  moreBtn: {
+    padding: 14,
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    backgroundColor: '#EEF2FF',
+    margin: 16,
+    borderRadius: 10,
   },
-  detailTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
-  },
-  closeButton: {
-    fontSize: 20,
-    color: '#666666',
-  },
-  detailSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  detailSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666666',
-    flex: 1,
-  },
-  detailValue: {
-    fontSize: 14,
-    color: '#1A1A1A',
-    fontWeight: '500',
-    flex: 1,
-    textAlign: 'right',
-  },
-  addressBlock: {
-    marginBottom: 12,
-  },
-  addressLabel: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 4,
-  },
-  addressText: {
-    fontSize: 14,
-    color: '#1A1A1A',
-  },
-  photosContainer: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  photoBlock: {
-    flex: 1,
-  },
-  photoLabel: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 8,
-  },
-  photoThumbnail: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoIcon: {
-    fontSize: 24,
-  },
-  noPhotoText: {
-    fontSize: 12,
-    color: '#999999',
-    fontStyle: 'italic',
-  },
-  detailActions: {
-    padding: 20,
-  },
-  disputeButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  disputeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  moreBtnText: { color: '#1A73E8', fontWeight: '800' },
 });
 
 export default Deliveries;

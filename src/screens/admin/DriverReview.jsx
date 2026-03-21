@@ -1,346 +1,299 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  TextInput,
+  Modal,
+  Alert,
+} from 'react-native';
+import { getAuth } from '../../authStore';
+import { getJson, postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
-const DriverReview = () => {
-  const [selectedDriver, setSelectedDriver] = useState(null);
+function formatAppliedDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return '—';
+  }
+}
 
-  const driverApplications = [
-    {
-      id: 'DRV001',
-      name: 'John Smith',
-      date: '2024-03-18',
-      status: 'Pending Review',
-      email: 'john.smith@email.com',
-      phone: '+27 83 123 4567',
-      photo: '👨‍💼',
-      documents: {
-        idDocument: { uploaded: true, verified: false },
-        driversLicense: { uploaded: true, verified: false },
-        vehicleRegistration: { uploaded: true, verified: false },
-        licenseDisc: { uploaded: true, verified: false },
-        sapsCertificate: { uploaded: true, verified: false }
-      },
-      vehicle: {
-        make: 'Toyota',
-        model: 'Corolla',
-        year: '2018',
-        plate: 'CA 123-456'
-      },
-      backgroundCheck: 'In Progress'
-    },
-    {
-      id: 'DRV002',
-      name: 'Mary Johnson',
-      date: '2024-03-17',
-      status: 'Approved',
-      email: 'mary.j@email.com',
-      phone: '+27 82 987 6543',
-      photo: '👩‍💼',
-      documents: {
-        idDocument: { uploaded: true, verified: true },
-        driversLicense: { uploaded: true, verified: true },
-        vehicleRegistration: { uploaded: true, verified: true },
-        licenseDisc: { uploaded: true, verified: true },
-        sapsCertificate: { uploaded: false, verified: false }
-      },
-      vehicle: {
-        make: 'Volkswagen',
-        model: 'Polo',
-        year: '2020',
-        plate: 'CA 789-012'
-      },
-      backgroundCheck: 'Clear'
-    },
-    {
-      id: 'DRV003',
-      name: 'David Wilson',
-      date: '2024-03-16',
-      status: 'Rejected',
-      email: 'david.w@email.com',
-      phone: '+27 81 555 1234',
-      photo: '👨‍💼',
-      documents: {
-        idDocument: { uploaded: true, verified: true },
-        driversLicense: { uploaded: false, verified: false },
-        vehicleRegistration: { uploaded: false, verified: false },
-        licenseDisc: { uploaded: false, verified: false },
-        sapsCertificate: { uploaded: false, verified: false }
-      },
-      vehicle: null,
-      backgroundCheck: 'Failed'
-    },
-    {
-      id: 'DRV004',
-      name: 'Sarah Brown',
-      date: '2024-03-15',
-      status: 'Suspended',
-      email: 'sarah.b@email.com',
-      phone: '+27 84 222 9876',
-      photo: '👩‍💼',
-      documents: {
-        idDocument: { uploaded: true, verified: true },
-        driversLicense: { uploaded: true, verified: true },
-        vehicleRegistration: { uploaded: true, verified: true },
-        licenseDisc: { uploaded: true, verified: true },
-        sapsCertificate: { uploaded: true, verified: true }
-      },
-      vehicle: {
-        make: 'Ford',
-        model: 'Fiesta',
-        year: '2019',
-        plate: 'CA 345-678'
-      },
-      backgroundCheck: 'Clear'
-    }
-  ];
+function regLabel(t) {
+  if (t === 'uber_bolt') return 'Uber / Bolt';
+  if (t === 'new_driver') return 'New driver';
+  return String(t || '—');
+}
 
-  const handleSelectDriver = (driver) => {
-    setSelectedDriver(driver);
-  };
-
-  const handleCloseDetail = () => {
-    setSelectedDriver(null);
-  };
-
-  const handleApproveDriver = () => {
-    console.log('Approve driver:', selectedDriver.id);
-  };
-
-  const handleRejectDriver = () => {
-    console.log('Reject driver:', selectedDriver.id);
-  };
-
-  const handleDocumentAction = (docType, action) => {
-    console.log(`${action} document:`, docType);
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Pending Review': return '#FF9800';
-      case 'Approved': return '#4CAF50';
-      case 'Rejected': return '#F44336';
-      case 'Suspended': return '#757575';
-      default: return '#757575';
-    }
-  };
-
-  const getStatusBg = (status) => {
-    switch (status) {
-      case 'Pending Review': return '#FFF3E0';
-      case 'Approved': return '#E8F5E8';
-      case 'Rejected': return '#FFEBEE';
-      case 'Suspended': return '#F5F5F5';
-      default: return '#F5F5F5';
-    }
-  };
-
-  const renderDriverList = () => (
-    <View style={styles.driverList}>
-      {driverApplications.map((driver) => (
-        <TouchableOpacity
-          key={driver.id}
-          style={[
-            styles.driverCard,
-            selectedDriver?.id === driver.id && styles.driverCardSelected
-          ]}
-          onPress={() => handleSelectDriver(driver)}
-        >
-          <View style={styles.driverCardHeader}>
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverName}>{driver.name}</Text>
-              <Text style={styles.driverDate}>Applied: {driver.date}</Text>
-            </View>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusBg(driver.status) }
-            ]}>
-              <Text style={[
-                styles.statusText,
-                { color: getStatusColor(driver.status) }
-              ]}>
-                {driver.status}
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-
-  const renderDriverDetail = () => {
-    if (!selectedDriver) return null;
-
-    return (
-      <View style={styles.detailPanel}>
-        <View style={styles.detailHeader}>
-          <Text style={styles.detailTitle}>Driver Application Review</Text>
-          <TouchableOpacity onPress={handleCloseDetail}>
-            <Text style={styles.closeButton}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Driver Photo and Basic Info */}
-          <View style={styles.driverPhotoSection}>
-            <View style={styles.driverPhotoLarge}>
-              <Text style={styles.driverPhotoText}>{selectedDriver.photo}</Text>
-            </View>
-            <View style={styles.driverBasicInfo}>
-              <Text style={styles.driverNameLarge}>{selectedDriver.name}</Text>
-              <Text style={styles.driverEmail}>{selectedDriver.email}</Text>
-              <Text style={styles.driverPhone}>{selectedDriver.phone}</Text>
-              <Text style={styles.applicationDate}>Application Date: {selectedDriver.date}</Text>
-            </View>
-          </View>
-
-          {/* Document Verification */}
-          <View style={styles.documentSection}>
-            <Text style={styles.sectionTitle}>Document Verification</Text>
-            <View style={styles.documentsGrid}>
-              {Object.entries(selectedDriver.documents).map(([docType, docInfo]) => (
-                <View key={docType} style={styles.documentCard}>
-                  <Text style={styles.documentTitle}>
-                    {docType.replace(/([A-Z])/g, ' $1').trim()}
-                  </Text>
-                  <View style={styles.documentStatus}>
-                    <View style={[
-                      styles.uploadStatus,
-                      { backgroundColor: docInfo.uploaded ? '#E8F5E8' : '#FFEBEE' }
-                    ]}>
-                      <Text style={[
-                        styles.uploadStatusText,
-                        { color: docInfo.uploaded ? '#4CAF50' : '#F44336' }
-                      ]}>
-                        {docInfo.uploaded ? 'Uploaded' : 'Missing'}
-                      </Text>
-                    </View>
-                    {docInfo.uploaded && (
-                      <View style={[
-                        styles.verifyStatus,
-                        { backgroundColor: docInfo.verified ? '#E8F5E8' : '#FFF3E0' }
-                      ]}>
-                        <Text style={[
-                          styles.verifyStatusText,
-                          { color: docInfo.verified ? '#4CAF50' : '#FF9800' }
-                        ]}>
-                          {docInfo.verified ? 'Verified' : 'Pending'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.documentActions}>
-                    <TouchableOpacity
-                      style={styles.approveButton}
-                      onPress={() => handleDocumentAction(docType, 'approve')}
-                    >
-                      <Text style={styles.approveButtonText}>Approve</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.rejectButton}
-                      onPress={() => handleDocumentAction(docType, 'reject')}
-                    >
-                      <Text style={styles.rejectButtonText}>Reject</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Vehicle Information */}
-          {selectedDriver.vehicle && (
-            <View style={styles.vehicleSection}>
-              <Text style={styles.sectionTitle}>Vehicle Information</Text>
-              <View style={styles.vehicleInfo}>
-                <View style={styles.vehicleDetail}>
-                  <Text style={styles.vehicleLabel}>Make:</Text>
-                  <Text style={styles.vehicleValue}>{selectedDriver.vehicle.make}</Text>
-                </View>
-                <View style={styles.vehicleDetail}>
-                  <Text style={styles.vehicleLabel}>Model:</Text>
-                  <Text style={styles.vehicleValue}>{selectedDriver.vehicle.model}</Text>
-                </View>
-                <View style={styles.vehicleDetail}>
-                  <Text style={styles.vehicleLabel}>Year:</Text>
-                  <Text style={styles.vehicleValue}>{selectedDriver.vehicle.year}</Text>
-                </View>
-                <View style={styles.vehicleDetail}>
-                  <Text style={styles.vehicleLabel}>Plate:</Text>
-                  <Text style={styles.vehicleValue}>{selectedDriver.vehicle.plate}</Text>
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* Background Check */}
-          <View style={styles.backgroundSection}>
-            <Text style={styles.sectionTitle}>Background Check</Text>
-            <View style={[
-              styles.backgroundStatus,
-              { backgroundColor: selectedDriver.backgroundCheck === 'Clear' ? '#E8F5E8' : '#FFF3E0' }
-            ]}>
-              <Text style={[
-                styles.backgroundStatusText,
-                { color: selectedDriver.backgroundCheck === 'Clear' ? '#4CAF50' : '#FF9800' }
-              ]}>
-                {selectedDriver.backgroundCheck}
-              </Text>
-            </View>
-          </View>
-
-          {/* Rating History (for active drivers) */}
-          {selectedDriver.status === 'Approved' && (
-            <View style={styles.ratingSection}>
-              <Text style={styles.sectionTitle}>Rating History</Text>
-              <View style={styles.ratingSummary}>
-                <Text style={styles.ratingNumber}>4.8</Text>
-                <Text style={styles.ratingStars}>⭐⭐⭐⭐⭐</Text>
-                <Text style={styles.ratingCount}>Based on 47 deliveries</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Action Buttons */}
-          <View style={styles.actionSection}>
-            {selectedDriver.status === 'Pending Review' && (
-              <>
-                <TouchableOpacity
-                  style={styles.approveDriverButton}
-                  onPress={handleApproveDriver}
-                >
-                  <Text style={styles.approveDriverButtonText}>Approve Driver</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.rejectDriverButton}
-                  onPress={handleRejectDriver}
-                >
-                  <Text style={styles.rejectDriverButtonText}>Reject Application</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </ScrollView>
+const Thumb = ({ uri, label }) => (
+  <View style={styles.thumbWrap}>
+    <Text style={styles.thumbLabel}>{label}</Text>
+    {uri ? (
+      <Image source={{ uri }} style={styles.thumbImg} resizeMode="cover" />
+    ) : (
+      <View style={styles.thumbPlaceholder}>
+        <Text style={styles.thumbPlaceholderText}>—</Text>
       </View>
-    );
+    )}
+  </View>
+);
+
+const DriverReview = () => {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState(null);
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+
+  const [actionBusy, setActionBusy] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
+
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const loadList = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setListError('Not signed in');
+      setLoading(false);
+      return;
+    }
+    setListError(null);
+    setLoading(true);
+    try {
+      const data = await getJson('/api/admin/drivers?status=pending', { token: auth.token });
+      setList(Array.isArray(data.drivers) ? data.drivers : []);
+    } catch (e) {
+      setListError(e.message || 'Failed to load applications');
+      setList([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
+
+  const loadDetail = async (userId) => {
+    const auth = getAuth();
+    if (!auth?.token) return;
+    setSelectedId(userId);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const data = await getJson(`/api/admin/drivers/${userId}`, { token: auth.token });
+      setDetail(data.driver || null);
+    } catch (e) {
+      setDetailError(e.message || 'Failed to load driver');
+    } finally {
+      setDetailLoading(false);
+    }
   };
+
+  const handleApprove = async () => {
+    if (!detail?.user_id) return;
+    const auth = getAuth();
+    if (!auth?.token) return;
+    setActionBusy(true);
+    setSuccessMsg(null);
+    try {
+      await postJson(`/api/admin/drivers/${detail.user_id}/approve`, {}, { token: auth.token });
+      setSuccessMsg('Driver approved — they will receive an SMS notification');
+      setDetail(null);
+      setSelectedId(null);
+      await loadList();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Approval failed');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const openRejectModal = () => {
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
+
+  const submitReject = async () => {
+    if (!detail?.user_id) return;
+    const r = rejectReason.trim();
+    if (!r) {
+      Alert.alert('Reason required', 'Please enter a rejection reason.');
+      return;
+    }
+    const auth = getAuth();
+    if (!auth?.token) return;
+    setActionBusy(true);
+    try {
+      await postJson(
+        `/api/admin/drivers/${detail.user_id}/reject`,
+        { reason: r },
+        { token: auth.token }
+      );
+      setRejectModalVisible(false);
+      setSuccessMsg('Application rejected');
+      setDetail(null);
+      setSelectedId(null);
+      await loadList();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Reject failed');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const d = detail;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Driver Management</Text>
+        <Text style={styles.title}>Driver applications</Text>
+        {successMsg ? <Text style={styles.successBanner}>{successMsg}</Text> : null}
       </View>
 
-      {/* Main Content */}
       <View style={styles.content}>
-        {/* Driver List */}
-        {renderDriverList()}
+        <View style={styles.leftCol}>
+          {loading ? (
+            <ActivityIndicator color="#1A73E8" style={{ marginTop: 24 }} />
+          ) : listError ? (
+            <Text style={styles.errText}>{listError}</Text>
+          ) : (
+            <ScrollView>
+              {list.map((item) => (
+                <TouchableOpacity
+                  key={String(item.user_id)}
+                  style={[
+                    styles.driverCard,
+                    selectedId === item.user_id && styles.driverCardSelected,
+                  ]}
+                  onPress={() => loadDetail(item.user_id)}
+                >
+                  <Text style={styles.driverName}>{item.full_name}</Text>
+                  <Text style={styles.driverPhone}>{item.phone}</Text>
+                  <Text style={styles.driverMeta}>{regLabel(item.registration_type)}</Text>
+                  <Text style={styles.driverDate}>Applied: {formatAppliedDate(item.applied_at)}</Text>
+                  <View style={styles.pendingBadge}>
+                    <Text style={styles.pendingBadgeText}>Pending</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {list.length === 0 && !loading ? (
+                <Text style={styles.emptyText}>No pending applications.</Text>
+              ) : null}
+            </ScrollView>
+          )}
+        </View>
 
-        {/* Driver Detail */}
-        {renderDriverDetail()}
+        <View style={styles.rightCol}>
+          {!selectedId && !detailLoading && (
+            <Text style={styles.hint}>Select a driver to review details</Text>
+          )}
+          {detailLoading && <ActivityIndicator color="#1A73E8" style={{ marginTop: 40 }} />}
+          {detailError ? <Text style={styles.errText}>{detailError}</Text> : null}
+
+          {d && !detailLoading && (
+            <ScrollView style={styles.detailScroll} keyboardShouldPersistTaps="handled">
+              <View style={styles.detailHeader}>
+                <Text style={styles.detailTitle}>Application detail</Text>
+                <TouchableOpacity onPress={() => { setSelectedId(null); setDetail(null); }}>
+                  <Text style={styles.closeButton}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rowTop}>
+                {d.selfie_url ? (
+                  <Image source={{ uri: d.selfie_url }} style={styles.profilePhoto} />
+                ) : (
+                  <View style={styles.profilePhotoPh} />
+                )}
+                <View style={styles.basicBlock}>
+                  <Text style={styles.driverNameLarge}>{d.full_name}</Text>
+                  <Text style={styles.metaLine}>{d.email}</Text>
+                  <Text style={styles.metaLine}>{d.phone}</Text>
+                  <Text style={styles.metaLine}>Registration: {regLabel(d.registration_type)}</Text>
+                  <Text style={styles.metaLine}>Applied: {formatAppliedDate(d.applied_at)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.sectionTitle}>Documents & photos</Text>
+              <View style={styles.thumbGrid}>
+                <Thumb uri={d.selfie_url} label="Profile (selfie)" />
+                <Thumb uri={d.id_document_url} label="ID document" />
+                <Thumb uri={d.license_url} label="Driver licence" />
+                <Thumb uri={d.vehicle_registration_url} label="Vehicle registration" />
+                <Thumb uri={d.license_disc_url} label="Licence disc" />
+                <Thumb uri={d.saps_clearance_url} label="SAPS clearance" />
+                <Thumb uri={d.uber_profile_screenshot_url} label="Uber/Bolt screenshot" />
+                <Thumb uri={d.vehicle_photo_url} label="Vehicle (main)" />
+                <Thumb uri={d.vehicle_photo_back_url} label="Vehicle back" />
+                <Thumb uri={d.vehicle_photo_side_url} label="Vehicle side" />
+              </View>
+
+              <Text style={styles.sectionTitle}>Vehicle</Text>
+              <View style={styles.vehicleBox}>
+                <Text style={styles.vehLine}>Make: {d.vehicle_make || '—'}</Text>
+                <Text style={styles.vehLine}>Model: {d.vehicle_model || '—'}</Text>
+                <Text style={styles.vehLine}>Year: {d.vehicle_year ?? '—'}</Text>
+                <Text style={styles.vehLine}>Colour: {d.vehicle_color || '—'}</Text>
+                <Text style={styles.vehLine}>Plate: {d.vehicle_plate || '—'}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.approveBtn, actionBusy && styles.btnDisabled]}
+                onPress={handleApprove}
+                disabled={actionBusy}
+              >
+                <Text style={styles.approveBtnText}>Approve Driver</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.rejectBtn, actionBusy && styles.btnDisabled]}
+                onPress={openRejectModal}
+                disabled={actionBusy}
+              >
+                <Text style={styles.rejectBtnText}>Reject Application</Text>
+              </TouchableOpacity>
+              <View style={{ height: 32 }} />
+            </ScrollView>
+          )}
+        </View>
       </View>
+
+      <Modal visible={rejectModalVisible} transparent animationType="fade">
+        <View style={styles.rejectBackdrop}>
+          <View style={styles.rejectCard}>
+            <Text style={styles.rejectTitle}>Rejection reason</Text>
+            <TextInput
+              style={styles.rejectInput}
+              multiline
+              placeholder="Explain why the application is rejected…"
+              value={rejectReason}
+              onChangeText={setRejectReason}
+            />
+            <View style={styles.rejectActions}>
+              <TouchableOpacity onPress={() => setRejectModalVisible(false)}>
+                <Text style={styles.rejectCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.rejectConfirm} onPress={submitReject}>
+                <Text style={styles.rejectConfirmText}>Submit reject</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -349,310 +302,156 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
-    width: width,
-    height: height,
+    minHeight: height,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#1A1A1A',
   },
+  successBanner: {
+    marginTop: 8,
+    color: '#065F46',
+    fontWeight: '600',
+  },
   content: {
     flex: 1,
-    flexDirection: 'row',
-    paddingHorizontal: 24,
+    flexDirection: width > 640 ? 'row' : 'column',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
-  driverList: {
-    width: 300,
-    marginRight: 24,
+  leftCol: {
+    width: width > 640 ? 300 : '100%',
+    maxHeight: width > 640 ? height - 120 : 220,
+    marginRight: width > 640 ? 16 : 0,
+  },
+  rightCol: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minHeight: 200,
   },
   driverCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   driverCardSelected: {
-    borderWidth: 2,
     borderColor: '#1A73E8',
+    borderWidth: 2,
   },
-  driverCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  driverInfo: {
-    flex: 1,
-  },
-  driverName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  driverDate: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
+  driverName: { fontSize: 16, fontWeight: '700', color: '#111' },
+  driverPhone: { fontSize: 13, color: '#666', marginTop: 4 },
+  driverMeta: { fontSize: 12, color: '#444', marginTop: 4 },
+  driverDate: { fontSize: 11, color: '#888', marginTop: 4 },
+  pendingBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
   },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  detailPanel: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
-  },
+  pendingBadgeText: { color: '#E65100', fontWeight: '700', fontSize: 12 },
+  emptyText: { color: '#666', padding: 16 },
+  errText: { color: '#B91C1C', padding: 12 },
+  hint: { padding: 20, color: '#888' },
+  detailScroll: { flex: 1, padding: 16 },
   detailHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  detailTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
-  },
-  closeButton: {
-    fontSize: 20,
-    color: '#666666',
-  },
-  driverPhotoSection: {
-    flexDirection: 'row',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  driverPhotoLarge: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 20,
-  },
-  driverPhotoText: {
-    fontSize: 32,
-  },
-  driverBasicInfo: {
-    flex: 1,
-  },
-  driverNameLarge: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  driverEmail: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 2,
-  },
-  driverPhone: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 2,
-  },
-  applicationDate: {
-    fontSize: 12,
-    color: '#999999',
-  },
-  documentSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  documentsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  documentCard: {
-    width: '48%',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 12,
-  },
-  documentTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  documentStatus: {
-    marginBottom: 8,
-  },
-  uploadStatus: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-    marginBottom: 4,
-  },
-  uploadStatusText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  verifyStatus: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  verifyStatusText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  documentActions: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  approveButton: {
-    flex: 1,
-    backgroundColor: '#4CAF50',
-    paddingVertical: 4,
-    borderRadius: 4,
-    alignItems: 'center',
-  },
-  approveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: '#F44336',
-    paddingVertical: 4,
-    borderRadius: 4,
-    alignItems: 'center',
-  },
-  rejectButtonText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  vehicleSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  vehicleInfo: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 16,
-  },
-  vehicleDetail: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  vehicleLabel: {
-    fontSize: 14,
-    color: '#666666',
-    width: 60,
-  },
-  vehicleValue: {
-    fontSize: 14,
-    color: '#1A1A1A',
-    fontWeight: '500',
-  },
-  backgroundSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  backgroundStatus: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  backgroundStatusText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  ratingSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  ratingSummary: {
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 20,
-  },
-  ratingNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFA500',
-    marginBottom: 4,
-  },
-  ratingStars: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  ratingCount: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  actionSection: {
-    padding: 20,
-  },
-  approveDriverButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
     marginBottom: 12,
   },
-  approveDriverButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  rejectDriverButton: {
-    backgroundColor: '#F44336',
-    paddingVertical: 12,
+  detailTitle: { fontSize: 18, fontWeight: '700' },
+  closeButton: { fontSize: 22, color: '#666' },
+  rowTop: { flexDirection: 'row', marginBottom: 16 },
+  profilePhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#EEE' },
+  profilePhotoPh: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#EEE' },
+  basicBlock: { flex: 1, marginLeft: 12, justifyContent: 'center' },
+  driverNameLarge: { fontSize: 18, fontWeight: '800', color: '#111' },
+  metaLine: { fontSize: 13, color: '#555', marginTop: 2 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 10, marginTop: 8 },
+  thumbGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  thumbWrap: { width: '30%', minWidth: 90, marginBottom: 12 },
+  thumbLabel: { fontSize: 10, color: '#666', marginBottom: 4 },
+  thumbImg: { width: '100%', height: 72, borderRadius: 8, backgroundColor: '#F3F4F6' },
+  thumbPlaceholder: {
+    width: '100%',
+    height: 72,
     borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  rejectDriverButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  thumbPlaceholderText: { color: '#999' },
+  vehicleBox: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
   },
+  vehLine: { fontSize: 14, color: '#333', marginBottom: 4 },
+  approveBtn: {
+    backgroundColor: '#16A34A',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  approveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  rejectBtn: {
+    backgroundColor: '#DC2626',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  rejectBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  btnDisabled: { opacity: 0.6 },
+  rejectBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  rejectCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 16,
+  },
+  rejectTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
+  rejectInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    minHeight: 100,
+    padding: 10,
+    textAlignVertical: 'top',
+  },
+  rejectActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 14,
+    gap: 16,
+  },
+  rejectCancel: { color: '#666', fontWeight: '700', padding: 8 },
+  rejectConfirm: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  rejectConfirmText: { color: '#FFF', fontWeight: '800' },
 });
 
 export default DriverReview;
