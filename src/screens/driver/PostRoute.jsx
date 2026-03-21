@@ -1,180 +1,498 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, TextInput } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  TextInput,
+  ActivityIndicator,
+  Platform,
+  Keyboard,
+} from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { getAuth } from '../../authStore';
+import { postJson } from '../../apiClient';
+import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
+import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
 
 const { width, height } = Dimensions.get('window');
 
-const PostRoute = () => {
-  const [fromCity, setFromCity] = useState('Worcester');
-  const [toCity, setToCity] = useState('Cape Town');
-  const [departureDate, setDepartureDate] = useState(new Date().toLocaleDateString());
-  const [departureTime, setDepartureTime] = useState('09:00');
-  const [bootSpace, setBootSpace] = useState('medium');
+function useDebounced(value, delay) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+function formatDepartureDisplay(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+const PostRoute = ({ navigation }) => {
+  const [fromAddress, setFromAddress] = useState('');
+  const [fromLat, setFromLat] = useState(null);
+  const [fromLng, setFromLng] = useState(null);
+
+  const [toAddress, setToAddress] = useState('');
+  const [toLat, setToLat] = useState(null);
+  const [toLng, setToLng] = useState(null);
+
+  const [fromPredictions, setFromPredictions] = useState([]);
+  const [toPredictions, setToPredictions] = useState([]);
+  const [fromPlacesLoading, setFromPlacesLoading] = useState(false);
+  const [toPlacesLoading, setToPlacesLoading] = useState(false);
+  const [fromPlacesError, setFromPlacesError] = useState(null);
+  const [toPlacesError, setToPlacesError] = useState(null);
+
+  const debouncedFrom = useDebounced(fromAddress, 350);
+  const debouncedTo = useDebounced(toAddress, 350);
+
+  const [departureAt, setDepartureAt] = useState(() => {
+    const d = new Date();
+    d.setMinutes(0, 0, 0);
+    d.setHours(d.getHours() + 1);
+    return d;
+  });
+  const [showDeparturePicker, setShowDeparturePicker] = useState(false);
+  /** Android: date then time (datetime mode not reliable on all API levels). */
+  const [androidPickerMode, setAndroidPickerMode] = useState(null);
+
+  const [bootSpace, setBootSpace] = useState(null);
   const [maxParcels, setMaxParcels] = useState(2);
 
-  const bootSpaceOptions = ['Small', 'Medium', 'Large'];
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+  const navigateTimerRef = useRef(null);
 
-  const handlePostRoute = () => {
-    console.log('Post route:', {
-      from: fromCity,
-      to: toCity,
-      date: departureDate,
-      time: departureTime,
-      bootSpace,
-      maxParcels
-    });
+  useEffect(() => {
+    return () => {
+      if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!debouncedFrom || debouncedFrom.trim().length < 2) {
+        setFromPredictions([]);
+        setFromPlacesError(null);
+        return;
+      }
+      if (!GOOGLE_MAPS_API_KEY) {
+        setFromPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
+        setFromPredictions([]);
+        return;
+      }
+      setFromPlacesLoading(true);
+      setFromPlacesError(null);
+      try {
+        const list = await fetchPlacePredictions(debouncedFrom);
+        if (!cancelled) setFromPredictions(list);
+      } catch (e) {
+        if (!cancelled) {
+          setFromPlacesError(e.message || 'Autocomplete failed');
+          setFromPredictions([]);
+        }
+      } finally {
+        if (!cancelled) setFromPlacesLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedFrom]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!debouncedTo || debouncedTo.trim().length < 2) {
+        setToPredictions([]);
+        setToPlacesError(null);
+        return;
+      }
+      if (!GOOGLE_MAPS_API_KEY) {
+        setToPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
+        setToPredictions([]);
+        return;
+      }
+      setToPlacesLoading(true);
+      setToPlacesError(null);
+      try {
+        const list = await fetchPlacePredictions(debouncedTo);
+        if (!cancelled) setToPredictions(list);
+      } catch (e) {
+        if (!cancelled) {
+          setToPlacesError(e.message || 'Autocomplete failed');
+          setToPredictions([]);
+        }
+      } finally {
+        if (!cancelled) setToPlacesLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedTo]);
+
+  const onSelectFromPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setFromPredictions([]);
+    setFromPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      setFromAddress(details.formatted_address || p.description || '');
+      setFromLat(details.latitude);
+      setFromLng(details.longitude);
+    } catch (e) {
+      setFromPlacesError(e.message || 'Could not load place');
+    }
+  }, []);
+
+  const onSelectToPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setToPredictions([]);
+    setToPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      setToAddress(details.formatted_address || p.description || '');
+      setToLat(details.latitude);
+      setToLng(details.longitude);
+    } catch (e) {
+      setToPlacesError(e.message || 'Could not load place');
+    }
+  }, []);
+
+  const onDepartureChange = useCallback((event, date) => {
+    if (Platform.OS === 'android') {
+      if (event?.type === 'dismissed') {
+        setShowDeparturePicker(false);
+        setAndroidPickerMode(null);
+        return;
+      }
+      if (date) {
+        if (androidPickerMode === 'date') {
+          setDepartureAt((prev) => {
+            const n = new Date(prev);
+            n.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+            return n;
+          });
+          setAndroidPickerMode('time');
+        } else {
+          setDepartureAt((prev) => {
+            const n = new Date(prev);
+            n.setHours(date.getHours(), date.getMinutes(), 0, 0);
+            return n;
+          });
+          setShowDeparturePicker(false);
+          setAndroidPickerMode(null);
+        }
+      }
+      return;
+    }
+    if (event?.type === 'dismissed') return;
+    if (date) setDepartureAt(date);
+  }, [androidPickerMode]);
+
+  const validate = useCallback(() => {
+    if (!fromAddress.trim()) {
+      return 'From address is required.';
+    }
+    if (fromLat == null || fromLng == null) {
+      return 'Choose a From address from the suggestions so we have a location.';
+    }
+    if (!toAddress.trim()) {
+      return 'To address is required.';
+    }
+    if (toLat == null || toLng == null) {
+      return 'Choose a To address from the suggestions so we have a location.';
+    }
+    if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) {
+      return 'Departure time is invalid.';
+    }
+    if (departureAt.getTime() <= Date.now()) {
+      return 'Departure time must be in the future.';
+    }
+    if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) {
+      return 'Max parcels must be between 1 and 5.';
+    }
+    if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) {
+      return 'Please select boot space.';
+    }
+    return null;
+  }, [fromAddress, fromLat, fromLng, toAddress, toLat, toLng, departureAt, maxParcels, bootSpace]);
+
+  const handlePostRoute = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    const v = validate();
+    if (v) {
+      setErrorMessage(v);
+      return;
+    }
+
+    const auth = getAuth();
+    if (!auth?.token) {
+      setErrorMessage('Not signed in. Please log in again.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const body = {
+        from_address: fromAddress.trim(),
+        from_lat: Number(fromLat),
+        from_lng: Number(fromLng),
+        to_address: toAddress.trim(),
+        to_lat: Number(toLat),
+        to_lng: Number(toLng),
+        departure_time: departureAt.toISOString(),
+        max_parcels: maxParcels,
+        boot_space: bootSpace,
+      };
+
+      await postJson('/api/driver-routes', body, { token: auth.token });
+
+      setSuccessMessage('Route posted! We will notify you when parcels match your route.');
+      navigateTimerRef.current = setTimeout(() => {
+        navigation.navigate('DriverHome');
+      }, 2000);
+    } catch (e) {
+      setErrorMessage(e.message || 'Could not post route. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBack = () => {
-    console.log('Back pressed');
+    navigation.goBack();
   };
 
-  const handleInfo = () => {
-    console.log('Show info about posting routes');
-  };
+  const bootSpaceOptions = [
+    { key: 'small', label: 'Small' },
+    { key: 'medium', label: 'Medium' },
+    { key: 'large', label: 'Large' },
+  ];
 
   const incrementParcels = () => {
-    if (maxParcels < 5) {
-      setMaxParcels(maxParcels + 1);
-    }
+    if (maxParcels < 5) setMaxParcels(maxParcels + 1);
   };
 
   const decrementParcels = () => {
-    if (maxParcels > 1) {
-      setMaxParcels(maxParcels - 1);
-    }
+    if (maxParcels > 1) setMaxParcels(maxParcels - 1);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack}>
+          <TouchableOpacity onPress={handleBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Post Your Route</Text>
-          <TouchableOpacity onPress={handleInfo}>
-            <Text style={styles.infoIcon}>ℹ️</Text>
-          </TouchableOpacity>
+          <View style={{ width: 28 }} />
         </View>
 
-        {/* Explanation */}
         <View style={styles.explanationContainer}>
           <Text style={styles.explanationText}>
             Share where you are going and earn by delivering parcels along your way.
           </Text>
         </View>
 
-        {/* Form */}
+        {errorMessage ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        {successMessage ? (
+          <View style={styles.successBanner}>
+            <Text style={styles.successBannerText}>{successMessage}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.formContainer}>
-          {/* From City */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>From</Text>
             <View style={styles.inputContainer}>
               <Text style={styles.inputIcon}>📍</Text>
               <TextInput
                 style={styles.input}
-                value={fromCity}
-                onChangeText={setFromCity}
-                placeholder="Starting city"
+                value={fromAddress}
+                onChangeText={(t) => {
+                  setFromAddress(t);
+                  if (!t.trim()) {
+                    setFromLat(null);
+                    setFromLng(null);
+                  }
+                }}
+                placeholder="Search starting address"
+                placeholderTextColor="#888"
               />
             </View>
+            {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
+            {fromPredictions.length > 0 && (
+              <View style={styles.predictionsBox}>
+                {fromPredictions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.predictionRow}
+                    onPress={() => onSelectFromPrediction(item)}
+                  >
+                    <Text style={styles.predictionMain} numberOfLines={2}>
+                      {item.structured_formatting?.main_text || item.description}
+                    </Text>
+                    <Text style={styles.predictionSub} numberOfLines={1}>
+                      {item.structured_formatting?.secondary_text || ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#1A73E8" /> : null}
           </View>
 
-          {/* To City */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>To</Text>
             <View style={styles.inputContainer}>
               <Text style={styles.inputIcon}>📍</Text>
               <TextInput
                 style={styles.input}
-                value={toCity}
-                onChangeText={setToCity}
-                placeholder="Destination city"
+                value={toAddress}
+                onChangeText={(t) => {
+                  setToAddress(t);
+                  if (!t.trim()) {
+                    setToLat(null);
+                    setToLng(null);
+                  }
+                }}
+                placeholder="Search destination address"
+                placeholderTextColor="#888"
               />
             </View>
+            {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
+            {toPredictions.length > 0 && (
+              <View style={styles.predictionsBox}>
+                {toPredictions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.predictionRow}
+                    onPress={() => onSelectToPrediction(item)}
+                  >
+                    <Text style={styles.predictionMain} numberOfLines={2}>
+                      {item.structured_formatting?.main_text || item.description}
+                    </Text>
+                    <Text style={styles.predictionSub} numberOfLines={1}>
+                      {item.structured_formatting?.secondary_text || ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#1A73E8" /> : null}
           </View>
 
-          {/* Departure Date */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Departure Date</Text>
-            <TouchableOpacity style={styles.dateContainer}>
+            <Text style={styles.inputLabel}>Departure time</Text>
+            <TouchableOpacity
+              style={styles.dateContainer}
+              onPress={() => {
+                if (Platform.OS === 'android') {
+                  setAndroidPickerMode('date');
+                }
+                setShowDeparturePicker(true);
+              }}
+            >
               <Text style={styles.dateIcon}>📅</Text>
-              <Text style={styles.dateText}>{departureDate}</Text>
+              <Text style={styles.dateText}>{formatDepartureDisplay(departureAt)}</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Departure Time */}
-          <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Departure Time</Text>
-            <TouchableOpacity style={styles.timeContainer}>
-              <Text style={styles.timeIcon}>🕐</Text>
-              <Text style={styles.timeText}>{departureTime}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Boot Space */}
-          <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Boot Space</Text>
-            <View style={styles.chipsContainer}>
-              {bootSpaceOptions.map((option) => (
+            {showDeparturePicker && Platform.OS === 'ios' && (
+              <>
+                <DateTimePicker
+                  value={departureAt}
+                  mode="datetime"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onChange={onDepartureChange}
+                />
                 <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.chip,
-                    bootSpace === option.toLowerCase() && styles.chipSelected
-                  ]}
-                  onPress={() => setBootSpace(option.toLowerCase())}
+                  style={styles.iosPickerDone}
+                  onPress={() => setShowDeparturePicker(false)}
                 >
-                  <Text style={[
-                    styles.chipText,
-                    bootSpace === option.toLowerCase() && styles.chipTextSelected
-                  ]}>
-                    {option}
+                  <Text style={styles.iosPickerDoneText}>Done</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {showDeparturePicker && Platform.OS === 'android' && androidPickerMode && (
+              <DateTimePicker
+                value={departureAt}
+                mode={androidPickerMode === 'date' ? 'date' : 'time'}
+                display="default"
+                minimumDate={androidPickerMode === 'date' ? new Date() : undefined}
+                onChange={onDepartureChange}
+              />
+            )}
+          </View>
+
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>Boot space</Text>
+            <View style={styles.chipsContainer}>
+              {bootSpaceOptions.map((opt) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.chip, bootSpace === opt.key && styles.chipSelected]}
+                  onPress={() => setBootSpace(opt.key)}
+                >
+                  <Text style={[styles.chipText, bootSpace === opt.key && styles.chipTextSelected]}>
+                    {opt.label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {/* Max Parcels */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Max Parcels</Text>
+            <Text style={styles.inputLabel}>Max parcels</Text>
             <View style={styles.stepperContainer}>
               <TouchableOpacity
                 style={styles.stepperButton}
                 onPress={decrementParcels}
                 disabled={maxParcels <= 1}
               >
-                <Text style={[
-                  styles.stepperText,
-                  maxParcels <= 1 && styles.stepperTextDisabled
-                ]}>
-                  −
-                </Text>
+                <Text style={[styles.stepperText, maxParcels <= 1 && styles.stepperTextDisabled]}>−</Text>
               </TouchableOpacity>
-              
               <View style={styles.stepperValue}>
                 <Text style={styles.stepperNumber}>{maxParcels}</Text>
               </View>
-              
               <TouchableOpacity
                 style={styles.stepperButton}
                 onPress={incrementParcels}
                 disabled={maxParcels >= 5}
               >
-                <Text style={[
-                  styles.stepperText,
-                  maxParcels >= 5 && styles.stepperTextDisabled
-                ]}>
-                  +
-                </Text>
+                <Text style={[styles.stepperText, maxParcels >= 5 && styles.stepperTextDisabled]}>+</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
 
-        {/* Notice Banner */}
         <View style={styles.noticeBanner}>
           <Text style={styles.noticeIcon}>🔔</Text>
           <Text style={styles.noticeText}>
@@ -183,10 +501,17 @@ const PostRoute = () => {
         </View>
       </ScrollView>
 
-      {/* Post Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.postButton} onPress={handlePostRoute}>
-          <Text style={styles.postButtonText}>Post Route</Text>
+        <TouchableOpacity
+          style={[styles.postButton, submitting && styles.postButtonDisabled]}
+          onPress={handlePostRoute}
+          disabled={submitting || Boolean(successMessage)}
+        >
+          {submitting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.postButtonText}>Post Route</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -198,7 +523,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     width: width,
-    height: height,
+    minHeight: height,
+  },
+  scrollContent: {
+    paddingBottom: 120,
   },
   header: {
     flexDirection: 'row',
@@ -218,13 +546,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1A1A1A',
   },
-  infoIcon: {
-    fontSize: 20,
-    color: '#666666',
-  },
   explanationContainer: {
     paddingHorizontal: 20,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   explanationText: {
     fontSize: 14,
@@ -232,12 +556,40 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
+  errorBanner: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorBannerText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  successBanner: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  successBannerText: {
+    color: '#065F46',
+    fontSize: 14,
+    lineHeight: 20,
+  },
   formContainer: {
     paddingHorizontal: 20,
     marginBottom: 24,
   },
   inputSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   inputLabel: {
     fontSize: 16,
@@ -264,6 +616,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1A1A1A',
   },
+  placesErrorText: {
+    color: '#B91C1C',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  predictionsBox: {
+    marginTop: 8,
+    maxHeight: 180,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  predictionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  predictionMain: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  predictionSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -280,26 +661,21 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 16,
     color: '#1A1A1A',
+    flex: 1,
   },
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    padding: 16,
+  iosPickerDone: {
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  timeIcon: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  timeText: {
+  iosPickerDoneText: {
+    color: '#1A73E8',
+    fontWeight: '600',
     fontSize: 16,
-    color: '#1A1A1A',
   },
   chipsContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   chip: {
@@ -361,7 +737,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 100,
+    marginBottom: 24,
   },
   noticeIcon: {
     fontSize: 20,
@@ -382,12 +758,19 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     paddingTop: 10,
     backgroundColor: '#FFFFFF',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
   },
   postButton: {
     backgroundColor: '#1A73E8',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
+  },
+  postButtonDisabled: {
+    opacity: 0.85,
   },
   postButtonText: {
     color: '#FFFFFF',

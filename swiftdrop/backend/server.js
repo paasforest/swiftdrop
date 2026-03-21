@@ -7,6 +7,7 @@ const paymentRoutes = require('./src/routes/paymentRoutes');
 const adminDriverRoutes = require('./src/routes/adminDriverRoutes');
 const ratingsRoutes = require('./src/routes/ratingsRoutes');
 const driverRoutes = require('./src/routes/driverRoutes');
+const driverRouteRoutes = require('./src/routes/driverRouteRoutes');
 const notificationRoutes = require('./src/routes/notificationRoutes');
 
 const app = express();
@@ -21,6 +22,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminDriverRoutes);
 app.use('/api', ratingsRoutes);
 app.use('/api/drivers', driverRoutes);
+app.use('/api/driver-routes', driverRouteRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {

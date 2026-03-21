@@ -32,7 +32,8 @@
           "sounds": [],
           "mode": "production"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }
