@@ -61,6 +61,8 @@ const TrackingWithMap = ({ navigation, route }) => {
   const deliveredNavigatedRef = useRef(false);
 
   const [unmatchedModalVisible, setUnmatchedModalVisible] = useState(false);
+  const [pickupOTPModalVisible, setPickupOTPModalVisible] = useState(false);
+  const [deliveryOTPModalVisible, setDeliveryOTPModalVisible] = useState(false);
   const [stopPolling, setStopPolling] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -128,6 +130,14 @@ const TrackingWithMap = ({ navigation, route }) => {
             if (data?.status === 'unmatched') {
               setUnmatchedModalVisible(true);
               setStopPolling(true);
+            }
+
+            // If user opens tracking while driver is already waiting (OTP needed now)
+            if (data?.status === 'pickup_arrived') {
+              setPickupOTPModalVisible(true);
+            }
+            if (data?.status === 'delivery_arrived') {
+              setDeliveryOTPModalVisible(true);
             }
 
           // If the order is already delivered when the user opens tracking, route them immediately.
@@ -208,6 +218,16 @@ const TrackingWithMap = ({ navigation, route }) => {
 
         lastStatusRef.current = nextStatus;
         setOrder(data);
+
+        // Pickup OTP modal
+        if (nextStatus === 'pickup_arrived' && prevStatus !== 'pickup_arrived') {
+          setPickupOTPModalVisible(true);
+        }
+
+        // Delivery OTP modal
+        if (nextStatus === 'delivery_arrived' && prevStatus !== 'delivery_arrived') {
+          setDeliveryOTPModalVisible(true);
+        }
 
         // Gap 4: Unmatched -> stop polling + show modal overlay
         if (nextStatus === 'unmatched' && prevStatus !== 'unmatched') {
@@ -570,6 +590,66 @@ const TrackingWithMap = ({ navigation, route }) => {
           </View>
         </View>
       )}
+
+      {/* OTPs are shown to the customer who placed the order. The customer reads the code to
+          the driver — driver cannot fake delivery without the real code from the real customer. */}
+      {pickupOTPModalVisible && (
+        <View style={styles.otpOverlay}>
+          <View style={styles.otpModal}>
+            <Text style={styles.otpTitle}>Driver Has Arrived!</Text>
+
+            <Text style={styles.otpSubtitle}>Read this code to your driver</Text>
+
+            <View style={styles.otpDigitsRow}>
+              {String(order?.pickup_otp ?? '')
+                .split('')
+                .map((digit, i) => (
+                  <View key={i} style={styles.otpDigitBox}>
+                    <Text style={styles.otpDigitText}>{digit}</Text>
+                  </View>
+                ))}
+            </View>
+
+            <Text style={styles.otpWarning}>Only share with your driver</Text>
+
+            <TouchableOpacity
+              style={styles.otpDismissButton}
+              onPress={() => setPickupOTPModalVisible(false)}
+            >
+              <Text style={styles.otpDismissText}>Code Given ✓</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {deliveryOTPModalVisible && (
+        <View style={styles.otpOverlay}>
+          <View style={styles.otpModal}>
+            <Text style={styles.otpTitle}>Driver Has Arrived to Deliver!</Text>
+
+            <Text style={styles.otpSubtitle}>Read this code to your driver</Text>
+
+            <View style={styles.otpDigitsRow}>
+              {String(order?.delivery_otp ?? '')
+                .split('')
+                .map((digit, i) => (
+                  <View key={i} style={styles.otpDigitBox}>
+                    <Text style={styles.otpDigitText}>{digit}</Text>
+                  </View>
+                ))}
+            </View>
+
+            <Text style={styles.otpWarning}>Only share with your driver</Text>
+
+            <TouchableOpacity
+              style={styles.otpDismissButton}
+              onPress={() => setDeliveryOTPModalVisible(false)}
+            >
+              <Text style={styles.otpDismissText}>Code Given ✓</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -806,6 +886,81 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  otpOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  otpModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 30,
+    width: '85%',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  otpTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  otpSubtitle: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  otpDigitsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 20,
+  },
+  otpDigitBox: {
+    width: 60,
+    height: 72,
+    backgroundColor: '#EBF5FB',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1A73E8',
+  },
+  otpDigitText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#1A73E8',
+  },
+  otpWarning: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  otpDismissButton: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  otpDismissText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   emptyWrap: {
     flex: 1,

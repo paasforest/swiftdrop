@@ -403,6 +403,7 @@ async function getOrderById(req, res) {
     if (order.customer_id !== req.user.id && order.driver_id !== req.user.id && req.user.user_type !== 'admin') {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    // Includes pickup_otp / delivery_otp from `orders` (o.*). Customer app shows OTPs to the order owner for handoff.
     return res.json(order);
   } catch (err) {
     console.error('getOrderById:', err);
