@@ -153,10 +153,6 @@ const DeliveryTiers = ({ navigation, route }) => {
             const priceStr =
               tierEstimate?.price != null ? formatMoney(tierEstimate.price) : '—';
             const timeLine = tierEstimate?.time ?? option.description;
-            const driverEarns =
-              tierEstimate?.driver_earns != null
-                ? `Driver earns ${formatMoney(tierEstimate.driver_earns)}`
-                : null;
             const selected = selectedTier === option.id;
 
             return (
@@ -194,20 +190,11 @@ const DeliveryTiers = ({ navigation, route }) => {
                   </View>
                 </View>
 
-                {/* Row 2: time | driver earns */}
+                {/* Row 2: time estimate (driver earnings never shown to customers) */}
                 <View style={styles.cardRow}>
-                  <View style={styles.cardRow2Left}>
-                    <AppText variant="small" color="textSecondary">
-                      {timeLine}
-                    </AppText>
-                  </View>
-                  {driverEarns ? (
-                    <AppText variant="small" color="textSecondary" style={styles.driverEarnsRight}>
-                      {driverEarns}
-                    </AppText>
-                  ) : (
-                    <View style={styles.rowSpacer} />
-                  )}
+                  <AppText variant="small" color="textSecondary" style={styles.timeLineText}>
+                    {timeLine}
+                  </AppText>
                 </View>
 
                 {/* Row 3: zone */}
@@ -413,17 +400,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: spacing.sm,
   },
-  cardRow2Left: {
+  timeLineText: {
     flex: 1,
-    marginRight: spacing.sm,
-  },
-  driverEarnsRight: {
-    textAlign: 'right',
-    fontWeight: '600',
-    maxWidth: '48%',
-  },
-  rowSpacer: {
-    minWidth: 8,
   },
   zoneBadge: {
     alignSelf: 'flex-start',
