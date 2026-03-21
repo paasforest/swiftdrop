@@ -10,8 +10,8 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
@@ -206,7 +206,7 @@ const DriverHome = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={[colors.primary, colors.gradientEnd]} style={styles.heroGradient}>
+      <GradientHeader style={styles.heroGradient}>
         <View style={styles.header}>
           <View style={styles.driverInfo}>
             <Text style={styles.driverNameLight}>{userName}</Text>
@@ -220,7 +220,7 @@ const DriverHome = ({ navigation }) => {
           </View>
           <AvatarPlaceholder size={60} />
         </View>
-      </LinearGradient>
+      </GradientHeader>
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.toggleSection}>
@@ -234,8 +234,8 @@ const DriverHome = ({ navigation }) => {
               style={[
                 styles.toggleCircle,
                 isOnline ? styles.toggleCircleOnline : styles.toggleCircleOffline,
-                isOnline && styles.toggleGlowOnline,
-                statusBusy && styles.toggleCircleBusy,
+                isOnline ? styles.toggleGlowOnline : null,
+                statusBusy ? styles.toggleCircleBusy : null,
               ]}
             >
               {statusBusy ? (

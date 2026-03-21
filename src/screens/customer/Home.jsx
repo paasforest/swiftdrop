@@ -9,8 +9,8 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import GradientHeader from '../../components/GradientHeader';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
@@ -126,7 +126,7 @@ const Home = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={[colors.primary, colors.gradientEnd]} style={styles.heroGradient}>
+      <GradientHeader style={styles.heroGradient}>
         <View style={styles.heroInner}>
           <View style={{ flex: 1 }}>
             <AppText variant="h2" color="textWhite">
@@ -137,7 +137,7 @@ const Home = ({ navigation }) => {
             </AppText>
           </View>
         </View>
-      </LinearGradient>
+      </GradientHeader>
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {refundMessage ? (
