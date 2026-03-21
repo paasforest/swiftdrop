@@ -6,6 +6,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "db:migrate": "node src/database/migrate.js",
+    "db:ensure-admin": "node src/database/ensureAdmin.js",
     "db:seed": "node src/database/seed.js",
     "test:auth": "node tests/auth.test.js"
   },

@@ -96,11 +96,18 @@ curl https://swiftdrop-backend.railway.app/
 
 ---
 
+## 6b. Admin login (first deploy)
+
+- **Migrations + first admin**: Each deploy runs `npm run db:migrate` then `npm run db:ensure-admin`. If no admin user exists yet, one is created using env vars `ADMIN_EMAIL`, `ADMIN_PHONE`, `ADMIN_PASSWORD`, `ADMIN_NAME` (see **`ADMIN_ACCOUNT.md`** in this folder).
+- **Production**: Set **`ADMIN_PASSWORD`** (and optionally `ADMIN_EMAIL` / `ADMIN_PHONE`) in Railway Variables before relying on the default dev password.
+
+---
+
 ## 7. Auto-deploy on every push
 
 - Railway is already connected to your GitHub repo and branch (step 2).
 - Every push to that branch triggers a new build and deploy.
-- Migrations run automatically before each deploy (`preDeployCommand` in `railway.toml`).
+- Migrations and **ensure-admin** run automatically before each deploy (`preDeployCommand` in `railway.toml`).
 
 No extra setup needed for auto-deploy.
 

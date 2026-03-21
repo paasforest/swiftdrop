@@ -51,6 +51,8 @@ The app starts with the **Customer Onboarding** screen. You can navigate through
 - **Driver App:** Navigate to driver screens
 - **Admin Dashboard:** View admin panels
 
+**Admin login** (backend must be running with DB migrated): if no admin exists yet, run from `swiftdrop/backend`: `npm run db:ensure-admin`. Default dev credentials are in **`swiftdrop/backend/ADMIN_ACCOUNT.md`**.
+
 ---
 
 ## 🔧 Troubleshooting
