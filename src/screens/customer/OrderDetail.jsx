@@ -10,9 +10,13 @@ import {
   Image,
   ActivityIndicator,
   Linking,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { getAuth } from '../../authStore';
-import { getJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
 
 const { width, height } = Dimensions.get('window');
 
@@ -45,12 +49,29 @@ function Stars({ rating }) {
   );
 }
 
+const DISPUTE_TYPES = [
+  { value: 'lost_item', label: 'Lost item' },
+  { value: 'damaged', label: 'Damaged' },
+  { value: 'not_delivered', label: 'Not delivered' },
+  { value: 'wrong_item', label: 'Wrong item' },
+  { value: 'driver_behaviour', label: 'Driver behaviour' },
+  { value: 'other', label: 'Other' },
+];
+
 const OrderDetail = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
   const [order, setOrder] = useState(null);
   const [rating, setRating] = useState(null);
+  const [myDisputes, setMyDisputes] = useState([]);
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+
+  const [disputeModalVisible, setDisputeModalVisible] = useState(false);
+  const [disputeType, setDisputeType] = useState('other');
+  const [disputeDescription, setDisputeDescription] = useState('');
+  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [disputeFormError, setDisputeFormError] = useState(null);
+  const [disputeSuccess, setDisputeSuccess] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +96,13 @@ const OrderDetail = ({ navigation, route }) => {
 
         const r = await getJson(`/api/ratings/customer/${orderId}`, { token: auth.token });
         if (!cancelled) setRating(r?.rating || null);
+
+        try {
+          const d = await getJson('/api/disputes/my', { token: auth.token });
+          if (!cancelled) setMyDisputes(Array.isArray(d.disputes) ? d.disputes : []);
+        } catch {
+          if (!cancelled) setMyDisputes([]);
+        }
       } catch (e) {
         if (!cancelled) setError(e.message || 'Failed to load order');
       } finally {
@@ -117,6 +145,65 @@ const OrderDetail = ({ navigation, route }) => {
   const handleDownloadReceipt = () => {
     const url = `data:text/plain;charset=utf-8,${encodeURIComponent(receiptText)}`;
     Linking.openURL(url);
+  };
+
+  const hasOpenDisputeForOrder = useMemo(() => {
+    if (!order?.id) return false;
+    return myDisputes.some(
+      (d) =>
+        Number(d.order_id) === Number(order.id) && ['open', 'in_review'].includes(String(d.status))
+    );
+  }, [myDisputes, order?.id]);
+
+  const canRaiseDispute =
+    order &&
+    ['delivered', 'completed'].includes(String(order.status)) &&
+    !hasOpenDisputeForOrder;
+
+  const openDisputeModal = () => {
+    setDisputeFormError(null);
+    setDisputeSuccess(null);
+    setDisputeDescription('');
+    setDisputeType('other');
+    setDisputeModalVisible(true);
+  };
+
+  const submitDispute = async () => {
+    setDisputeFormError(null);
+    if (!disputeType) {
+      setDisputeFormError('Select a dispute type.');
+      return;
+    }
+    const desc = disputeDescription.trim();
+    if (desc.length < 20) {
+      setDisputeFormError('Description must be at least 20 characters.');
+      return;
+    }
+    const auth = getAuth();
+    if (!auth?.token) {
+      setDisputeFormError('Not signed in.');
+      return;
+    }
+    setDisputeSubmitting(true);
+    try {
+      await postJson(
+        '/api/disputes',
+        {
+          order_id: order.id,
+          dispute_type: disputeType,
+          description: desc,
+        },
+        { token: auth.token }
+      );
+      setDisputeModalVisible(false);
+      setDisputeSuccess('Dispute raised — we will resolve within 24 hours.');
+      const d = await getJson('/api/disputes/my', { token: auth.token });
+      setMyDisputes(Array.isArray(d.disputes) ? d.disputes : []);
+    } catch (e) {
+      setDisputeFormError(e.message || 'Could not submit dispute.');
+    } finally {
+      setDisputeSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -242,8 +329,83 @@ const OrderDetail = ({ navigation, route }) => {
           </TouchableOpacity>
         </View>
 
+        {disputeSuccess ? (
+          <View style={styles.disputeSuccessBanner}>
+            <Text style={styles.disputeSuccessText}>{disputeSuccess}</Text>
+          </View>
+        ) : null}
+
+        {canRaiseDispute ? (
+          <View style={styles.section}>
+            <TouchableOpacity style={styles.disputeBtn} onPress={openDisputeModal}>
+              <Text style={styles.disputeBtnText}>Raise Dispute</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={{ height: 24 }} />
       </ScrollView>
+
+      <Modal visible={disputeModalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Raise a dispute</Text>
+            <Text style={styles.modalHint}>Choose a type and describe what happened (min. 20 characters).</Text>
+
+            <Text style={styles.modalLabel}>Dispute type</Text>
+            <ScrollView style={styles.typeList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {DISPUTE_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.value}
+                  style={[styles.typeRow, disputeType === t.value && styles.typeRowSelected]}
+                  onPress={() => setDisputeType(t.value)}
+                >
+                  <Text style={[styles.typeRowText, disputeType === t.value && styles.typeRowTextSelected]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.modalLabel}>Description</Text>
+            <TextInput
+              style={styles.modalInput}
+              multiline
+              numberOfLines={5}
+              placeholder="Describe the issue in detail…"
+              value={disputeDescription}
+              onChangeText={setDisputeDescription}
+              textAlignVertical="top"
+            />
+
+            {disputeFormError ? <Text style={styles.modalError}>{disputeFormError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                onPress={() => setDisputeModalVisible(false)}
+                disabled={disputeSubmitting}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSubmit, disputeSubmitting && { opacity: 0.85 }]}
+                onPress={submitDispute}
+                disabled={disputeSubmitting}
+              >
+                {disputeSubmitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalSubmitText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -434,6 +596,130 @@ const styles = StyleSheet.create({
   receiptBtnText: {
     color: '#FFFFFF',
     fontWeight: '900',
+  },
+  disputeBtn: {
+    backgroundColor: '#B45309',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  disputeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  disputeSuccessBanner: {
+    marginHorizontal: 16,
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  disputeSuccessText: {
+    color: '#065F46',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 18,
+    maxHeight: height * 0.88,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  modalHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 14,
+  },
+  modalLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  typeList: {
+    maxHeight: 160,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+  },
+  typeRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  typeRowSelected: {
+    backgroundColor: '#EBF5FB',
+  },
+  typeRowText: {
+    fontSize: 15,
+    color: '#374151',
+  },
+  typeRowTextSelected: {
+    color: '#1A73E8',
+    fontWeight: '700',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 100,
+    fontSize: 15,
+    color: '#111827',
+    marginBottom: 10,
+  },
+  modalError: {
+    color: '#B91C1C',
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancel: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  modalCancelText: {
+    color: '#6B7280',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  modalSubmit: {
+    backgroundColor: '#1A73E8',
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 10,
+    minWidth: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
   },
 });
 

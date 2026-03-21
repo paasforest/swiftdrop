@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS payments (
   escrow_status VARCHAR(20) NOT NULL DEFAULT 'held'
     CHECK (escrow_status IN ('held','released','refunded')),
   payout_status VARCHAR(20) NOT NULL DEFAULT 'pending'
-    CHECK (payout_status IN ('pending','processing','paid')),
+    CHECK (payout_status IN ('pending','processing','paid','held')),
   payout_date TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -140,17 +140,19 @@ CREATE TABLE IF NOT EXISTS disputes (
   id SERIAL PRIMARY KEY,
   order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   raised_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  dispute_type VARCHAR(30) NOT NULL
-    CHECK (dispute_type IN ('lost','damaged','not_delivered','wrong_item','other')),
+  dispute_type VARCHAR(50) NOT NULL
+    CHECK (dispute_type IN ('lost_item','damaged','not_delivered','wrong_item','driver_behaviour','other')),
   description TEXT NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'open'
     CHECK (status IN ('open','in_review','resolved')),
-  resolution VARCHAR(30)
-    CHECK (resolution IN ('refund_customer','no_refund','partial_refund')),
+  resolution VARCHAR(50)
+    CHECK (resolution IS NULL OR resolution IN ('refund_customer','no_refund','partial_refund')),
   resolution_notes TEXT,
+  refund_amount NUMERIC(12,2),
   resolved_by_admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   resolved_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
