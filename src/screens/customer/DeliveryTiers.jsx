@@ -45,23 +45,17 @@ const DeliveryTiers = ({ navigation, route }) => {
       {
         id: 'standard',
         name: 'Standard',
-        ionicon: 'time-outline',
-        iconColor: colors.success,
         description: 'Route match — 2-5 hours',
       },
       {
         id: 'express',
         name: 'Express',
-        ionicon: 'flash-outline',
-        iconColor: colors.primary,
         description: 'Nearby driver — 1-2 hours',
         popular: true,
       },
       {
         id: 'urgent',
         name: 'Urgent',
-        ionicon: 'flame-outline',
-        iconColor: colors.accent,
         description: 'Dedicated driver — under 1 hour',
       },
     ],
@@ -117,13 +111,16 @@ const DeliveryTiers = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
             <Ionicons name="chevron-back" size={26} color={colors.primary} />
           </TouchableOpacity>
           <AppText variant="h3" color="textPrimary">
-            Choose delivery speed
+            Choose Delivery Speed
           </AppText>
           <View style={styles.placeholder} />
         </View>
@@ -150,70 +147,97 @@ const DeliveryTiers = ({ navigation, route }) => {
         </View>
 
         <View style={styles.optionsContainer}>
-          {deliveryOptions.map((option) => (
-            <TouchableOpacity
-              key={option.id}
-              style={[
-                styles.optionCard,
-                selectedTier === option.id && styles.optionCardSelected,
-                estimate?.[option.id]?.available === false && styles.optionCardUnavailable,
-              ]}
-              onPress={() => setSelectedTier(option.id)}
-              activeOpacity={0.9}
-            >
-              <View style={styles.optionHeader}>
-                <View style={styles.optionLeft}>
-                  <View style={[styles.iconCircle, { backgroundColor: `${option.iconColor}22` }]}>
-                    <Ionicons name={option.ionicon} size={22} color={option.iconColor} />
-                  </View>
-                  <View style={styles.optionInfo}>
-                    <AppText variant="h4" color="textPrimary">
+          {deliveryOptions.map((option) => {
+            const tierEstimate = estimate?.[option.id];
+            const unavailable = tierEstimate?.available === false;
+            const priceStr =
+              tierEstimate?.price != null ? formatMoney(tierEstimate.price) : '—';
+            const timeLine = tierEstimate?.time ?? option.description;
+            const driverEarns =
+              tierEstimate?.driver_earns != null
+                ? `Driver earns ${formatMoney(tierEstimate.driver_earns)}`
+                : null;
+            const selected = selectedTier === option.id;
+
+            return (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.optionCard,
+                  selected && styles.optionCardSelected,
+                  unavailable && styles.optionCardUnavailable,
+                ]}
+                onPress={() => setSelectedTier(option.id)}
+                activeOpacity={0.9}
+              >
+                {/* Row 1: tier name | price + optional checkmark */}
+                <View style={styles.cardRow}>
+                  <View style={styles.cardRow1Left}>
+                    <AppText variant="h4" color="textPrimary" style={styles.tierName}>
                       {option.name}
                     </AppText>
+                    {option.popular ? (
+                      <View style={styles.popularBadge}>
+                        <AppText variant="label" style={styles.popularBadgeText}>
+                          Popular
+                        </AppText>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.cardRow1Right}>
+                    <AppText style={styles.priceOrange}>{priceStr}</AppText>
+                    {selected ? (
+                      <View style={styles.checkmarkCircle}>
+                        <Ionicons name="checkmark" size={14} color={colors.textWhite} />
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Row 2: time | driver earns */}
+                <View style={styles.cardRow}>
+                  <View style={styles.cardRow2Left}>
                     <AppText variant="small" color="textSecondary">
-                      {estimate?.[option.id]?.time ?? option.description}
+                      {timeLine}
+                    </AppText>
+                  </View>
+                  {driverEarns ? (
+                    <AppText variant="small" color="textSecondary" style={styles.driverEarnsRight}>
+                      {driverEarns}
+                    </AppText>
+                  ) : (
+                    <View style={styles.rowSpacer} />
+                  )}
+                </View>
+
+                {/* Row 3: zone */}
+                <View style={styles.cardRow}>
+                  <View style={styles.zoneBadge}>
+                    <AppText variant="label" color="textSecondary" style={styles.zoneBadgeText}>
+                      {estimate?.zone != null ? zoneLabel(estimate.zone) : 'Zone'}
                     </AppText>
                   </View>
                 </View>
-                <View style={styles.optionRight}>
-                  {option.popular && (
-                    <View style={styles.popularBadge}>
-                      <AppText variant="label" style={styles.popularText}>
-                        Popular
+
+                {/* Row 4: guaranteed (green pill) — full width */}
+                <View style={[styles.cardRow, styles.cardRowLast]}>
+                  <View style={styles.guaranteedPillWrap}>
+                    <View style={styles.guaranteedPill}>
+                      <AppText variant="small" style={styles.guaranteedPillText}>
+                        Price Guaranteed ✓
                       </AppText>
                     </View>
-                  )}
-                  <AppText variant="h2" color="primary" style={styles.optionPrice}>
-                    {estimate?.[option.id]?.price != null ? formatMoney(estimate[option.id].price) : '—'}
+                  </View>
+                </View>
+
+                {unavailable ? (
+                  <AppText variant="small" color="accent" style={styles.unavailableText}>
+                    Unavailable right now
                   </AppText>
-
-                  {estimate?.[option.id]?.driver_earns != null && (
-                    <AppText variant="small" color="textSecondary" style={styles.driverEarnsText}>
-                      Driver earns {formatMoney(estimate[option.id].driver_earns)}
-                    </AppText>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.priceLockBadge}>
-                <AppText variant="small" color="primary" style={styles.priceLockBadgeText}>
-                  This price is guaranteed — never changes
-                </AppText>
-              </View>
-
-              {estimate?.[option.id]?.available === false ? (
-                <AppText variant="small" color="accent" style={styles.unavailableText}>
-                  Unavailable right now
-                </AppText>
-              ) : null}
-
-              {selectedTier === option.id && (
-                <View style={styles.checkmark}>
-                  <Ionicons name="checkmark" size={16} color={colors.textWhite} />
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.protectionSection}>
@@ -260,12 +284,18 @@ const DeliveryTiers = ({ navigation, route }) => {
   );
 };
 
+const ROW_GAP = 6;
+const CARD_PAD = 16;
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
     width,
     minHeight: height,
+  },
+  scrollContent: {
+    paddingBottom: spacing.xl,
   },
   header: {
     flexDirection: 'row',
@@ -308,13 +338,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   optionCard: {
+    flexDirection: 'column',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    position: 'relative',
+    padding: CARD_PAD,
+    marginBottom: spacing.md,
     ...shadows.card,
   },
   optionCardSelected: {
@@ -326,70 +356,111 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     backgroundColor: colors.background,
   },
-  optionHeader: {
+  cardRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: ROW_GAP,
+  },
+  cardRowLast: {
+    marginBottom: 0,
+  },
+  cardRowAlignStart: {
     alignItems: 'flex-start',
   },
-  optionLeft: {
-    flexDirection: 'row',
+  guaranteedPillWrap: {
     flex: 1,
+    width: '100%',
   },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  cardRow1Left: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     marginRight: spacing.sm,
   },
-  optionInfo: {
-    flex: 1,
-  },
-  optionRight: {
-    alignItems: 'flex-end',
+  tierName: {
+    fontWeight: '700',
+    marginRight: spacing.xs,
   },
   popularBadge: {
     backgroundColor: colors.accent,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: radius.sm,
-    marginBottom: spacing.xs,
+    borderRadius: radius.full,
   },
-  popularText: {
+  popularBadgeText: {
     color: colors.textWhite,
     fontSize: 10,
+    fontWeight: '700',
   },
-  optionPrice: {
-    fontSize: 20,
+  cardRow1Right: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
   },
-  unavailableText: {
-    marginTop: spacing.sm,
+  priceOrange: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.accent,
+  },
+  checkmarkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: spacing.sm,
+  },
+  cardRow2Left: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  driverEarnsRight: {
+    textAlign: 'right',
     fontWeight: '600',
+    maxWidth: '48%',
   },
-  priceLockBadge: {
-    position: 'absolute',
-    bottom: 12,
-    left: 16,
-    right: 16,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.primary,
+  rowSpacer: {
+    minWidth: 8,
+  },
+  zoneBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
     borderRadius: radius.sm,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    opacity: 0.95,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  priceLockBadgeText: {
+  zoneBadgeText: {
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  guaranteedPill: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.success,
+    borderRadius: radius.full,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guaranteedPillText: {
+    color: colors.success,
     fontWeight: '700',
     textAlign: 'center',
   },
-  driverEarnsText: {
-    marginTop: spacing.xs,
+  unavailableText: {
+    marginTop: ROW_GAP,
     fontWeight: '600',
   },
   protectionSection: {
     paddingHorizontal: spacing.md,
+    marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
   protectionBadge: {
@@ -419,17 +490,6 @@ const styles = StyleSheet.create({
   upgradeLine: {
     marginBottom: spacing.sm,
     textAlign: 'center',
-  },
-  checkmark: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   bottomContainer: {
     paddingHorizontal: spacing.md,

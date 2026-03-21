@@ -101,6 +101,16 @@ const AddressEntry = ({ navigation }) => {
   const reverseDebounceRef = useRef(null);
   const cardSlideAnim = useRef(new Animated.Value(0)).current;
   const programmaticMapMoveRef = useRef(false);
+  /** Ignore region events right after animate/fit — map center ≠ pickup after fit. */
+  const ignoreRegionEventsUntilRef = useRef(0);
+  /** True only while user is panning — never overwrite typed/places pickup from map otherwise. */
+  const userIsPanningMapRef = useRef(false);
+
+  const markProgrammaticMapMove = useCallback((ignoreMs = 1100) => {
+    ignoreRegionEventsUntilRef.current = Date.now() + ignoreMs;
+    programmaticMapMoveRef.current = true;
+    userIsPanningMapRef.current = false;
+  }, []);
 
   const [locating, setLocating] = useState(true);
   const [locationBusy, setLocationBusy] = useState(false);
@@ -162,7 +172,7 @@ const AddressEntry = ({ navigation }) => {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       };
-      programmaticMapMoveRef.current = true;
+      markProgrammaticMapMove(1100);
       setPickupCoords(coord);
       mapRef.current?.animateToRegion(
         {
@@ -181,16 +191,21 @@ const AddressEntry = ({ navigation }) => {
       }
     } catch (e) {
       setLocationError(e.message || 'Could not get location');
-      programmaticMapMoveRef.current = true;
+      markProgrammaticMapMove(1100);
       mapRef.current?.animateToRegion(DEFAULT_REGION, 400);
     } finally {
       setLocating(false);
     }
-  }, []);
+  }, [markProgrammaticMapMove]);
 
   useEffect(() => {
     runInitialGps();
   }, [runInitialGps]);
+
+  const onMapRegionChange = useCallback(() => {
+    if (Date.now() < ignoreRegionEventsUntilRef.current) return;
+    userIsPanningMapRef.current = true;
+  }, []);
 
   /** Pickup autocomplete */
   useEffect(() => {
@@ -264,10 +279,24 @@ const AddressEntry = ({ navigation }) => {
 
   const onRegionChangeComplete = useCallback(
     (region) => {
-      if (programmaticMapMoveRef.current) {
-        programmaticMapMoveRef.current = false;
+      if (Date.now() < ignoreRegionEventsUntilRef.current) {
         return;
       }
+      // Programmatic move finished — skip pickup update unless user was panning (interrupt).
+      if (programmaticMapMoveRef.current) {
+        if (!userIsPanningMapRef.current) {
+          programmaticMapMoveRef.current = false;
+          return;
+        }
+        programmaticMapMoveRef.current = false;
+        // fall through: user dragged during/after camera animation
+      }
+      // Do not move pickup or change address from map unless the user actually panned.
+      // (Fits/animates can leave the camera between pins — center is not pickup.)
+      if (!userIsPanningMapRef.current) {
+        return;
+      }
+      userIsPanningMapRef.current = false;
       const center = {
         latitude: region.latitude,
         longitude: region.longitude,
@@ -280,11 +309,13 @@ const AddressEntry = ({ navigation }) => {
 
   const fitBothPins = useCallback(() => {
     if (!mapRef.current || !pickupCoords || !dropoffCoords) return;
+    markProgrammaticMapMove(1600);
+    userIsPanningMapRef.current = false;
     mapRef.current.fitToCoordinates([pickupCoords, dropoffCoords], {
       edgePadding: { top: 120, right: 80, bottom: 200, left: 80 },
       animated: true,
     });
-  }, [pickupCoords, dropoffCoords]);
+  }, [pickupCoords, dropoffCoords, markProgrammaticMapMove]);
 
   useEffect(() => {
     if (pickupCoords && dropoffCoords) {
@@ -321,7 +352,7 @@ const AddressEntry = ({ navigation }) => {
       setPickupAddress(addr);
       const coord = { latitude: details.latitude, longitude: details.longitude };
       setPickupCoords(coord);
-      programmaticMapMoveRef.current = true;
+      markProgrammaticMapMove(1100);
       mapRef.current?.animateToRegion(
         {
           latitude: coord.latitude,
@@ -337,7 +368,7 @@ const AddressEntry = ({ navigation }) => {
     } catch (e) {
       setPlacesError(e.message || 'Could not load place');
     }
-  }, [dropoffCoords, fitBothPins]);
+  }, [dropoffCoords, fitBothPins, markProgrammaticMapMove]);
 
   const onSelectDeliveryPrediction = useCallback(async (p) => {
     Keyboard.dismiss();
@@ -350,7 +381,7 @@ const AddressEntry = ({ navigation }) => {
         latitude: details.latitude,
         longitude: details.longitude,
       });
-      programmaticMapMoveRef.current = true;
+      markProgrammaticMapMove(1100);
       mapRef.current?.animateToRegion(
         {
           latitude: details.latitude,
@@ -366,7 +397,7 @@ const AddressEntry = ({ navigation }) => {
     } catch (e) {
       setPlacesError(e.message || 'Could not load place');
     }
-  }, [pickupCoords, fitBothPins]);
+  }, [pickupCoords, fitBothPins, markProgrammaticMapMove]);
 
   const useMyLocation = useCallback(async () => {
     setLocationBusy(true);
@@ -383,7 +414,7 @@ const AddressEntry = ({ navigation }) => {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       };
-      programmaticMapMoveRef.current = true;
+      markProgrammaticMapMove(1100);
       setPickupCoords(coord);
       try {
         const [place] = await Location.reverseGeocodeAsync(coord);
@@ -405,7 +436,7 @@ const AddressEntry = ({ navigation }) => {
     } finally {
       setLocationBusy(false);
     }
-  }, []);
+  }, [markProgrammaticMapMove]);
 
   const handleConfirm = () => {
     if (!pickupCoords || !dropoffCoords) return;
@@ -456,6 +487,7 @@ const AddressEntry = ({ navigation }) => {
           showsUserLocation
           showsMyLocationButton={false}
           mapType="standard"
+          onRegionChange={onMapRegionChange}
           onRegionChangeComplete={onRegionChangeComplete}
           rotateEnabled
           pitchEnabled={false}
@@ -582,7 +614,8 @@ const AddressEntry = ({ navigation }) => {
           ) : null}
 
           <Text style={styles.mapHint}>
-            Tip: drag the map to adjust pickup — the green pin follows the centre.
+            Tip: pan the map to move pickup — your typed or chosen address won't be replaced unless
+            you move the map.
           </Text>
         </View>
 
