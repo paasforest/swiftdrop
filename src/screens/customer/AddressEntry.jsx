@@ -14,6 +14,7 @@ import {
   Keyboard,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
@@ -99,21 +100,28 @@ const AddressEntry = ({ navigation }) => {
   const mapRef = useRef(null);
   const reverseDebounceRef = useRef(null);
   const cardSlideAnim = useRef(new Animated.Value(0)).current;
+  const programmaticMapMoveRef = useRef(false);
 
   const [locating, setLocating] = useState(true);
+  const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [pickupCoords, setPickupCoords] = useState(null);
   const [pickupAddress, setPickupAddress] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [dropoffCoords, setDropoffCoords] = useState(null);
 
-  const [isDraggingMap, setIsDraggingMap] = useState(false);
   const [reverseBusy, setReverseBusy] = useState(false);
 
-  const [predictions, setPredictions] = useState([]);
-  const [placesLoading, setPlacesLoading] = useState(false);
+  const [pickupPredictions, setPickupPredictions] = useState([]);
+  const [deliveryPredictions, setDeliveryPredictions] = useState([]);
+  const [placesLoadingPickup, setPlacesLoadingPickup] = useState(false);
+  const [placesLoadingDelivery, setPlacesLoadingDelivery] = useState(false);
   const [placesError, setPlacesError] = useState(null);
 
+  /** Which field's autocomplete list to show */
+  const [focusedField, setFocusedField] = useState(null);
+
+  const debouncedPickup = useDebounced(pickupAddress, 350);
   const debouncedDelivery = useDebounced(deliveryAddress, 350);
 
   const distanceKm = useMemo(
@@ -121,74 +129,7 @@ const AddressEntry = ({ navigation }) => {
     [pickupCoords, dropoffCoords]
   );
 
-  const openInitialLocation = useCallback(async () => {
-    setLocating(true);
-    setLocationError(null);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        throw new Error('Location permission not granted');
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const region = {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        latitudeDelta: 0.012,
-        longitudeDelta: 0.012,
-      };
-      setPickupCoords({
-        latitude: region.latitude,
-        longitude: region.longitude,
-      });
-      mapRef.current?.animateToRegion(region, 600);
-    } catch (e) {
-      setLocationError(e.message || 'Could not get location');
-      mapRef.current?.animateToRegion(DEFAULT_REGION, 400);
-    } finally {
-      setLocating(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    openInitialLocation();
-  }, [openInitialLocation]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!debouncedDelivery || debouncedDelivery.trim().length < 2) {
-        setPredictions([]);
-        setPlacesError(null);
-        return;
-      }
-      if (!GOOGLE_MAPS_API_KEY) {
-        setPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
-        setPredictions([]);
-        return;
-      }
-      setPlacesLoading(true);
-      setPlacesError(null);
-      try {
-        const list = await fetchPlacePredictions(debouncedDelivery);
-        if (!cancelled) setPredictions(list);
-      } catch (e) {
-        if (!cancelled) {
-          setPlacesError(e.message || 'Autocomplete failed');
-          setPredictions([]);
-        }
-      } finally {
-        if (!cancelled) setPlacesLoading(false);
-      }
-    }
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedDelivery]);
-
-  const reverseGeocodeCenter = useCallback((center) => {
+  const reverseGeocodePickup = useCallback((center) => {
     if (reverseDebounceRef.current) clearTimeout(reverseDebounceRef.current);
     reverseDebounceRef.current = setTimeout(async () => {
       setReverseBusy(true);
@@ -206,40 +147,159 @@ const AddressEntry = ({ navigation }) => {
     }, 400);
   }, []);
 
-  const onRegionChange = useCallback(() => {
-    setIsDraggingMap(true);
+  const runInitialGps = useCallback(async () => {
+    setLocating(true);
+    setLocationError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permission not granted');
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const coord = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      programmaticMapMoveRef.current = true;
+      setPickupCoords(coord);
+      mapRef.current?.animateToRegion(
+        {
+          ...coord,
+          latitudeDelta: 0.012,
+          longitudeDelta: 0.012,
+        },
+        600
+      );
+      try {
+        const [place] = await Location.reverseGeocodeAsync(coord);
+        const line = formatAddressFromGeocode(place);
+        setPickupAddress(line || `${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
+      } catch {
+        setPickupAddress(`${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
+      }
+    } catch (e) {
+      setLocationError(e.message || 'Could not get location');
+      programmaticMapMoveRef.current = true;
+      mapRef.current?.animateToRegion(DEFAULT_REGION, 400);
+    } finally {
+      setLocating(false);
+    }
   }, []);
+
+  useEffect(() => {
+    runInitialGps();
+  }, [runInitialGps]);
+
+  /** Pickup autocomplete */
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (focusedField !== 'pickup') {
+        setPickupPredictions([]);
+        return;
+      }
+      if (!debouncedPickup || debouncedPickup.trim().length < 2) {
+        setPickupPredictions([]);
+        setPlacesError(null);
+        return;
+      }
+      if (!GOOGLE_MAPS_API_KEY) {
+        setPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
+        setPickupPredictions([]);
+        return;
+      }
+      setPlacesLoadingPickup(true);
+      setPlacesError(null);
+      try {
+        const list = await fetchPlacePredictions(debouncedPickup);
+        if (!cancelled) setPickupPredictions(list);
+      } catch (e) {
+        if (!cancelled) {
+          setPlacesError(e.message || 'Autocomplete failed');
+          setPickupPredictions([]);
+        }
+      } finally {
+        if (!cancelled) setPlacesLoadingPickup(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedPickup, focusedField]);
+
+  /** Delivery autocomplete */
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (focusedField !== 'delivery') {
+        setDeliveryPredictions([]);
+        return;
+      }
+      if (!debouncedDelivery || debouncedDelivery.trim().length < 2) {
+        setDeliveryPredictions([]);
+        return;
+      }
+      if (!GOOGLE_MAPS_API_KEY) {
+        setDeliveryPredictions([]);
+        return;
+      }
+      setPlacesLoadingDelivery(true);
+      try {
+        const list = await fetchPlacePredictions(debouncedDelivery);
+        if (!cancelled) setDeliveryPredictions(list);
+      } catch (e) {
+        if (!cancelled) setDeliveryPredictions([]);
+      } finally {
+        if (!cancelled) setPlacesLoadingDelivery(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedDelivery, focusedField]);
 
   const onRegionChangeComplete = useCallback(
     (region) => {
-      setIsDraggingMap(false);
+      if (programmaticMapMoveRef.current) {
+        programmaticMapMoveRef.current = false;
+        return;
+      }
       const center = {
         latitude: region.latitude,
         longitude: region.longitude,
       };
       setPickupCoords(center);
-      reverseGeocodeCenter(center);
+      reverseGeocodePickup(center);
     },
-    [reverseGeocodeCenter]
+    [reverseGeocodePickup]
   );
 
   const fitBothPins = useCallback(() => {
     if (!mapRef.current || !pickupCoords || !dropoffCoords) return;
     mapRef.current.fitToCoordinates([pickupCoords, dropoffCoords], {
-      edgePadding: { top: 100, right: 100, bottom: 100, left: 100 },
+      edgePadding: { top: 120, right: 80, bottom: 200, left: 80 },
       animated: true,
     });
   }, [pickupCoords, dropoffCoords]);
 
   useEffect(() => {
     if (pickupCoords && dropoffCoords) {
-      const t = setTimeout(fitBothPins, 350);
+      const t = setTimeout(fitBothPins, 400);
       return () => clearTimeout(t);
     }
   }, [pickupCoords, dropoffCoords, fitBothPins]);
 
   useEffect(() => {
-    if (dropoffCoords) {
+    const ready =
+      pickupCoords &&
+      dropoffCoords &&
+      pickupAddress.trim().length > 0 &&
+      deliveryAddress.trim().length > 0;
+    if (ready) {
       Animated.spring(cardSlideAnim, {
         toValue: 1,
         friction: 8,
@@ -249,11 +309,39 @@ const AddressEntry = ({ navigation }) => {
     } else {
       cardSlideAnim.setValue(0);
     }
-  }, [dropoffCoords, cardSlideAnim]);
+  }, [pickupCoords, dropoffCoords, pickupAddress, deliveryAddress, cardSlideAnim]);
 
-  const onSelectPrediction = useCallback(async (p) => {
+  const onSelectPickupPrediction = useCallback(async (p) => {
     Keyboard.dismiss();
-    setPredictions([]);
+    setPickupPredictions([]);
+    setPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      const addr = details.formatted_address || p.description || '';
+      setPickupAddress(addr);
+      const coord = { latitude: details.latitude, longitude: details.longitude };
+      setPickupCoords(coord);
+      programmaticMapMoveRef.current = true;
+      mapRef.current?.animateToRegion(
+        {
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        },
+        500
+      );
+      if (dropoffCoords) {
+        setTimeout(() => fitBothPins(), 600);
+      }
+    } catch (e) {
+      setPlacesError(e.message || 'Could not load place');
+    }
+  }, [dropoffCoords, fitBothPins]);
+
+  const onSelectDeliveryPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setDeliveryPredictions([]);
     setPlacesError(null);
     try {
       const details = await fetchPlaceDetails(p.place_id);
@@ -262,6 +350,7 @@ const AddressEntry = ({ navigation }) => {
         latitude: details.latitude,
         longitude: details.longitude,
       });
+      programmaticMapMoveRef.current = true;
       mapRef.current?.animateToRegion(
         {
           latitude: details.latitude,
@@ -271,20 +360,63 @@ const AddressEntry = ({ navigation }) => {
         },
         500
       );
+      if (pickupCoords) {
+        setTimeout(() => fitBothPins(), 600);
+      }
     } catch (e) {
       setPlacesError(e.message || 'Could not load place');
+    }
+  }, [pickupCoords, fitBothPins]);
+
+  const useMyLocation = useCallback(async () => {
+    setLocationBusy(true);
+    setLocationError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permission not granted');
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const coord = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      programmaticMapMoveRef.current = true;
+      setPickupCoords(coord);
+      try {
+        const [place] = await Location.reverseGeocodeAsync(coord);
+        const line = formatAddressFromGeocode(place);
+        setPickupAddress(line || `${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
+      } catch {
+        setPickupAddress(`${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
+      }
+      mapRef.current?.animateToRegion(
+        {
+          ...coord,
+          latitudeDelta: 0.012,
+          longitudeDelta: 0.012,
+        },
+        600
+      );
+    } catch (e) {
+      setLocationError(e.message || 'Could not get location');
+    } finally {
+      setLocationBusy(false);
     }
   }, []);
 
   const handleConfirm = () => {
     if (!pickupCoords || !dropoffCoords) return;
-    const drop = deliveryAddress.trim();
-    if (!drop || !pickupAddress.trim()) return;
+    const p = pickupAddress.trim();
+    const d = deliveryAddress.trim();
+    if (!p || !d) return;
     navigation.navigate('ParcelDescription', {
-      pickup_address: pickupAddress.trim(),
+      pickup_address: p,
       pickup_lat: pickupCoords.latitude,
       pickup_lng: pickupCoords.longitude,
-      dropoff_address: drop,
+      dropoff_address: d,
       dropoff_lat: dropoffCoords.latitude,
       dropoff_lng: dropoffCoords.longitude,
     });
@@ -298,6 +430,21 @@ const AddressEntry = ({ navigation }) => {
   const polylineCoords =
     pickupCoords && dropoffCoords ? [pickupCoords, dropoffCoords] : null;
 
+  const predictions =
+    focusedField === 'pickup'
+      ? pickupPredictions
+      : focusedField === 'delivery'
+        ? deliveryPredictions
+        : [];
+  const predictionsLoading =
+    focusedField === 'pickup' ? placesLoadingPickup : placesLoadingDelivery;
+
+  const canConfirm =
+    pickupCoords &&
+    dropoffCoords &&
+    pickupAddress.trim().length > 0 &&
+    deliveryAddress.trim().length > 0;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mapWrap}>
@@ -309,13 +456,15 @@ const AddressEntry = ({ navigation }) => {
           showsUserLocation
           showsMyLocationButton={false}
           mapType="standard"
-          onRegionChange={onRegionChange}
           onRegionChangeComplete={onRegionChangeComplete}
           rotateEnabled
           pitchEnabled={false}
         >
+          {pickupCoords && (
+            <Marker coordinate={pickupCoords} title="Pickup" pinColor={colors.success} />
+          )}
           {dropoffCoords && (
-            <Marker coordinate={dropoffCoords} title="Delivery" pinColor={colors.accent} />
+            <Marker coordinate={dropoffCoords} title="Delivery" pinColor={colors.danger} />
           )}
           {polylineCoords && (
             <Polyline
@@ -327,20 +476,7 @@ const AddressEntry = ({ navigation }) => {
           )}
         </MapView>
 
-        <View style={styles.centerPinContainer} pointerEvents="none">
-          <View
-            style={[
-              styles.centerPinShadow,
-              isDraggingMap && styles.centerPinShadowDragging,
-            ]}
-          />
-          <View style={styles.centerPinMarker}>
-            <View style={styles.greenPinDisc} />
-            <View style={styles.greenPinTriangle} />
-          </View>
-        </View>
-
-        <View style={styles.topBanner} pointerEvents="none">
+        <View style={styles.topBanner} pointerEvents="box-none">
           {locating ? (
             <View style={styles.topBannerInner}>
               <ActivityIndicator color={colors.primary} size="small" />
@@ -350,22 +486,15 @@ const AddressEntry = ({ navigation }) => {
             </View>
           ) : locationError ? (
             <View style={styles.topBannerInner}>
-              <Text style={styles.topBannerError}>⚠️ {locationError}</Text>
+              <Text style={styles.topBannerError}>{locationError}</Text>
             </View>
           ) : reverseBusy ? (
             <View style={styles.topBannerInner}>
-              <Text style={styles.topBannerSubtle}>Updating pickup address…</Text>
+              <Text style={styles.topBannerSubtle}>Updating pickup from map…</Text>
             </View>
           ) : null}
         </View>
 
-        <TouchableOpacity
-          style={styles.recenterBtn}
-          onPress={openInitialLocation}
-          disabled={locating}
-        >
-          <Text style={styles.recenterBtnText}>⊙</Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.bottomPanel}>
@@ -373,12 +502,31 @@ const AddressEntry = ({ navigation }) => {
           <View style={styles.row}>
             <View style={styles.greenDot} />
             <TextInput
-              style={[styles.input, styles.inputReadonly]}
-              value={pickupAddress || (locating ? '…' : 'Move map to set pickup')}
-              editable={false}
-              placeholder="Pickup"
+              style={styles.input}
+              value={pickupAddress}
+              onChangeText={(t) => {
+                setPickupAddress(t);
+                if (!t.trim()) {
+                  setPickupCoords(null);
+                }
+              }}
+              placeholder="Enter pickup address"
               placeholderTextColor={colors.textLight}
+              returnKeyType="search"
+              onFocus={() => setFocusedField('pickup')}
+              onBlur={() => {
+                setTimeout(() => setFocusedField((f) => (f === 'pickup' ? null : f)), 200);
+              }}
             />
+            <TouchableOpacity
+              style={styles.inlineLocate}
+              onPress={useMyLocation}
+              disabled={locationBusy || locating}
+              hitSlop={8}
+              accessibilityLabel="Use my location for pickup"
+            >
+              <Ionicons name="navigate-circle-outline" size={26} color={colors.primary} />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.row}>
@@ -390,17 +538,19 @@ const AddressEntry = ({ navigation }) => {
                 setDeliveryAddress(t);
                 if (!t.trim()) setDropoffCoords(null);
               }}
-              placeholder="Where to?"
+              placeholder="Enter delivery address"
               placeholderTextColor={colors.textLight}
               returnKeyType="search"
+              onFocus={() => setFocusedField('delivery')}
+              onBlur={() => {
+                setTimeout(() => setFocusedField((f) => (f === 'delivery' ? null : f)), 200);
+              }}
             />
           </View>
 
-          {placesError ? (
-            <Text style={styles.placesErrorText}>{placesError}</Text>
-          ) : null}
+          {placesError ? <Text style={styles.placesErrorText}>{placesError}</Text> : null}
 
-          {predictions.length > 0 && (
+          {predictions.length > 0 && focusedField && (
             <ScrollView
               style={styles.predictions}
               keyboardShouldPersistTaps="handled"
@@ -410,7 +560,11 @@ const AddressEntry = ({ navigation }) => {
                 <TouchableOpacity
                   key={item.place_id}
                   style={styles.predictionRow}
-                  onPress={() => onSelectPrediction(item)}
+                  onPress={() =>
+                    focusedField === 'pickup'
+                      ? onSelectPickupPrediction(item)
+                      : onSelectDeliveryPrediction(item)
+                  }
                 >
                   <Text style={styles.predictionMain} numberOfLines={2}>
                     {item.structured_formatting?.main_text || item.description}
@@ -423,29 +577,30 @@ const AddressEntry = ({ navigation }) => {
             </ScrollView>
           )}
 
-          {placesLoading ? (
+          {predictionsLoading ? (
             <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
           ) : null}
+
+          <Text style={styles.mapHint}>
+            Tip: drag the map to adjust pickup — the green pin follows the centre.
+          </Text>
         </View>
 
         <Animated.View
-          style={[
-            styles.confirmCard,
-            { transform: [{ translateY: confirmTranslateY }] },
-          ]}
+          style={[styles.confirmCard, { transform: [{ translateY: confirmTranslateY }] }]}
         >
-          {dropoffCoords ? (
+          {canConfirm ? (
             <>
               <View style={styles.confirmRow}>
                 <View style={styles.greenDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={2}>
-                  {pickupAddress || 'Pickup'}
+                <Text style={styles.confirmAddr} numberOfLines={3}>
+                  {pickupAddress.trim()}
                 </Text>
               </View>
               <View style={styles.confirmRow}>
                 <View style={styles.redDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={2}>
-                  {deliveryAddress || 'Delivery'}
+                <Text style={styles.confirmAddr} numberOfLines={3}>
+                  {deliveryAddress.trim()}
                 </Text>
               </View>
               <Text style={styles.distanceText}>
@@ -453,27 +608,21 @@ const AddressEntry = ({ navigation }) => {
                   ? `${Math.round(distanceKm * 1000)} m apart`
                   : `${distanceKm.toFixed(1)} km apart`}
               </Text>
-              <TouchableOpacity
-                style={[
-                  styles.confirmButton,
-                  (!pickupAddress.trim() || !deliveryAddress.trim()) &&
-                    styles.confirmButtonDisabled,
-                ]}
-                onPress={handleConfirm}
-                disabled={!pickupAddress.trim() || !deliveryAddress.trim()}
-              >
+              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
                 <Text style={styles.confirmButtonText}>Confirm</Text>
               </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.confirmHint}>
-              Search a delivery address to see route and confirm.
+              Enter pickup and delivery addresses (or drag the map for pickup), then choose
+              suggestions.
             </Text>
           )}
         </Animated.View>
 
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Text style={styles.backLinkText}>← Back</Text>
+          <Ionicons name="chevron-back" size={22} color={colors.primary} />
+          <Text style={[styles.backLinkText, { marginLeft: 4 }]}>Back</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -489,8 +638,6 @@ function useDebounced(value, delay) {
   return debounced;
 }
 
-const PIN_SIZE = 40;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -498,61 +645,7 @@ const styles = StyleSheet.create({
   },
   mapWrap: {
     flex: 1,
-    minHeight: height * 0.42,
-  },
-  centerPinContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: PIN_SIZE * 0.85,
-  },
-  centerPinShadow: {
-    position: 'absolute',
-    bottom: 4,
-    width: 14,
-    height: 6,
-    borderRadius: 7,
-    backgroundColor: colors.black,
-    opacity: 0.12,
-  },
-  centerPinShadowDragging: {
-    opacity: 0.28,
-    transform: [{ scaleX: 1.25 }],
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 6,
-  },
-  centerPinMarker: {
-    marginTop: -36,
-    alignItems: 'center',
-  },
-  greenPinDisc: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.success,
-    borderWidth: 3,
-    borderColor: colors.surface,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  greenPinTriangle: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderTopWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: colors.success,
-    marginTop: -2,
+    minHeight: height * 0.38,
   },
   topBanner: {
     position: 'absolute',
@@ -575,7 +668,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textPrimary,
     fontWeight: '600',
-    marginLeft: spacing.sm,
   },
   topBannerSubtle: {
     fontSize: 13,
@@ -584,24 +676,6 @@ const styles = StyleSheet.create({
   topBannerError: {
     fontSize: 13,
     color: colors.danger,
-  },
-  recenterBtn: {
-    position: 'absolute',
-    right: spacing.md,
-    bottom: spacing.md,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...shadows.card,
-    elevation: 4,
-  },
-  recenterBtnText: {
-    fontSize: 22,
-    color: colors.primary,
-    fontWeight: '700',
   },
   bottomPanel: {
     backgroundColor: colors.surface,
@@ -615,7 +689,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 12,
-    maxHeight: height * 0.48,
+    maxHeight: height * 0.52,
   },
   inputBlock: {
     marginBottom: 6,
@@ -651,8 +725,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
   },
-  inputReadonly: {
-    color: colors.textSecondary,
+  inlineLocate: {
+    padding: spacing.sm,
+    marginRight: spacing.xs,
   },
   predictions: {
     maxHeight: 160,
@@ -681,6 +756,12 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 12,
     marginTop: 4,
+  },
+  mapHint: {
+    fontSize: 11,
+    color: colors.textLight,
+    marginTop: 4,
+    lineHeight: 16,
   },
   confirmCard: {
     backgroundColor: colors.primaryLight,
@@ -730,9 +811,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
   },
-  confirmButtonDisabled: {
-    backgroundColor: colors.border,
-  },
   confirmButtonText: {
     color: colors.textWhite,
     fontSize: 16,
@@ -743,10 +821,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     paddingVertical: spacing.sm,
+    lineHeight: 18,
   },
   backLink: {
     paddingVertical: spacing.sm,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   backLinkText: {
     color: colors.primary,
