@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
@@ -21,6 +22,8 @@ import TrackingWithMap from './src/screens/customer/TrackingWithMap';
 import OTPScreen from './src/screens/customer/OTPScreen';
 import DeliveryConfirmed from './src/screens/customer/DeliveryConfirmed';
 import OrderDetail from './src/screens/customer/OrderDetail';
+import OrderHistory from './src/screens/customer/OrderHistory';
+import Profile from './src/screens/customer/Profile';
 
 // Driver Screens
 import DriverRegister from './src/screens/driver/DriverRegister';
@@ -89,6 +92,7 @@ export default function App() {
   }, []);
 
   return (
+    <SafeAreaProvider>
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="auto" />
       <Stack.Navigator
@@ -110,6 +114,8 @@ export default function App() {
         <Stack.Screen name="OTPScreen" component={OTPScreen} />
         <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
         <Stack.Screen name="OrderDetail" component={OrderDetail} />
+        <Stack.Screen name="OrderHistory" component={OrderHistory} />
+        <Stack.Screen name="Profile" component={Profile} />
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
@@ -131,5 +137,6 @@ export default function App() {
         <Stack.Screen name="Reports" component={Reports} />
       </Stack.Navigator>
     </NavigationContainer>
+    </SafeAreaProvider>
   );
 }

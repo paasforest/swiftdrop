@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, TextInput } from 'react-native';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -86,19 +87,27 @@ const DisputeResolution = () => {
 
   const getUrgencyColor = (urgency) => {
     switch (urgency) {
-      case 'Open': return '#F44336';
-      case 'In Review': return '#FF9800';
-      case 'Resolved': return '#4CAF50';
-      default: return '#757575';
+      case 'Open':
+        return colors.danger;
+      case 'In Review':
+        return colors.warning;
+      case 'Resolved':
+        return colors.success;
+      default:
+        return colors.textSecondary;
     }
   };
 
   const getUrgencyBg = (urgency) => {
     switch (urgency) {
-      case 'Open': return '#FFEBEE';
-      case 'In Review': return '#FFF3E0';
-      case 'Resolved': return '#E8F5E8';
-      default: return '#F5F5F5';
+      case 'Open':
+        return colors.dangerLight;
+      case 'In Review':
+        return colors.warningLight;
+      case 'Resolved':
+        return colors.successLight;
+      default:
+        return colors.background;
     }
   };
 
@@ -415,7 +424,7 @@ const DisputeResolution = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     width: width,
     height: height,
   },
@@ -427,7 +436,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   content: {
     flex: 1,
@@ -439,11 +448,11 @@ const styles = StyleSheet.create({
     marginRight: 24,
   },
   disputeCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -451,7 +460,7 @@ const styles = StyleSheet.create({
   },
   disputeCardSelected: {
     borderWidth: 2,
-    borderColor: '#1A73E8',
+    borderColor: colors.primary,
   },
   disputeHeader: {
     marginBottom: 8,
@@ -462,22 +471,22 @@ const styles = StyleSheet.create({
   disputeId: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   disputeReason: {
     fontSize: 12,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   disputeDetails: {
     fontSize: 11,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 2,
   },
   disputeDate: {
     fontSize: 10,
-    color: '#999999',
+    color: colors.textLight,
   },
   urgencyBadge: {
     paddingHorizontal: 8,
@@ -493,18 +502,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    borderTopColor: colors.border,
   },
   timerText: {
     fontSize: 10,
-    color: '#F44336',
+    color: colors.danger,
     fontWeight: '500',
   },
   detailPanel: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -517,26 +526,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: colors.border,
   },
   detailTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   closeButton: {
     fontSize: 20,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   disputeInfoHeader: {
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   disputeTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   disputeMeta: {
@@ -544,12 +553,12 @@ const styles = StyleSheet.create({
   },
   disputeReasonLarge: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   disputeParticipants: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   urgencyBadgeLarge: {
@@ -563,7 +572,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   resolutionTimer: {
-    backgroundColor: '#FFF3F0',
+    backgroundColor: colors.accentLight,
     padding: 12,
     marginHorizontal: 20,
     marginTop: 16,
@@ -572,23 +581,23 @@ const styles = StyleSheet.create({
   },
   timerLabel: {
     fontSize: 12,
-    color: '#FF6B35',
+    color: colors.accent,
     marginBottom: 4,
   },
   timerValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: colors.accent,
   },
   timelineSection: {
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 16,
   },
   timelineItem: {
@@ -604,10 +613,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   timelineDotCompleted: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
   },
   timelineDotPending: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   timelineLine: {
     position: 'absolute',
@@ -615,30 +624,30 @@ const styles = StyleSheet.create({
     top: 14,
     width: 2,
     height: 32,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   timelineContent: {
     flex: 1,
   },
   timelineTime: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 2,
   },
   timelineTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   timelineDescription: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   evidenceSection: {
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   photosContainer: {
     flexDirection: 'row',
@@ -651,11 +660,11 @@ const styles = StyleSheet.create({
   photoLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   photoThumbnail: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 8,
     padding: 20,
     alignItems: 'center',
@@ -666,22 +675,22 @@ const styles = StyleSheet.create({
   },
   photoText: {
     fontSize: 12,
-    color: '#1A73E8',
+    color: colors.primary,
   },
   noPhotoText: {
     fontSize: 12,
-    color: '#999999',
+    color: colors.textLight,
     fontStyle: 'italic',
   },
   otpSection: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 8,
     padding: 16,
   },
   otpLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   otpRow: {
@@ -691,17 +700,17 @@ const styles = StyleSheet.create({
   },
   otpField: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   otpValue: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   claimsSection: {
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   claimBlock: {
     marginBottom: 20,
@@ -709,23 +718,23 @@ const styles = StyleSheet.create({
   claimTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   claimContent: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 8,
     padding: 12,
   },
   claimAuthor: {
     fontSize: 12,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '500',
     marginBottom: 4,
   },
   claimText: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   decisionSection: {
@@ -739,29 +748,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   decisionOptionSelected: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: colors.primaryLight,
   },
   radioCircle: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     marginRight: 12,
   },
   radioSelected: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     margin: 5,
   },
   decisionLabel: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   notesSection: {
     marginBottom: 20,
@@ -769,29 +778,29 @@ const styles = StyleSheet.create({
   notesLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   notesInput: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 14,
     minHeight: 80,
   },
   sendDecisionButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
   },
   sendDecisionButtonDisabled: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   sendDecisionButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },

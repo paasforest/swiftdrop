@@ -12,9 +12,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -363,7 +365,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
         {!photoAsset ? (
           <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto} disabled={capturingPhoto || uploading}>
             <View style={styles.cameraInner}>
-              <Text style={styles.cameraIcon}>📷</Text>
+              <Ionicons name="camera-outline" size={48} color={colors.primary} style={styles.cameraIcon} />
               <Text style={styles.cameraText}>{capturingPhoto ? 'Capturing...' : 'Tap to capture delivery photo'}</Text>
             </View>
           </TouchableOpacity>
@@ -376,7 +378,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
 
             {uploading ? (
               <View style={styles.progressBlock}>
-                <ActivityIndicator color="#1A73E8" />
+                <ActivityIndicator color={colors.primary} />
                 <Text style={styles.progressText}>{`Uploading ${Math.round(uploadProgress * 100)}%`}</Text>
               </View>
             ) : (
@@ -438,7 +440,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
           <View style={styles.stepContainer}>
             {markingArrival ? (
               <>
-                <ActivityIndicator size="large" color="#1A73E8" />
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.hintText}>Marking you as arrived at delivery...</Text>
               </>
             ) : (
@@ -465,7 +467,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     width: width,
     height: height,
   },
@@ -479,13 +481,13 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: 'bold',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   placeholder: {
     width: 24,
@@ -500,17 +502,17 @@ const styles = StyleSheet.create({
   },
   stepNumber: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   stepTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   instructionText: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
@@ -523,28 +525,28 @@ const styles = StyleSheet.create({
   otpInput: {
     width: 60,
     height: 60,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginHorizontal: 8,
     textAlign: 'center',
   },
   confirmButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginBottom: 32,
   },
   confirmButtonDisabled: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   confirmButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -552,21 +554,21 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   lockedStep: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 20,
     opacity: 0.6,
   },
   lockedStepNumber: {
     fontSize: 14,
-    color: '#999999',
+    color: colors.textLight,
     textAlign: 'center',
     marginBottom: 4,
   },
   lockedStepTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#999999',
+    color: colors.textLight,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -581,15 +583,15 @@ const styles = StyleSheet.create({
   lockedText: {
     flex: 1,
     fontSize: 14,
-    color: '#999999',
+    color: colors.textLight,
   },
   cameraContainer: {
     marginBottom: 32,
   },
   cameraButton: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderStyle: 'dashed',
     borderRadius: 12,
     height: 200,
@@ -605,10 +607,10 @@ const styles = StyleSheet.create({
   },
   cameraText: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   photoPreview: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     height: 200,
     justifyContent: 'center',
@@ -619,7 +621,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 120,
     borderRadius: 10,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     marginBottom: 10,
   },
   photoIcon: {
@@ -628,12 +630,12 @@ const styles = StyleSheet.create({
   },
   photoText: {
     fontSize: 16,
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: '500',
     marginBottom: 16,
   },
   retakeButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 8,
@@ -641,16 +643,16 @@ const styles = StyleSheet.create({
   },
   retakeText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   completeButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   completeButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -664,11 +666,11 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -676,25 +678,25 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 40,
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: 'bold',
   },
   successTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 8,
   },
   successSubtitle: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
   },
   earningsCard: {
-    backgroundColor: '#FFF3F0',
+    backgroundColor: colors.accentLight,
     borderRadius: 12,
     padding: 24,
     alignItems: 'center',
@@ -703,69 +705,69 @@ const styles = StyleSheet.create({
   },
   earningsLabel: {
     fontSize: 16,
-    color: '#FF6B35',
+    color: colors.accent,
     marginBottom: 8,
   },
   earningsAmount: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#FF6B35',
+    color: colors.accent,
     marginBottom: 4,
   },
   earningsSubtext: {
     fontSize: 14,
-    color: '#FF6B35',
+    color: colors.accent,
   },
   buttonContainer: {
     width: '100%',
     gap: 12,
   },
   primaryButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   primaryButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
   secondaryButton: {
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#666666',
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: '500',
   },
   errorText: {
     marginBottom: 12,
     marginTop: -4,
-    color: '#D32F2F',
+    color: colors.danger,
     fontSize: 14,
     textAlign: 'center',
   },
   hintText: {
     marginTop: 12,
     textAlign: 'center',
-    color: '#666666',
+    color: colors.textSecondary,
     fontSize: 14,
   },
   retryButton: {
     marginTop: 18,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   retryButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -776,13 +778,13 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   successTick: {
-    color: '#4CAF50',
+    color: colors.success,
     fontSize: 28,
     marginRight: 10,
     fontWeight: '700',
   },
   successText: {
-    color: '#4CAF50',
+    color: colors.success,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
@@ -793,14 +795,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   usePhotoButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 8,
     marginLeft: 10,
   },
   usePhotoButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
@@ -811,13 +813,13 @@ const styles = StyleSheet.create({
   },
   progressText: {
     marginTop: 8,
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
   },
   successHint: {
-    color: '#666666',
+    color: colors.textSecondary,
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,

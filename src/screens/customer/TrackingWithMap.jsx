@@ -14,6 +14,8 @@ import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { API_BASE_URL } from '../../apiConfig';
 import { subscribeToDriverLocation, calculateETA } from '../../services/locationTracking';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -383,7 +385,7 @@ const TrackingWithMap = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyWrap}>
-          <ActivityIndicator size="large" color="#1A73E8" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.emptySub}>Loading order…</Text>
         </View>
       </SafeAreaView>
@@ -394,7 +396,10 @@ const TrackingWithMap = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyWrap}>
-          <Text style={styles.emptyTitle}>⚠️ {error || 'Order not found'}</Text>
+          <View style={styles.errorTitleRow}>
+            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} style={{ marginRight: 8 }} />
+            <Text style={styles.emptyTitle}>{error || 'Order not found'}</Text>
+          </View>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.backBtnText}>Go back</Text>
           </TouchableOpacity>
@@ -440,7 +445,7 @@ const TrackingWithMap = ({ navigation, route }) => {
             coordinate={pickup_coords}
             title="Pickup Location"
             description={order.pickup_address}
-            pinColor="#FF6B35"
+            pinColor={colors.success}
           />
         )}
 
@@ -449,7 +454,7 @@ const TrackingWithMap = ({ navigation, route }) => {
             coordinate={delivery_coords}
             title="Delivery Location"
             description={order.dropoff_address}
-            pinColor="#1A73E8"
+            pinColor={colors.danger}
           />
         )}
 
@@ -464,7 +469,7 @@ const TrackingWithMap = ({ navigation, route }) => {
             rotation={driverLocation.heading || 0}
           >
             <View style={styles.driverMarker}>
-              <Text style={styles.driverMarkerText}>🚗</Text>
+              <Ionicons name="car-sport" size={22} color={colors.textWhite} />
             </View>
           </Marker>
         )}
@@ -478,15 +483,15 @@ const TrackingWithMap = ({ navigation, route }) => {
               },
               delivery_coords,
             ]}
-            strokeColor="#1A73E8"
+            strokeColor={colors.primary}
             strokeWidth={3}
             lineDashPattern={[5, 5]}
           />
         )}
       </MapView>
 
-      <TouchableOpacity style={styles.centerButton} onPress={handleCenterMap}>
-        <Text style={styles.centerButtonText}>📍</Text>
+      <TouchableOpacity style={styles.centerButton} onPress={handleCenterMap} accessibilityLabel="Recenter map">
+        <Ionicons name="locate" size={26} color={colors.primary} />
       </TouchableOpacity>
 
       {/* Status Card */}
@@ -502,9 +507,11 @@ const TrackingWithMap = ({ navigation, route }) => {
             )}
           </View>
           <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>
-              {order.status === 'delivered' ? '✓' : '●'}
-            </Text>
+            {order.status === 'delivered' ? (
+              <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+            ) : (
+              <Ionicons name="ellipse" size={14} color={colors.primary} />
+            )}
           </View>
         </View>
 
@@ -519,15 +526,16 @@ const TrackingWithMap = ({ navigation, route }) => {
             <View style={styles.driverDetails}>
               <Text style={styles.driverName}>{order.driver_name}</Text>
               <View style={styles.driverRating}>
-                <Text style={styles.ratingText}>⭐ {order.driver_rating || '4.8'}</Text>
+                <Ionicons name="star" size={16} color={colors.accent} style={{ marginRight: 4 }} />
+                <Text style={styles.ratingText}>{order.driver_rating || '4.8'}</Text>
                 {order.driver_vehicle && (
                   <Text style={styles.vehicleText}> • {order.driver_vehicle}</Text>
                 )}
               </View>
             </View>
             {order.driver_phone && (
-              <TouchableOpacity style={styles.callButton} onPress={handleCall}>
-                <Text style={styles.callButtonText}>📞</Text>
+              <TouchableOpacity style={styles.callButton} onPress={handleCall} accessibilityLabel="Call driver">
+                <Ionicons name="call" size={22} color={colors.textWhite} />
               </TouchableOpacity>
             )}
           </View>
@@ -616,7 +624,7 @@ const TrackingWithMap = ({ navigation, route }) => {
               style={styles.otpDismissButton}
               onPress={() => setPickupOTPModalVisible(false)}
             >
-              <Text style={styles.otpDismissText}>Code Given ✓</Text>
+              <Text style={styles.otpDismissText}>Code given</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -645,7 +653,7 @@ const TrackingWithMap = ({ navigation, route }) => {
               style={styles.otpDismissButton}
               onPress={() => setDeliveryOTPModalVisible(false)}
             >
-              <Text style={styles.otpDismissText}>Code Given ✓</Text>
+              <Text style={styles.otpDismissText}>Code given</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -657,7 +665,7 @@ const TrackingWithMap = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
   },
   map: {
     width: width,
@@ -666,45 +674,36 @@ const styles = StyleSheet.create({
   centerButton: {
     position: 'absolute',
     top: 60,
-    right: 20,
-    backgroundColor: '#FFFFFF',
+    right: spacing.lg,
+    backgroundColor: colors.surface,
     width: 50,
     height: 50,
     borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    ...shadows.card,
     elevation: 5,
   },
-  centerButtonText: {
-    fontSize: 24,
-  },
   driverMarker: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
-  driverMarkerText: {
-    fontSize: 20,
+    borderColor: colors.surface,
   },
   statusCard: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -720,41 +719,36 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
+    ...typography.h3,
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   eta: {
     fontSize: 14,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '600',
   },
   statusBadge: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.successLight,
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  statusBadgeText: {
-    fontSize: 20,
-    color: '#4CAF50',
-  },
   driverInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    padding: spacing.sm + 4,
+    borderRadius: radius.md,
     marginBottom: 16,
   },
   driverAvatar: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -762,7 +756,7 @@ const styles = StyleSheet.create({
   driverAvatarText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   driverDetails: {
     flex: 1,
@@ -770,7 +764,7 @@ const styles = StyleSheet.create({
   driverName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   driverRating: {
@@ -779,22 +773,19 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   vehicleText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   callButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     width: 44,
     height: 44,
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  callButtonText: {
-    fontSize: 20,
   },
   orderDetails: {
     marginBottom: 12,
@@ -806,12 +797,12 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   detailValue: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   liveIndicator: {
     flexDirection: 'row',
@@ -819,18 +810,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.border,
   },
   liveDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     marginRight: 8,
   },
   liveText: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: '600',
   },
   unmatchedOverlay: {
@@ -839,28 +830,28 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: colors.overlayMedium,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: spacing.lg,
   },
   unmatchedModal: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   unmatchedTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   unmatchedBody: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 18,
   },
@@ -877,13 +868,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   unmatchedPrimaryButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
   },
   unmatchedDangerButton: {
-    backgroundColor: '#d93025',
+    backgroundColor: colors.danger,
   },
   unmatchedButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -893,19 +884,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: colors.overlayDark,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
   },
   otpModal: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 30,
     width: '85%',
     alignItems: 'center',
     elevation: 10,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -913,13 +904,13 @@ const styles = StyleSheet.create({
   otpTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: colors.textPrimary,
     marginBottom: 8,
     textAlign: 'center',
   },
   otpSubtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 24,
     textAlign: 'center',
   },
@@ -933,32 +924,32 @@ const styles = StyleSheet.create({
   otpDigitBox: {
     width: 60,
     height: 72,
-    backgroundColor: '#EBF5FB',
-    borderRadius: 12,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#1A73E8',
+    borderColor: colors.primary,
   },
   otpDigitText: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   otpWarning: {
     fontSize: 13,
-    color: '#9CA3AF',
+    color: colors.textLight,
     marginBottom: 24,
     textAlign: 'center',
   },
   otpDismissButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: colors.primary,
     paddingHorizontal: 40,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: radius.md,
   },
   otpDismissText: {
-    color: 'white',
+    color: colors.textWhite,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -968,28 +959,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 40,
   },
+  errorTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    paddingHorizontal: spacing.md,
+  },
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A1A1A',
-    marginBottom: 12,
+    color: colors.textPrimary,
+    flexShrink: 1,
     textAlign: 'center',
   },
   emptySub: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 20,
   },
   backBtn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
   backBtnText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },

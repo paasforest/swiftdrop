@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -8,12 +10,12 @@ const Reports = () => {
   const [dateRange, setDateRange] = useState('last7days');
 
   const reportTypes = [
-    { id: 'overview', label: 'Overview', icon: '📊' },
-    { id: 'revenue', label: 'Revenue', icon: '💰' },
-    { id: 'deliveries', label: 'Deliveries', icon: '📦' },
-    { id: 'drivers', label: 'Drivers', icon: '👥' },
-    { id: 'customers', label: 'Customers', icon: '👤' },
-    { id: 'disputes', label: 'Disputes', icon: '⚠️' }
+    { id: 'overview', label: 'Overview', icon: 'bar-chart-outline' },
+    { id: 'revenue', label: 'Revenue', icon: 'cash-outline' },
+    { id: 'deliveries', label: 'Deliveries', icon: 'cube-outline' },
+    { id: 'drivers', label: 'Drivers', icon: 'people-outline' },
+    { id: 'customers', label: 'Customers', icon: 'person-outline' },
+    { id: 'disputes', label: 'Disputes', icon: 'warning-outline' },
   ];
 
   const dateRanges = [
@@ -135,7 +137,12 @@ const Reports = () => {
           ]}
           onPress={() => handleReportSelect(report.id)}
         >
-          <Text style={styles.reportTabIcon}>{report.icon}</Text>
+          <Ionicons
+            name={report.icon}
+            size={18}
+            color={selectedReport === report.id ? colors.textWhite : colors.textSecondary}
+            style={{ marginBottom: 4 }}
+          />
           <Text style={[
             styles.reportTabText,
             selectedReport === report.id && styles.reportTabTextActive
@@ -494,7 +501,7 @@ const Reports = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     width: width,
     height: height,
   },
@@ -509,16 +516,16 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   exportButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
   },
   exportText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 14,
     fontWeight: '500',
   },
@@ -531,16 +538,16 @@ const styles = StyleSheet.create({
   reportTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   reportTabActive: {
-    backgroundColor: '#1A73E8',
-    borderColor: '#1A73E8',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   reportTabIcon: {
     fontSize: 16,
@@ -548,36 +555,36 @@ const styles = StyleSheet.create({
   },
   reportTabText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   reportTabTextActive: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   dateRangeContainer: {
     paddingHorizontal: 24,
     marginBottom: 20,
   },
   dateRangeChip: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     marginRight: 8,
   },
   dateRangeChipActive: {
-    backgroundColor: '#1A73E8',
-    borderColor: '#1A73E8',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   dateRangeText: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   dateRangeTextActive: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   reportContent: {
     paddingHorizontal: 24,
@@ -592,10 +599,10 @@ const styles = StyleSheet.create({
   kpiCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -604,24 +611,24 @@ const styles = StyleSheet.create({
   kpiValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   kpiLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   kpiTrend: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: colors.success,
   },
   metricsSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -630,7 +637,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 16,
   },
   metricsGrid: {
@@ -643,19 +650,19 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A73E8',
+    color: colors.primary,
     marginBottom: 4,
   },
   metricLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   chartSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -676,21 +683,21 @@ const styles = StyleSheet.create({
   },
   bar: {
     width: 20,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     borderRadius: 4,
     marginBottom: 8,
   },
   barLabel: {
     fontSize: 10,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   revenueSummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -699,23 +706,23 @@ const styles = StyleSheet.create({
   revenueTotal: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#FF6B35',
+    color: colors.accent,
     marginBottom: 4,
   },
   revenueLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   revenuePeriod: {
     fontSize: 14,
-    color: '#999999',
+    color: colors.textLight,
   },
   revenueTable: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -723,36 +730,36 @@ const styles = StyleSheet.create({
   },
   tableHeader: {
     flexDirection: 'row',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: colors.border,
   },
   tableHeaderCell: {
     flex: 1,
     fontSize: 12,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   tableCell: {
     flex: 1,
     fontSize: 12,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   deliverySummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -765,12 +772,12 @@ const styles = StyleSheet.create({
   deliveryNumber: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1A73E8',
+    color: colors.primary,
     marginBottom: 4,
   },
   deliveryLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   deliveryBreakdown: {
     flexDirection: 'row',
@@ -782,19 +789,19 @@ const styles = StyleSheet.create({
   breakdownNumber: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   breakdownLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   pieChartSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -809,18 +816,18 @@ const styles = StyleSheet.create({
   },
   pieLabel: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   pieValue: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   cityBreakdown: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -834,33 +841,33 @@ const styles = StyleSheet.create({
   cityName: {
     width: 100,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   cityBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
     borderRadius: 4,
     marginHorizontal: 12,
   },
   cityBarFill: {
     height: '100%',
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     borderRadius: 4,
   },
   cityCount: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
     width: 30,
     textAlign: 'right',
   },
   driverSummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -873,12 +880,12 @@ const styles = StyleSheet.create({
   driverNumber: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: colors.success,
     marginBottom: 4,
   },
   driverLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   driverMetrics: {
     flexDirection: 'row',
@@ -890,18 +897,18 @@ const styles = StyleSheet.create({
   driverMetricValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   driverMetricLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   topPerformers: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -912,12 +919,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
   },
   performerRank: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1A73E8',
+    color: colors.primary,
     width: 30,
   },
   performerInfo: {
@@ -927,24 +934,24 @@ const styles = StyleSheet.create({
   performerName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   performerDetails: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   performerEarnings: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#FF6B35',
+    color: colors.accent,
   },
   customerSummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -957,12 +964,12 @@ const styles = StyleSheet.create({
   customerNumber: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#FF6B35',
+    color: colors.accent,
     marginBottom: 4,
   },
   customerLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   customerMetrics: {
     flexDirection: 'row',
@@ -974,18 +981,18 @@ const styles = StyleSheet.create({
   customerMetricValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   customerMetricLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   sourceBreakdown: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -999,33 +1006,33 @@ const styles = StyleSheet.create({
   sourceName: {
     width: 100,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   sourceBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
     borderRadius: 4,
     marginHorizontal: 12,
   },
   sourceBarFill: {
     height: '100%',
-    backgroundColor: '#FF6B35',
+    backgroundColor: colors.accent,
     borderRadius: 4,
   },
   sourceCount: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
     width: 30,
     textAlign: 'right',
   },
   disputeSummary: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1038,12 +1045,12 @@ const styles = StyleSheet.create({
   disputeNumber: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#F44336',
+    color: colors.danger,
     marginBottom: 4,
   },
   disputeLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   disputeBreakdown: {
     flexDirection: 'row',
@@ -1055,19 +1062,19 @@ const styles = StyleSheet.create({
   disputeBreakdownNumber: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   disputeBreakdownLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   reasonBreakdown: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1081,32 +1088,32 @@ const styles = StyleSheet.create({
   reasonName: {
     width: 120,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   reasonBar: {
     flex: 1,
     height: 8,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
     borderRadius: 4,
     marginHorizontal: 12,
   },
   reasonBarFill: {
     height: '100%',
-    backgroundColor: '#F44336',
+    backgroundColor: colors.danger,
     borderRadius: 4,
   },
   reasonCount: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
     width: 30,
     textAlign: 'right',
   },
   resolutionMetrics: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1119,11 +1126,11 @@ const styles = StyleSheet.create({
   },
   resolutionLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   resolutionValue: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
 });

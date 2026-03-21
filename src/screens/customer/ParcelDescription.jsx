@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -304,7 +305,7 @@ const ParcelDescription = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     width: width,
     height: height,
   },
@@ -318,13 +319,13 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: 'bold',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   placeholder: {
     width: 24,
@@ -335,18 +336,18 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 4,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     borderRadius: 2,
     marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     borderRadius: 2,
   },
   progressText: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   section: {
@@ -356,7 +357,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   categoriesContainer: {
@@ -364,9 +365,9 @@ const styles = StyleSheet.create({
     paddingRight: 20,
   },
   categoryChip: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -375,8 +376,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   categoryChipSelected: {
-    backgroundColor: '#1A73E8',
-    borderColor: '#1A73E8',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   categoryIcon: {
     fontSize: 16,
@@ -384,11 +385,11 @@ const styles = StyleSheet.create({
   },
   categoryText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   categoryTextSelected: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   sizesContainer: {
     flexDirection: 'row',
@@ -396,17 +397,17 @@ const styles = StyleSheet.create({
   },
   sizeCard: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginHorizontal: 4,
   },
   sizeCardSelected: {
-    borderColor: '#1A73E8',
-    backgroundColor: '#E8F4FF',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   sizeIcon: {
     fontSize: 32,
@@ -415,34 +416,34 @@ const styles = StyleSheet.create({
   sizeName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   sizeDescription: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   valueContainer: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   valueOption: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: colors.border,
   },
   valueOptionSelected: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: colors.primaryLight,
   },
   valueText: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   valueTextSelected: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '600',
   },
   toggleItem: {
@@ -453,17 +454,17 @@ const styles = StyleSheet.create({
   toggle: {
     width: 48,
     height: 24,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     borderRadius: 12,
     marginRight: 16,
   },
   toggleOn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
   },
   toggleKnob: {
     width: 20,
     height: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 10,
     margin: 2,
     alignSelf: 'flex-start',
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
   },
   toggleLabel: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   bottomContainer: {
     paddingHorizontal: 20,
@@ -481,13 +482,13 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   nextButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   nextButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -503,7 +504,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -512,13 +513,13 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
     textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 20,
     textAlign: 'center',
     lineHeight: 20,
@@ -528,22 +529,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   prohibitedItem: {
-    backgroundColor: '#FFF3F0',
+    backgroundColor: colors.accentLight,
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
     borderLeftWidth: 3,
-    borderLeftColor: '#FF6B35',
+    borderLeftColor: colors.accent,
   },
   prohibitedText: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   modalWarning: {
     fontSize: 12,
-    color: '#FF6B35',
-    backgroundColor: '#FFF3F0',
+    color: colors.accent,
+    backgroundColor: colors.accentLight,
     padding: 12,
     borderRadius: 8,
     marginBottom: 20,
@@ -556,27 +557,27 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   cancelButtonText: {
-    color: '#666666',
+    color: colors.textSecondary,
     fontSize: 16,
     fontWeight: '600',
   },
   confirmButton: {
     flex: 1,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   confirmButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },

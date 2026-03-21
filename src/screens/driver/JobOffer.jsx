@@ -16,6 +16,8 @@ import {
 import { CommonActions } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius } from '../../theme/theme';
+import { AppButton, BottomTabBar } from '../../components/ui';
 
 const { width } = Dimensions.get('window');
 
@@ -222,7 +224,7 @@ const JobOffer = ({ navigation }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#1A73E8" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading job offer…</Text>
         </View>
       </SafeAreaView>
@@ -256,10 +258,12 @@ const JobOffer = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.header}>New job offer</Text>
+        <Text style={styles.offerTag}>New job offer</Text>
 
-        <Text style={styles.earnsLabel}>You earn</Text>
-        <Text style={styles.earnsValue}>{formatMoney(offer.driver_earns)}</Text>
+        <View style={styles.earnHero}>
+          <Text style={styles.earnsLabel}>You earn</Text>
+          <Text style={styles.earnsValue}>{formatMoney(offer.driver_earns)}</Text>
+        </View>
 
         <View style={styles.timerBlock}>
           <View style={styles.timerRow}>
@@ -317,32 +321,24 @@ const JobOffer = ({ navigation }) => {
         ) : null}
 
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.acceptBtn, (accepting || declining) && styles.btnDisabled]}
+          <AppButton
+            label="Accept"
+            variant="primary"
             onPress={handleAccept}
+            loading={accepting}
             disabled={accepting || declining}
-          >
-            {accepting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.acceptBtnText}>Accept</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.declineBtn, (accepting || declining) && styles.btnDisabled]}
+          />
+          <View style={{ height: spacing.sm }} />
+          <AppButton
+            label="Decline"
+            variant="outline"
             onPress={handleDecline}
+            loading={declining}
             disabled={accepting || declining}
-            activeOpacity={0.85}
-          >
-            {declining ? (
-              <ActivityIndicator color="#1A73E8" />
-            ) : (
-              <Text style={styles.declineBtnText}>Decline</Text>
-            )}
-          </TouchableOpacity>
+          />
         </View>
       </ScrollView>
+      <BottomTabBar navigation={navigation} variant="driver" active="jobs" />
     </SafeAreaView>
   );
 };
@@ -350,41 +346,47 @@ const JobOffer = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
+    paddingBottom: 72,
   },
   scroll: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: spacing.lg,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 15,
-    color: '#5F6368',
+    color: colors.textSecondary,
   },
-  header: {
-    fontSize: 20,
+  offerTag: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 8,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  earnHero: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   earnsLabel: {
-    fontSize: 14,
-    color: '#5F6368',
-    fontWeight: '600',
-    marginTop: 8,
+    fontSize: 15,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    marginBottom: 6,
   },
   earnsValue: {
-    fontSize: 42,
+    fontSize: 48,
     fontWeight: '800',
-    color: '#E65100',
-    marginBottom: 16,
-    letterSpacing: -1,
+    color: colors.accent,
+    letterSpacing: -1.5,
   },
   timerBlock: {
     marginBottom: 20,
@@ -396,40 +398,40 @@ const styles = StyleSheet.create({
   },
   timerLabel: {
     fontSize: 14,
-    color: '#5F6368',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   timerSeconds: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   progressTrack: {
     height: 10,
     borderRadius: 6,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     borderRadius: 6,
-    backgroundColor: '#34A853',
+    backgroundColor: colors.success,
   },
   rowAddress: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 14,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E8EAED',
+    borderColor: colors.border,
   },
   dotGreen: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#34A853',
+    backgroundColor: colors.success,
     marginTop: 4,
     marginRight: 10,
   },
@@ -437,7 +439,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#EA4335',
+    backgroundColor: colors.danger,
     marginTop: 4,
     marginRight: 10,
   },
@@ -446,13 +448,13 @@ const styles = StyleSheet.create({
   },
   addrLabel: {
     fontSize: 12,
-    color: '#5F6368',
+    color: colors.textSecondary,
     fontWeight: '600',
     marginBottom: 4,
   },
   addrValue: {
     fontSize: 15,
-    color: '#202124',
+    color: colors.textPrimary,
     lineHeight: 22,
   },
   metaGrid: {
@@ -464,15 +466,15 @@ const styles = StyleSheet.create({
   metaItem: {
     width: '48%',
     marginBottom: 10,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E8EAED',
+    borderColor: colors.border,
   },
   metaLabel: {
     fontSize: 11,
-    color: '#80868B',
+    color: colors.textLight,
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -480,65 +482,33 @@ const styles = StyleSheet.create({
   metaValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#202124',
+    color: colors.textPrimary,
   },
   specialBox: {
-    backgroundColor: '#FFF8E1',
+    backgroundColor: colors.warningLight,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#FFE082',
+    borderColor: colors.warning,
     marginBottom: 16,
   },
   specialTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#E65100',
+    color: colors.accentDark,
     marginBottom: 6,
   },
   specialBody: {
     fontSize: 14,
-    color: '#5D4037',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   actions: {
     marginTop: 8,
   },
-  acceptBtn: {
-    backgroundColor: '#1A73E8',
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    minHeight: 54,
-    justifyContent: 'center',
-  },
-  acceptBtnText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  declineBtn: {
-    marginTop: 12,
-    backgroundColor: '#fff',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#1A73E8',
-    minHeight: 50,
-    justifyContent: 'center',
-  },
-  declineBtnText: {
-    color: '#1A73E8',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  btnDisabled: {
-    opacity: 0.6,
-  },
   errorText: {
     fontSize: 16,
-    color: '#c5221f',
+    color: colors.danger,
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -547,19 +517,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   secondaryBtnText: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '600',
   },
   noOfferTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#5F6368',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   noOfferSub: {
     fontSize: 15,
-    color: '#80868B',
+    color: colors.textLight,
   },
 });
 

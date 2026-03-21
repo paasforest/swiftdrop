@@ -15,8 +15,10 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -210,7 +212,7 @@ const OrderDetail = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#1A73E8" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.hint}>Loading order…</Text>
         </View>
       </SafeAreaView>
@@ -221,7 +223,10 @@ const OrderDetail = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.center}>
-          <Text style={styles.title}>⚠️ {error || 'Order not found'}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} style={{ marginRight: 8 }} />
+            <Text style={styles.title}>{error || 'Order not found'}</Text>
+          </View>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Text style={styles.backBtnText}>Go back</Text>
           </TouchableOpacity>
@@ -318,8 +323,8 @@ const OrderDetail = ({ navigation, route }) => {
             <Text style={styles.value}>{formatMoney(order.commission_amount)}</Text>
           </View>
           <View style={[styles.priceRow, styles.totalRow]}>
-            <Text style={[styles.label, { color: '#1A1A1A', fontWeight: '700' }]}>Total</Text>
-            <Text style={[styles.value, { color: '#1A1A1A', fontWeight: '800' }]}>{formatMoney(order.total_price)}</Text>
+            <Text style={[styles.label, { color: colors.textPrimary, fontWeight: '700' }]}>Total</Text>
+            <Text style={[styles.value, { color: colors.textPrimary, fontWeight: '800' }]}>{formatMoney(order.total_price)}</Text>
           </View>
         </View>
 
@@ -397,7 +402,7 @@ const OrderDetail = ({ navigation, route }) => {
                 disabled={disputeSubmitting}
               >
                 {disputeSubmitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <ActivityIndicator color={colors.textWhite} />
                 ) : (
                   <Text style={styles.modalSubmitText}>Submit</Text>
                 )}
@@ -413,7 +418,7 @@ const OrderDetail = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     width,
     height,
   },
@@ -426,23 +431,23 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: 12,
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   title: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 18,
   },
   backBtn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
   backBtnText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: '700',
   },
   header: {
@@ -457,45 +462,45 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   backArrowText: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   section: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 14,
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   orderNumber: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   orderDate: {
     marginTop: 6,
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   row: {
@@ -506,25 +511,25 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '600',
     width: 70,
   },
   value: {
     fontSize: 13,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '700',
     flex: 1,
     textAlign: 'right',
   },
   photoSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 14,
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   photoRow: {
     flexDirection: 'row',
@@ -535,7 +540,7 @@ const styles = StyleSheet.create({
   },
   photoLabel: {
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '700',
     marginBottom: 8,
   },
@@ -543,20 +548,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 140,
     borderRadius: 12,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
   },
   photoPlaceholder: {
     width: '100%',
     height: 140,
     borderRadius: 12,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 8,
   },
   photoPlaceholderText: {
     fontSize: 12,
-    color: '#999999',
+    color: colors.textLight,
     fontWeight: '700',
     textAlign: 'center',
   },
@@ -570,10 +575,10 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   starFilled: {
-    color: '#f4b400',
+    color: colors.warning,
   },
   starEmpty: {
-    color: '#c7c7c7',
+    color: colors.textLight,
   },
   priceRow: {
     flexDirection: 'row',
@@ -584,28 +589,28 @@ const styles = StyleSheet.create({
   totalRow: {
     paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.border,
   },
   receiptBtn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
   },
   receiptBtnText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: '900',
   },
   disputeBtn: {
-    backgroundColor: '#B45309',
+    backgroundColor: colors.warning,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
   },
   disputeBtnText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: '800',
     fontSize: 15,
   },
@@ -614,12 +619,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.successLight,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: colors.successLight,
   },
   disputeSuccessText: {
-    color: '#065F46',
+    color: colors.success,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
@@ -631,7 +636,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderRadius: 16,
     padding: 18,
     maxHeight: height * 0.88,
@@ -639,56 +644,56 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 6,
   },
   modalHint: {
     fontSize: 13,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginBottom: 14,
   },
   modalLabel: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   typeList: {
     maxHeight: 160,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     borderRadius: 10,
   },
   typeRow: {
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   typeRowSelected: {
-    backgroundColor: '#EBF5FB',
+    backgroundColor: colors.primaryLight,
   },
   typeRowText: {
     fontSize: 15,
-    color: '#374151',
+    color: colors.textPrimary,
   },
   typeRowTextSelected: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '700',
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     borderRadius: 10,
     padding: 12,
     minHeight: 100,
     fontSize: 15,
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   modalError: {
-    color: '#B91C1C',
+    color: colors.danger,
     fontSize: 13,
     marginBottom: 10,
   },
@@ -703,12 +708,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   modalCancelText: {
-    color: '#6B7280',
+    color: colors.textSecondary,
     fontWeight: '700',
     fontSize: 16,
   },
   modalSubmit: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 12,
     paddingHorizontal: 22,
     borderRadius: 10,
@@ -717,7 +722,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalSubmitText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: '800',
     fontSize: 16,
   },

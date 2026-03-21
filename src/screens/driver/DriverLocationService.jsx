@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { getAuth } from '../../authStore';
+import { colors, radius, spacing } from '../../theme/theme';
 import { startDriverLocationTracking, stopDriverLocationTracking, updateDeliveryStatus } from '../../services/locationTracking';
 
 /**
@@ -79,18 +80,16 @@ const DriverLocationService = ({ orderId, onStop }) => {
           </TouchableOpacity>
         )}
       </View>
-      {error && (
-        <Text style={styles.errorText}>⚠️ {error}</Text>
-      )}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#F8F9FA',
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: colors.background,
+    padding: spacing.sm + 4,
+    borderRadius: radius.sm,
     marginBottom: 12,
   },
   statusBar: {
@@ -106,40 +105,40 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     marginRight: 8,
   },
   offlineDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#FF6B35',
+    backgroundColor: colors.accent,
     marginRight: 8,
   },
   statusText: {
     fontSize: 14,
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: '600',
   },
   statusTextOff: {
     fontSize: 14,
-    color: '#FF6B35',
+    color: colors.accent,
     fontWeight: '600',
   },
   retryButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
   retryText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 12,
     fontWeight: '600',
   },
   errorText: {
     fontSize: 12,
-    color: '#FF6B35',
+    color: colors.accent,
     marginTop: 8,
   },
 });

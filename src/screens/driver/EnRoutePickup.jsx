@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import DriverLocationService from './DriverLocationService';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -67,7 +69,7 @@ const EnRoutePickup = ({ route, navigation }) => {
           
           {/* Driver Position */}
           <View style={[styles.driverMarker, { left: 100, top: 200 }]}>
-            <Text style={styles.driverIcon}>🚗</Text>
+            <Ionicons name="car-sport" size={22} color={colors.textWhite} />
           </View>
           
           {/* Pickup Location */}
@@ -78,8 +80,8 @@ const EnRoutePickup = ({ route, navigation }) => {
 
         {/* Top Overlay Bar */}
         <View style={styles.topOverlay}>
-          <TouchableOpacity onPress={handleBack}>
-            <Text style={styles.backArrow}>←</Text>
+          <TouchableOpacity onPress={handleBack} accessibilityLabel="Go back">
+            <Ionicons name="chevron-back" size={28} color={colors.textWhite} />
           </TouchableOpacity>
           <Text style={styles.overlayTitle}>Pickup</Text>
           <View style={{ width: 70 }} />
@@ -125,13 +127,13 @@ const EnRoutePickup = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     width: width,
     height: height,
   },
   mapContainer: {
     flex: 1,
-    backgroundColor: '#E8F4F8',
+    backgroundColor: colors.primaryLight,
     position: 'relative',
   },
   mapPlaceholder: {
@@ -142,7 +144,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 2,
     height: 150,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     left: 150,
     top: 100,
     transform: [{ rotate: '-30deg' }],
@@ -152,10 +154,10 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -163,17 +165,17 @@ const styles = StyleSheet.create({
   },
   driverIcon: {
     fontSize: 20,
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   pickupMarker: {
     position: 'absolute',
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -183,7 +185,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
   },
   topOverlay: {
     position: 'absolute',
@@ -196,7 +198,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -204,34 +206,34 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: 'bold',
   },
   overlayTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   cancelText: {
     fontSize: 14,
-    color: '#FF6B35',
+    color: colors.accent,
     fontWeight: '500',
   },
   bottomPanel: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 8,
   },
   statusBadge: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: colors.primaryLight,
     padding: 12,
     borderRadius: 12,
     alignItems: 'center',
@@ -240,7 +242,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   customerSection: {
     marginBottom: 24,
@@ -248,7 +250,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   customerInfo: {
@@ -260,7 +262,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -274,12 +276,12 @@ const styles = StyleSheet.create({
   customerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   customerPhone: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   contactButtons: {
     flexDirection: 'row',
@@ -290,9 +292,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 12,
   },
@@ -302,7 +304,7 @@ const styles = StyleSheet.create({
   },
   contactText: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   addressSection: {
@@ -310,11 +312,11 @@ const styles = StyleSheet.create({
   },
   addressText: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   etaContainer: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: colors.primaryLight,
     padding: 8,
     borderRadius: 8,
     alignSelf: 'flex-start',
@@ -322,29 +324,29 @@ const styles = StyleSheet.create({
   etaText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   instructionsSection: {
     marginBottom: 24,
   },
   instructionsBox: {
-    backgroundColor: '#FFF3CD',
+    backgroundColor: colors.warningLight,
     padding: 12,
     borderRadius: 8,
   },
   instructionsText: {
     fontSize: 14,
-    color: '#856404',
+    color: colors.warning,
     lineHeight: 20,
   },
   arrivedButton: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: colors.accent,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   arrivedButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },

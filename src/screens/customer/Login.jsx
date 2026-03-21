@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView } from 'react-native';
+import {
+  View,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { AppText, AppButton } from '../../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
-/** Strip zero-width / BOM (common when copy-pasting email/password from chat). */
 function cleanLoginInput(value) {
   return String(value ?? '')
     .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
@@ -18,11 +28,9 @@ const Login = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Login form state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  // Register form state
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPhone, setRegisterPhone] = useState('');
@@ -35,19 +43,10 @@ const Login = ({ navigation }) => {
   const normalizePhoneForApi = (phoneInput) => {
     let v = String(phoneInput ?? '').trim();
     v = v.replace(/\s+/g, '');
-
-    // Drop '+' for normalization
     if (v.startsWith('+')) v = v.slice(1);
-
-    // If local format starts with 0, convert to +27
     if (v.startsWith('0')) v = `27${v.slice(1)}`;
-
-    // If they typed full country code "27..."
     if (v.startsWith('27')) return `+${v}`;
-
-    // 9-digit local mobile without leading 0 (SA mobiles usually start with 6, 7, or 8)
     if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
-
     return '';
   };
 
@@ -60,10 +59,6 @@ const Login = ({ navigation }) => {
       if (!email || !password) {
         setErrorMessage('Email and password are required.');
         return;
-      }
-
-      if (__DEV__) {
-        console.log('[Login] sending', { emailLen: email.length, passwordLen: password.length });
       }
 
       const data = await postJson('/api/auth/login', {
@@ -86,35 +81,28 @@ const Login = ({ navigation }) => {
   };
 
   const handleRegister = async () => {
-    console.log('[Register] Button pressed');
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      console.log('[Register] Validating fields...');
       if (!registerName || !registerEmail || !registerPassword || !confirmPassword) {
-        console.log('[Register] Missing fields');
         setErrorMessage('Please fill in all registration fields.');
         return;
       }
       if (registerPassword.length < 8) {
-        console.log('[Register] Password too short');
         setErrorMessage('Password must be at least 8 characters.');
         return;
       }
       if (registerPassword !== confirmPassword) {
-        console.log('[Register] Passwords do not match');
         setErrorMessage('Passwords do not match.');
         return;
       }
 
       const phone = normalizePhoneForApi(registerPhone);
-      console.log('[Register] Normalized phone:', phone);
       if (!phone) {
         setErrorMessage('Enter a valid South African phone number.');
         return;
       }
 
-      console.log('[Register] Calling API...');
       const data = await postJson('/api/auth/register-customer', {
         full_name: registerName,
         email: registerEmail.trim(),
@@ -122,9 +110,7 @@ const Login = ({ navigation }) => {
         password: registerPassword,
       });
 
-      // When REQUIRE_PHONE_VERIFICATION=false on the server, register returns tokens and skips OTP.
       if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
-        console.log('[Register] Server skipped phone verification; signing in.');
         setAuth({
           token: data.token,
           refreshToken: data.refreshToken,
@@ -134,197 +120,224 @@ const Login = ({ navigation }) => {
         return;
       }
 
-      console.log('[Register] Success! Navigating to OTP...');
       navigation.navigate('OTPScreen', { phone });
     } catch (err) {
-      console.error('[Register] Error:', err.message);
       setErrorMessage(err.message || 'Registration failed.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    console.log('Google sign in');
-  };
+  const handleGoogleSignIn = () => {};
 
-  const handleForgotPassword = () => {
-    console.log('Forgot password');
-  };
+  const handleForgotPassword = () => {};
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Logo */}
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.logoContainer}>
-          <Text style={styles.logo}>SwiftDrop</Text>
+          <AppText variant="h1" color="primary" style={styles.logo}>
+            SwiftDrop
+          </AppText>
         </View>
 
-        {/* Tabs */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'login' && styles.activeTab]}
             onPress={() => setActiveTab('login')}
           >
-            <Text style={[styles.tabText, activeTab === 'login' && styles.activeTabText]}>
+            <AppText
+              variant="h4"
+              color={activeTab === 'login' ? 'primary' : 'textSecondary'}
+              style={{ fontWeight: activeTab === 'login' ? '600' : '500' }}
+            >
               Login
-            </Text>
+            </AppText>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'register' && styles.activeTab]}
             onPress={() => setActiveTab('register')}
           >
-            <Text style={[styles.tabText, activeTab === 'register' && styles.activeTabText]}>
+            <AppText
+              variant="h4"
+              color={activeTab === 'register' ? 'primary' : 'textSecondary'}
+              style={{ fontWeight: activeTab === 'register' ? '600' : '500' }}
+            >
               Register
-            </Text>
+            </AppText>
           </TouchableOpacity>
         </View>
 
-        {/* Login Form */}
         {activeTab === 'login' && (
           <View style={styles.formContainer}>
             <TextInput
-              style={styles.input}
-              placeholder="Email"
+              style={styles.textInput}
+              placeholder="Email or phone"
+              placeholderTextColor={colors.textLight}
               value={loginEmail}
               onChangeText={setLoginEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
-            
-            <View style={styles.passwordContainer}>
+
+            <View style={styles.passwordRow}>
               <TextInput
-                style={styles.passwordInput}
+                style={styles.passwordInputInner}
                 placeholder="Password"
+                placeholderTextColor={colors.textLight}
                 value={loginPassword}
                 onChangeText={setLoginPassword}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <TouchableOpacity
-                style={styles.eyeIcon}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Text style={styles.eyeText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity onPress={handleForgotPassword}>
-              <Text style={styles.forgotPassword}>Forgot Password?</Text>
+              <AppText variant="small" color="primary" style={styles.forgot}>
+                Forgot password?
+              </AppText>
             </TouchableOpacity>
 
-            {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+            {errorMessage ? (
+              <AppText variant="small" color="danger" style={styles.errorText}>
+                {errorMessage}
+              </AppText>
+            ) : null}
 
-            <TouchableOpacity
-              style={[styles.loginButton, isSubmitting && { opacity: 0.7 }]}
+            <AppButton
+              label={isSubmitting ? 'Logging in…' : 'Login'}
+              variant="primary"
               onPress={handleLogin}
+              loading={isSubmitting}
               disabled={isSubmitting}
-            >
-              <Text style={styles.loginButtonText}>{isSubmitting ? 'Logging in...' : 'Login'}</Text>
-            </TouchableOpacity>
+            />
 
-            {/* Driver registration */}
-            <TouchableOpacity
-              style={styles.driverRegisterButton}
+            <AppButton
+              label="Register as driver"
+              variant="outline"
               onPress={() => navigation.navigate('DriverRegister')}
               disabled={isSubmitting}
-            >
-              <Text style={styles.driverRegisterButtonText}>Register as Driver</Text>
-            </TouchableOpacity>
+              style={{ marginTop: spacing.sm }}
+            />
 
-            {/* Customer registration */}
             <TouchableOpacity
               onPress={() => setActiveTab('register')}
               disabled={isSubmitting}
-              style={styles.customerRegisterLink}
+              style={styles.linkWrap}
             >
-              <Text style={styles.customerRegisterLinkText}>Register as Customer</Text>
+              <AppText variant="small" color="primary" style={styles.link}>
+                Register as customer
+              </AppText>
             </TouchableOpacity>
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
+              <AppText variant="small" color="textSecondary" style={styles.dividerText}>
+                or
+              </AppText>
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn}>
-              <Text style={styles.googleButtonText}>Sign in with Google</Text>
+            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn} activeOpacity={0.85}>
+              <Ionicons name="logo-google" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
+              <AppText variant="h4" style={{ color: colors.textSecondary, fontWeight: '500' }}>
+                Sign in with Google
+              </AppText>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Register Form */}
         {activeTab === 'register' && (
           <View style={styles.formContainer}>
             <TextInput
-              style={styles.input}
-              placeholder="Full Name"
+              style={styles.textInput}
+              placeholder="Full name"
+              placeholderTextColor={colors.textLight}
               value={registerName}
               onChangeText={setRegisterName}
             />
-            
+
             <TextInput
-              style={styles.input}
+              style={styles.textInput}
               placeholder="Email"
+              placeholderTextColor={colors.textLight}
               value={registerEmail}
               onChangeText={setRegisterEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
-            
+
             <View style={styles.phoneContainer}>
-              <Text style={styles.phonePrefix}>+27</Text>
+              <AppText variant="body" color="textSecondary" style={styles.phonePrefix}>
+                +27
+              </AppText>
               <TextInput
-                style={styles.phoneInput}
-                placeholder="Phone Number"
+                style={styles.phoneInputInner}
+                placeholder="Phone number"
+                placeholderTextColor={colors.textLight}
                 value={registerPhone}
                 onChangeText={setRegisterPhone}
                 keyboardType="phone-pad"
               />
             </View>
-            
-            <View style={styles.passwordContainer}>
+
+            <View style={styles.passwordRow}>
               <TextInput
-                style={styles.passwordInput}
+                style={styles.passwordInputInner}
                 placeholder="Password"
+                placeholderTextColor={colors.textLight}
                 value={registerPassword}
                 onChangeText={setRegisterPassword}
                 secureTextEntry={!showPassword}
               />
-              <TouchableOpacity
-                style={styles.eyeIcon}
-                onPress={() => setShowPassword(!showPassword)}
-              >
-                <Text style={styles.eyeText}>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.passwordContainer}>
+
+            <View style={styles.passwordRow}>
               <TextInput
-                style={styles.passwordInput}
-                placeholder="Confirm Password"
+                style={styles.passwordInputInner}
+                placeholder="Confirm password"
+                placeholderTextColor={colors.textLight}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showConfirmPassword}
               />
-              <TouchableOpacity
-                style={styles.eyeIcon}
-                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-              >
-                <Text style={styles.eyeText}>{showConfirmPassword ? '👁️' : '👁️‍🗨️'}</Text>
+              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
             </View>
 
-            {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+            {errorMessage ? (
+              <AppText variant="small" color="danger" style={styles.errorText}>
+                {errorMessage}
+              </AppText>
+            ) : null}
 
-            <TouchableOpacity
-              style={[styles.registerButton, isSubmitting && { opacity: 0.7 }]}
+            <AppButton
+              label={isSubmitting ? 'Registering…' : 'Create account'}
+              variant="primary"
               onPress={handleRegister}
+              loading={isSubmitting}
               disabled={isSubmitting}
-            >
-              <Text style={styles.registerButtonText}>{isSubmitting ? 'Registering...' : 'Create Account'}</Text>
-            </TouchableOpacity>
+            />
           </View>
         )}
       </ScrollView>
@@ -335,190 +348,128 @@ const Login = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    width: width,
-    height: height,
+    backgroundColor: colors.surface,
+    width,
+    minHeight: height,
   },
   logoContainer: {
     alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 30,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
   },
   logo: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#1A73E8',
   },
   tabContainer: {
     flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 30,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 4,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    padding: spacing.xs,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: spacing.sm + 4,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: radius.sm,
   },
   activeTab: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 16,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  activeTabText: {
-    color: '#1A73E8',
-    fontWeight: '600',
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   formContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xxl,
   },
-  input: {
-    backgroundColor: '#F8F9FA',
+  textInput: {
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    marginBottom: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    fontSize: 15,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
   },
-  passwordContainer: {
+  passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    marginBottom: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    marginBottom: spacing.md,
+    paddingRight: spacing.sm,
   },
-  passwordInput: {
+  passwordInputInner: {
     flex: 1,
-    padding: 16,
-    fontSize: 16,
+    padding: spacing.md,
+    fontSize: 15,
+    color: colors.textPrimary,
   },
-  eyeIcon: {
-    padding: 16,
-  },
-  eyeText: {
-    fontSize: 20,
+  eyeBtn: {
+    padding: spacing.sm,
   },
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    marginBottom: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    marginBottom: spacing.md,
   },
   phonePrefix: {
-    padding: 16,
-    fontSize: 16,
-    color: '#666666',
+    paddingHorizontal: spacing.md,
     borderRightWidth: 1,
-    borderRightColor: '#E0E0E0',
+    borderRightColor: colors.border,
   },
-  phoneInput: {
+  phoneInputInner: {
     flex: 1,
-    padding: 16,
-    fontSize: 16,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    fontSize: 15,
+    color: colors.textPrimary,
   },
-  forgotPassword: {
-    color: '#1A73E8',
-    fontSize: 14,
+  forgot: {
     textAlign: 'right',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
-  loginButton: {
-    backgroundColor: '#1A73E8',
-    paddingVertical: 16,
-    borderRadius: 12,
+  errorText: {
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  linkWrap: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginTop: spacing.sm,
   },
-  loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  driverRegisterButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#1A73E8',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  driverRegisterButtonText: {
-    color: '#1A73E8',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  customerRegisterLink: {
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  customerRegisterLinkText: {
-    color: '#1A73E8',
-    fontSize: 14,
-    fontWeight: '600',
+  link: {
     textDecorationLine: 'underline',
-  },
-  registerButton: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  registerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
     fontWeight: '600',
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: spacing.lg,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   dividerText: {
-    marginHorizontal: 16,
-    color: '#666666',
-    fontSize: 14,
+    marginHorizontal: spacing.md,
   },
   googleButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    paddingVertical: 16,
-    borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  googleButtonText: {
-    color: '#666666',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  errorText: {
-    color: '#d93025',
-    fontSize: 14,
-    marginBottom: 16,
-    textAlign: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
   },
 });
 

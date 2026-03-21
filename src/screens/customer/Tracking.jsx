@@ -9,8 +9,12 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import SwiftDropLogoMark from '../../components/SwiftDropLogoMark';
+import AvatarPlaceholder from '../../components/AvatarPlaceholder';
 
 const { width, height } = Dimensions.get('window');
 
@@ -90,7 +94,7 @@ const Tracking = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyWrap}>
-          <ActivityIndicator size="large" color="#1A73E8" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.emptySub}>Loading order…</Text>
         </View>
       </SafeAreaView>
@@ -120,27 +124,21 @@ const Tracking = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <View style={styles.mapContainer}>
         <View style={styles.mapPlaceholder}>
-          <Text style={styles.mapHint}>Map view — connect a map SDK for live tracking</Text>
-          <View style={styles.routeLine} />
-          <View style={styles.pickupMarker}>
-            <View style={styles.pickupDot} />
-          </View>
-          <View style={styles.destinationMarker}>
-            <View style={styles.destinationDot} />
-          </View>
+          <SwiftDropLogoMark />
         </View>
       </View>
 
       <View style={styles.bottomSheet}>
         {order.driver_id ? (
           <View style={styles.driverInfo}>
-            <View style={styles.driverPhoto}>
-              <Text style={styles.driverAvatar}>🚗</Text>
-            </View>
+            <AvatarPlaceholder size={60} />
             <View style={styles.driverDetails}>
               <Text style={styles.driverName}>{driverName}</Text>
               {order.driver_rating != null ? (
-                <Text style={styles.driverRating}>⭐ {Number(order.driver_rating).toFixed(1)}</Text>
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={16} color={colors.accent} style={{ marginRight: 4 }} />
+                  <Text style={styles.driverRating}>{Number(order.driver_rating).toFixed(1)}</Text>
+                </View>
               ) : null}
               <Text style={styles.driverVehicle} numberOfLines={2}>
                 {[vehicleBits, plate].filter(Boolean).join(' • ') || 'Vehicle details pending'}
@@ -159,7 +157,7 @@ const Tracking = ({ navigation, route }) => {
         {order.driver_phone ? (
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-              <Text style={styles.actionIcon}>📞</Text>
+              <Ionicons name="call-outline" size={24} color={colors.primary} />
             </TouchableOpacity>
           </View>
         ) : null}
@@ -206,9 +204,9 @@ const Tracking = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     width,
-    height,
+    minHeight: height,
   },
   emptyWrap: {
     flex: 1,
@@ -218,105 +216,53 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
     textAlign: 'center',
   },
   emptySub: {
     fontSize: 15,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
   },
   backBtn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
   },
   backBtnText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
   mapContainer: {
     flex: 1,
-    backgroundColor: '#E8F4F8',
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   mapPlaceholder: {
     flex: 1,
-    position: 'relative',
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  mapHint: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    fontSize: 12,
-    color: '#666666',
-    textAlign: 'center',
-  },
-  routeLine: {
-    width: 3,
-    height: 120,
-    backgroundColor: '#1A73E8',
-    opacity: 0.5,
-  },
-  pickupMarker: {
-    position: 'absolute',
-    left: '25%',
-    bottom: '35%',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-  },
-  pickupDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#4CAF50',
-  },
-  destinationMarker: {
-    position: 'absolute',
-    right: '25%',
-    top: '30%',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-  },
-  destinationDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#FF6B35',
+    padding: spacing.lg,
   },
   bottomSheet: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    ...shadows.modal,
   },
   noDriver: {
     fontSize: 15,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 12,
     textAlign: 'center',
   },
@@ -325,40 +271,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  driverPhoto: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  driverAvatar: {
-    fontSize: 24,
-  },
   driverDetails: {
     flex: 1,
+    marginLeft: spacing.md,
   },
   driverName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 2,
   },
   driverRating: {
     fontSize: 14,
-    color: '#FFA500',
-    marginBottom: 2,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
   driverVehicle: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   statusBanner: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: colors.primaryLight,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
@@ -366,14 +306,14 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A73E8',
+    color: colors.primary,
     flex: 1,
     textTransform: 'capitalize',
   },
   etaText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -384,20 +324,17 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
-  actionIcon: {
-    fontSize: 24,
-  },
   deliveryDetails: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
   detailRow: {
     flexDirection: 'row',
@@ -407,24 +344,24 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     width: 56,
   },
   detailValue: {
     flex: 1,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'right',
     fontWeight: '500',
   },
   deliveryTypeBadge: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   deliveryTypeText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
@@ -434,7 +371,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backLinkText: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },

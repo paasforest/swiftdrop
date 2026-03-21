@@ -10,8 +10,10 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -40,10 +42,10 @@ function formatWhen(iso) {
 
 function statusBadgeStyle(status) {
   const s = String(status || '').toLowerCase();
-  if (['delivered', 'completed'].includes(s)) return { bg: '#E8F5E8', fg: '#16A34A' };
-  if (s === 'disputed') return { bg: '#FFEBEE', fg: '#DC2626' };
-  if (s === 'cancelled') return { bg: '#F5F5F5', fg: '#757575' };
-  return { bg: '#E8F4FF', fg: '#1A73E8' };
+  if (['delivered', 'completed'].includes(s)) return { bg: colors.successLight, fg: colors.success };
+  if (s === 'disputed') return { bg: colors.dangerLight, fg: colors.danger };
+  if (s === 'cancelled') return { bg: colors.background, fg: colors.textSecondary };
+  return { bg: colors.primaryLight, fg: colors.primary };
 }
 
 const Deliveries = () => {
@@ -141,11 +143,11 @@ const Deliveries = () => {
 
       <View style={styles.filterBar}>
         <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Ionicons name="search-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.sm }} />
           <TextInput
             style={styles.searchInput}
             placeholder="Order # or customer name"
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.textLight}
             value={searchInput}
             onChangeText={setSearchInput}
           />
@@ -177,7 +179,7 @@ const Deliveries = () => {
       </View>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {loading ? <ActivityIndicator color="#1A73E8" style={{ marginTop: 16 }} /> : null}
+      {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} /> : null}
 
       <View style={styles.mainRow}>
         <ScrollView style={styles.tableScroll} horizontal>
@@ -246,7 +248,7 @@ const Deliveries = () => {
               </TouchableOpacity>
             </View>
             {detailLoading ? (
-              <ActivityIndicator color="#1A73E8" style={{ marginTop: 20 }} />
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
             ) : d ? (
               <ScrollView>
                 <Text style={styles.dLine}>
@@ -315,7 +317,7 @@ const Deliveries = () => {
           disabled={loadingMore}
         >
           {loadingMore ? (
-            <ActivityIndicator color="#1A73E8" />
+            <ActivityIndicator color={colors.primary} />
           ) : (
             <Text style={styles.moreBtnText}>Load more</Text>
           )}
@@ -328,59 +330,58 @@ const Deliveries = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     minHeight: height,
   },
   header: {
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing.lg,
     paddingTop: 20,
     paddingBottom: 8,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   filterBar: {
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     marginBottom: 8,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
     paddingHorizontal: 12,
     marginBottom: 10,
   },
-  searchIcon: { fontSize: 16, marginRight: 8 },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: '#111' },
+  searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: colors.textPrimary },
   chipsRow: { flexGrow: 0 },
   filterChip: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 8,
     marginRight: 8,
   },
   filterChipActive: {
-    backgroundColor: '#1A73E8',
-    borderColor: '#1A73E8',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
-  filterChipText: { fontSize: 13, color: '#666', fontWeight: '500' },
-  filterChipTextActive: { color: '#FFFFFF' },
-  errorText: { color: '#B91C1C', paddingHorizontal: 16 },
+  filterChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  filterChipTextActive: { color: colors.textWhite },
+  errorText: { color: colors.danger, paddingHorizontal: spacing.md },
   mainRow: { flex: 1, flexDirection: width > 700 ? 'row' : 'column' },
   tableScroll: { flex: 1 },
   table: { minWidth: width > 700 ? width - 420 : width - 32, paddingHorizontal: 8 },
   tableHeader: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
     paddingBottom: 8,
     marginBottom: 4,
   },
@@ -388,27 +389,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: colors.border,
     paddingVertical: 10,
   },
-  cell: { fontSize: 11, color: '#333', paddingRight: 6 },
-  headerCell: { fontWeight: '800', color: '#111', fontSize: 11 },
+  cell: { fontSize: 11, color: colors.textPrimary, paddingRight: 6 },
+  headerCell: { fontWeight: '800', color: colors.textPrimary, fontSize: 11 },
   badge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
   badgeText: { fontSize: 9, fontWeight: '700' },
   viewBtn: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 6,
     borderRadius: 6,
     alignItems: 'center',
   },
-  viewBtnText: { color: '#FFF', fontWeight: '700', fontSize: 11 },
+  viewBtnText: { color: colors.textWhite, fontWeight: '700', fontSize: 11 },
   detailPanel: {
     width: width > 700 ? 380 : '100%',
     maxHeight: width > 700 ? height - 100 : 320,
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
     borderTopWidth: width > 700 ? 0 : 1,
     borderLeftWidth: width > 700 ? 1 : 0,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     padding: 12,
   },
   detailHeader: {
@@ -416,24 +417,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 10,
   },
-  detailTitle: { fontSize: 16, fontWeight: '800' },
-  closeButton: { fontSize: 20, color: '#666' },
-  dLine: { fontSize: 13, color: '#333', marginBottom: 6, lineHeight: 18 },
-  dLab: { fontWeight: '700', color: '#555' },
-  dSection: { fontWeight: '800', marginTop: 12, marginBottom: 6, color: '#111' },
+  detailTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  closeButton: { fontSize: 20, color: colors.textSecondary },
+  dLine: { fontSize: 13, color: colors.textPrimary, marginBottom: 6, lineHeight: 18 },
+  dLab: { fontWeight: '700', color: colors.textSecondary },
+  dSection: { fontWeight: '800', marginTop: 12, marginBottom: 6, color: colors.textPrimary },
   photoRow: { flexDirection: 'row' },
   photoCol: { flex: 1, marginRight: 12 },
-  photoLab: { fontSize: 12, color: '#666', marginBottom: 4 },
-  photoImg: { width: '100%', height: 100, borderRadius: 8, backgroundColor: '#F0F0F0' },
-  noPh: { fontSize: 12, color: '#999', fontStyle: 'italic' },
+  photoLab: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+  photoImg: { width: '100%', height: 100, borderRadius: radius.sm, backgroundColor: colors.border },
+  noPh: { fontSize: 12, color: colors.textLight, fontStyle: 'italic' },
   moreBtn: {
     padding: 14,
     alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    margin: 16,
+    backgroundColor: colors.primaryLight,
+    margin: spacing.md,
     borderRadius: 10,
   },
-  moreBtnText: { color: '#1A73E8', fontWeight: '800' },
+  moreBtnText: { color: colors.primary, fontWeight: '800' },
 });
 
 export default Deliveries;

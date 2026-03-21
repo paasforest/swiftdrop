@@ -1,8 +1,21 @@
 import React, { useMemo, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ScrollView, Modal, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  ScrollView,
+  Modal,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
 import { WebView } from 'react-native-webview';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { AppButton, AppText } from '../../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -74,28 +87,28 @@ const Payment = ({ navigation, route }) => {
     {
       id: 'payfast',
       name: 'PayFast',
-      icon: '💳',
-      description: 'Pay with card/e-wallet'
+      ionicon: 'card-outline',
+      description: 'Pay with card/e-wallet',
     },
     {
       id: 'card',
       name: 'Credit/Debit Card',
-      icon: '💳',
-      description: 'Visa, Mastercard, etc.'
+      ionicon: 'card-outline',
+      description: 'Visa, Mastercard, etc.',
     },
     {
       id: 'eft',
       name: 'Instant EFT',
-      icon: '🏦',
-      description: 'Bank transfer'
+      ionicon: 'phone-portrait-outline',
+      description: 'Bank transfer',
     },
     {
       id: 'wallet',
       name: 'SwiftDrop Wallet',
-      icon: '👛',
+      ionicon: 'wallet-outline',
       description: 'R350 available',
-      balance: 350
-    }
+      balance: 350,
+    },
   ];
 
   const handlePaymentMethodSelect = (methodId) => {
@@ -187,10 +200,12 @@ const Payment = ({ navigation, route }) => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack}>
-            <Text style={styles.backArrow}>←</Text>
+          <TouchableOpacity onPress={handleBack} hitSlop={12}>
+            <Ionicons name="chevron-back" size={26} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={styles.title}>Payment</Text>
+          <AppText variant="h3" color="textPrimary">
+            Payment
+          </AppText>
           <View style={styles.placeholder} />
         </View>
 
@@ -253,7 +268,7 @@ const Payment = ({ navigation, route }) => {
               onPress={() => handlePaymentMethodSelect(method.id)}
             >
               <View style={styles.paymentLeft}>
-                <Text style={styles.paymentIcon}>{method.icon}</Text>
+                <Ionicons name={method.ionicon} size={26} color={colors.primary} style={styles.paymentIcon} />
                 <View style={styles.paymentInfo}>
                   <Text style={styles.paymentName}>{method.name}</Text>
                   <Text style={styles.paymentDescription}>{method.description}</Text>
@@ -273,7 +288,7 @@ const Payment = ({ navigation, route }) => {
 
         {/* Parking Notice */}
         <View style={styles.noticeBox}>
-          <Text style={styles.noticeIcon}>🅿️</Text>
+          <Ionicons name="information-circle-outline" size={22} color={colors.warning} style={styles.noticeIcon} />
           <Text style={styles.noticeText}>
             Please ensure parking is available at the pickup address when the driver arrives.
           </Text>
@@ -282,11 +297,11 @@ const Payment = ({ navigation, route }) => {
 
       {/* Pay Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.payButton} onPress={handlePay}>
-          <Text style={styles.payButtonText}>
-            Pay {totalPriceText} & Request Driver
-          </Text>
-        </TouchableOpacity>
+        <AppButton
+          label={`Pay ${totalPriceText} & request driver`}
+          variant="accent"
+          onPress={handlePay}
+        />
       </View>
 
       <Modal
@@ -298,13 +313,13 @@ const Payment = ({ navigation, route }) => {
           <View style={styles.payfastHeader}>
             <Text style={styles.payfastHeaderTitle}>PayFast Payment</Text>
             <TouchableOpacity style={styles.payfastCloseBtn} onPress={closePayfast}>
-              <Text style={styles.payfastCloseText}>✕</Text>
+              <Ionicons name="close" size={22} color={colors.danger} />
             </TouchableOpacity>
           </View>
 
           {payfastLoading && (
             <View style={styles.modalLoading}>
-              <ActivityIndicator size="large" color="#1A73E8" />
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.modalLoadingText}>Loading payment…</Text>
             </View>
           )}
@@ -326,136 +341,127 @@ const Payment = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    width: width,
-    height: height,
+    backgroundColor: colors.surface,
+    width,
+    minHeight: height,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-  },
-  backArrow: {
-    fontSize: 24,
-    color: '#1A73E8',
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
   placeholder: {
     width: 24,
   },
   orderSummary: {
-    backgroundColor: '#F8F9FA',
-    margin: 20,
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    margin: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    ...shadows.card,
   },
   summaryTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 12,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   addressSection: {
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   addressRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   addressLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     width: 50,
   },
   addressText: {
     flex: 1,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   deliveryInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.border,
   },
   deliveryType: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   estimatedTime: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   priceBreakdown: {
-    marginHorizontal: 20,
-    marginBottom: 24,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
   },
   totalRow: {
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingTop: 16,
-    marginTop: 8,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginTop: spacing.sm,
   },
   priceLabel: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   priceValue: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   totalLabel: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   totalValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1A73E8',
+    color: colors.primary,
   },
   paymentSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 12,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   paymentMethod: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
   paymentMethodSelected: {
-    borderColor: '#1A73E8',
-    backgroundColor: '#E8F4FF',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   paymentLeft: {
     flexDirection: 'row',
@@ -463,8 +469,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    marginRight: spacing.sm,
   },
   paymentInfo: {
     flex: 1,
@@ -472,16 +477,16 @@ const styles = StyleSheet.create({
   paymentName: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 2,
   },
   paymentDescription: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   balanceText: {
     fontSize: 12,
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: '500',
     marginTop: 2,
   },
@@ -490,7 +495,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -498,99 +503,84 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
   },
   noticeBox: {
     flexDirection: 'row',
-    backgroundColor: '#FFF3CD',
-    margin: 20,
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: colors.warningLight,
+    margin: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.md,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.warning,
   },
   noticeIcon: {
-    fontSize: 20,
-    marginRight: 12,
+    marginRight: spacing.sm,
   },
   noticeText: {
     flex: 1,
     fontSize: 14,
-    color: '#856404',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   bottomContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-    paddingTop: 10,
-  },
-  payButton: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  payButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
   },
   paymentMessageBox: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: '#FFF1F1',
-    borderRadius: 12,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: colors.dangerLight,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#F6C7C7',
+    borderColor: colors.danger,
   },
   paymentMessageText: {
-    color: '#d93025',
-    fontWeight: '900',
+    color: colors.danger,
+    fontWeight: '700',
     textAlign: 'center',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   payfastHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     paddingTop: 18,
-    paddingBottom: 12,
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: colors.border,
   },
   payfastHeaderTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: '#1A1A1A',
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   payfastCloseBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  payfastCloseText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#d93025',
-  },
   modalLoading: {
-    padding: 16,
+    padding: spacing.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalLoadingText: {
-    marginTop: 12,
+    marginTop: spacing.sm,
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   webview: {

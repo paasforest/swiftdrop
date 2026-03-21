@@ -10,12 +10,14 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { postJson } from '../../apiClient';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth, setAuth } from '../../authStore';
+import { colors, spacing, radius, typography } from '../../theme/theme';
 
 const TERMS_ERROR = 'Please agree to the SwiftDrop terms to continue.';
 
@@ -519,8 +521,8 @@ const DriverRegister = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Text style={styles.backArrow}>←</Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Go back">
+            <Ionicons name="chevron-back" size={28} color={colors.primary} />
           </TouchableOpacity>
           <Text style={styles.title}>Become a Driver</Text>
           <View style={styles.placeholder} />
@@ -536,7 +538,7 @@ const DriverRegister = ({ navigation }) => {
           </>
         ) : null}
 
-        {errorMessage ? <Text style={styles.errorText}>⚠️ {errorMessage}</Text> : null}
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
       </ScrollView>
 
       <View style={styles.bottomContainer}>
@@ -546,7 +548,7 @@ const DriverRegister = ({ navigation }) => {
           disabled={!canSubmit || busy}
         >
           {busy ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.textWhite} />
           ) : (
             <Text style={styles.continueButtonText}>Continue & Verify Phone (OTP)</Text>
           )}
@@ -559,45 +561,39 @@ const DriverRegister = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingTop: 20,
     paddingBottom: 16,
   },
-  backArrow: {
-    fontSize: 24,
-    color: '#1A73E8',
-    fontWeight: 'bold',
-  },
   title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
+    ...typography.h3,
+    color: colors.textPrimary,
   },
-  placeholder: { width: 24 },
+  placeholder: { width: 28 },
   formSection: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 10,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
+    ...typography.h4,
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   input: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     paddingVertical: 14,
     fontSize: 16,
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   row: { flexDirection: 'row', alignItems: 'center' },
@@ -612,71 +608,71 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#1A73E8',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
     marginRight: 10,
   },
   checkboxChecked: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
   },
   checkboxLabel: {
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '500',
   },
   pathCard: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 14,
-    padding: 16,
-    marginHorizontal: 20,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
     marginBottom: 12,
   },
   pathCardSelected: {
-    borderColor: '#1A73E8',
-    backgroundColor: '#E8F4FF',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
   },
   pathTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   pathSub: {
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   uploadButton: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
     marginBottom: 10,
   },
   uploadButtonText: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '700',
   },
   errorText: {
-    color: '#d93025',
+    color: colors.danger,
     fontSize: 14,
     fontWeight: '600',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 8,
   },
   bottomContainer: {
-    padding: 16,
+    padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.border,
   },
   continueButton: {
-    backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
     paddingVertical: 16,
     alignItems: 'center',
   },
@@ -684,14 +680,14 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   continueButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '700',
   },
   underReviewCard: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 18,
     marginBottom: 16,
@@ -699,29 +695,29 @@ const styles = StyleSheet.create({
   underReviewTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1A73E8',
+    color: colors.primary,
     marginBottom: 10,
   },
   underReviewText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     lineHeight: 22,
   },
   underReviewSub: {
     marginTop: 12,
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   doneButton: {
-    backgroundColor: '#1A73E8',
-    borderRadius: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
     paddingVertical: 14,
     alignItems: 'center',
   },
   doneButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '700',
   },

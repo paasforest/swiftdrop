@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,44 +48,44 @@ const AdminOverview = () => {
       key: 'active',
       label: 'Active deliveries',
       value: s.active_deliveries ?? '—',
-      color: '#1A73E8',
-      border: '#1A73E8',
+      color: colors.primary,
+      border: colors.primary,
     },
     {
       key: 'online',
       label: 'Online drivers',
       value: s.online_drivers ?? '—',
-      color: '#16A34A',
-      border: '#16A34A',
+      color: colors.success,
+      border: colors.success,
     },
     {
       key: 'revenue',
       label: 'Today revenue',
       value: formatMoney(s.today_revenue),
-      color: '#EA580C',
-      border: '#EA580C',
+      color: colors.accent,
+      border: colors.accent,
     },
     {
       key: 'disputes',
       label: 'Open disputes',
       value: s.open_disputes ?? '—',
-      color: '#DC2626',
-      border: '#DC2626',
+      color: colors.danger,
+      border: colors.danger,
       badge: Number(s.open_disputes) > 0,
     },
     {
       key: 'pending',
       label: 'Pending applications',
       value: s.pending_driver_applications ?? '—',
-      color: '#CA8A04',
-      border: '#EAB308',
+      color: colors.warning,
+      border: colors.warning,
     },
     {
       key: 'unmatched',
       label: 'Unmatched orders',
       value: s.unmatched_orders ?? '—',
-      color: '#64748B',
-      border: '#94A3B8',
+      color: colors.textSecondary,
+      border: colors.textLight,
     },
   ];
 
@@ -96,7 +97,7 @@ const AdminOverview = () => {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#1A73E8" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
       ) : error ? (
         <Text style={styles.errorText}>{error}</Text>
       ) : (
@@ -133,7 +134,7 @@ const AdminOverview = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     width: width,
     minHeight: height,
   },
@@ -141,41 +142,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   headerDate: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   errorText: {
-    color: '#B91C1C',
-    padding: 24,
+    color: colors.danger,
+    padding: spacing.lg,
   },
   kpiContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
     gap: 12,
   },
   kpiCard: {
     flex: 1,
     minWidth: width > 500 ? '30%' : '45%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadows.card,
   },
   kpiTop: {
     flexDirection: 'row',
@@ -189,35 +186,35 @@ const styles = StyleSheet.create({
   },
   kpiLabel: {
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   alertDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#DC2626',
+    backgroundColor: colors.danger,
     marginBottom: 4,
   },
   mapContainer: {
-    marginHorizontal: 24,
-    marginBottom: 24,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
   },
   mapTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   mapPlaceholder: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 20,
     minHeight: 100,
     justifyContent: 'center',
   },
   mapSub: {
     fontSize: 14,
-    color: '#64748B',
+    color: colors.textSecondary,
     lineHeight: 20,
   },
 });

@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -190,7 +192,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
 
           <View style={styles.photoContainer}>
             <View style={styles.photoThumbnail}>
-              <Text style={styles.photoIcon}>📷</Text>
+              <Ionicons name="camera-outline" size={28} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.photoText}>Proof of Delivery</Text>
@@ -247,8 +249,8 @@ const DeliveryConfirmed = ({ navigation, route }) => {
               <Text style={styles.priceValue}>{formatMoney(displayInsuranceFee)}</Text>
             </View>
             <View style={[styles.priceRow, styles.priceTotalRow]}>
-              <Text style={[styles.priceLabel, { color: '#1A1A1A', fontWeight: '900' }]}>Total</Text>
-              <Text style={[styles.priceValue, { color: '#1A1A1A', fontWeight: '900' }]}>{formatMoney(displayTotalPrice)}</Text>
+              <Text style={[styles.priceLabel, { color: colors.textPrimary, fontWeight: '900' }]}>Total</Text>
+              <Text style={[styles.priceValue, { color: colors.textPrimary, fontWeight: '900' }]}>{formatMoney(displayTotalPrice)}</Text>
             </View>
           </View>
 
@@ -267,7 +269,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     width: width,
     height: height,
   },
@@ -284,10 +286,10 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -295,36 +297,36 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 40,
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontWeight: 'bold',
   },
   successTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 8,
   },
   successSubtitle: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
   },
   summaryCard: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 20,
     width: '100%',
     marginBottom: 24,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   summaryTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 16,
   },
   summaryRow: {
@@ -335,32 +337,32 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     width: 100,
   },
   summaryValue: {
     flex: 1,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'right',
     fontWeight: '500',
   },
   photoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     padding: 16,
     width: '100%',
     marginBottom: 32,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   photoThumbnail: {
     width: 50,
     height: 50,
     borderRadius: 8,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -371,7 +373,7 @@ const styles = StyleSheet.create({
   photoText: {
     flex: 1,
     fontSize: 14,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '500',
   },
   ratingSection: {
@@ -381,7 +383,7 @@ const styles = StyleSheet.create({
   ratingTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -397,15 +399,15 @@ const styles = StyleSheet.create({
     fontSize: 38,
   },
   starFilled: {
-    color: '#FFA500',
+    color: colors.warning,
   },
   starEmpty: {
-    color: '#E0E0E0',
+    color: colors.border,
   },
   commentInput: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
@@ -414,30 +416,30 @@ const styles = StyleSheet.create({
   },
   submittedContainer: {
     padding: 20,
-    backgroundColor: '#E8F5E8',
+    backgroundColor: colors.successLight,
     borderRadius: 12,
     width: '100%',
     marginBottom: 32,
   },
   submittedText: {
     fontSize: 16,
-    color: '#4CAF50',
+    color: colors.success,
     textAlign: 'center',
     fontWeight: '500',
   },
   submitButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
   submitButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
   doneButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -445,7 +447,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   doneButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -454,26 +456,26 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 12,
     marginTop: 10,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: colors.border,
   },
   photoMissing: {
     fontSize: 13,
-    color: '#999999',
+    color: colors.textLight,
     marginTop: 10,
   },
   priceBreakdown: {
     width: '100%',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     padding: 16,
     marginBottom: 18,
   },
   priceTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 10,
   },
   priceRow: {
@@ -484,17 +486,17 @@ const styles = StyleSheet.create({
   },
   priceLabel: {
     fontSize: 13,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '700',
   },
   priceValue: {
     fontSize: 13,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '900',
   },
   priceTotalRow: {
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: colors.border,
     paddingTop: 10,
     marginBottom: 0,
   },

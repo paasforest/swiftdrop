@@ -13,10 +13,12 @@ import {
   Keyboard,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -333,7 +335,7 @@ const PostRoute = ({ navigation }) => {
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>From</Text>
             <View style={styles.inputContainer}>
-              <Text style={styles.inputIcon}>📍</Text>
+              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={fromAddress}
@@ -345,7 +347,7 @@ const PostRoute = ({ navigation }) => {
                   }
                 }}
                 placeholder="Search starting address"
-                placeholderTextColor="#888"
+                placeholderTextColor={colors.textLight}
               />
             </View>
             {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
@@ -367,13 +369,13 @@ const PostRoute = ({ navigation }) => {
                 ))}
               </View>
             )}
-            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#1A73E8" /> : null}
+            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
           </View>
 
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>To</Text>
             <View style={styles.inputContainer}>
-              <Text style={styles.inputIcon}>📍</Text>
+              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={toAddress}
@@ -385,7 +387,7 @@ const PostRoute = ({ navigation }) => {
                   }
                 }}
                 placeholder="Search destination address"
-                placeholderTextColor="#888"
+                placeholderTextColor={colors.textLight}
               />
             </View>
             {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
@@ -407,7 +409,7 @@ const PostRoute = ({ navigation }) => {
                 ))}
               </View>
             )}
-            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#1A73E8" /> : null}
+            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
           </View>
 
           <View style={styles.inputSection}>
@@ -421,7 +423,7 @@ const PostRoute = ({ navigation }) => {
                 setShowDeparturePicker(true);
               }}
             >
-              <Text style={styles.dateIcon}>📅</Text>
+              <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.dateIcon} />
               <Text style={styles.dateText}>{formatDepartureDisplay(departureAt)}</Text>
             </TouchableOpacity>
             {showDeparturePicker && Platform.OS === 'ios' && (
@@ -494,7 +496,7 @@ const PostRoute = ({ navigation }) => {
         </View>
 
         <View style={styles.noticeBanner}>
-          <Text style={styles.noticeIcon}>🔔</Text>
+          <Ionicons name="notifications-outline" size={22} color={colors.accent} style={styles.noticeIcon} />
           <Text style={styles.noticeText}>
             You will be notified when parcels match your route. You choose which ones to accept.
           </Text>
@@ -508,7 +510,7 @@ const PostRoute = ({ navigation }) => {
           disabled={submitting || Boolean(successMessage)}
         >
           {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={colors.textWhite} />
           ) : (
             <Text style={styles.postButtonText}>Post Route</Text>
           )}
@@ -521,7 +523,7 @@ const PostRoute = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     width: width,
     minHeight: height,
   },
@@ -538,13 +540,13 @@ const styles = StyleSheet.create({
   },
   backArrow: {
     fontSize: 24,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: 'bold',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   explanationContainer: {
     paddingHorizontal: 20,
@@ -552,7 +554,7 @@ const styles = StyleSheet.create({
   },
   explanationText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     lineHeight: 20,
     textAlign: 'center',
   },
@@ -561,12 +563,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.dangerLight,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: colors.dangerLight,
   },
   errorBannerText: {
-    color: '#B91C1C',
+    color: colors.danger,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -575,12 +577,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: '#D1FAE5',
+    backgroundColor: colors.successLight,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: colors.successLight,
   },
   successBannerText: {
-    color: '#065F46',
+    color: colors.success,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -594,15 +596,15 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 4,
   },
@@ -614,10 +616,10 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   placesErrorText: {
-    color: '#B91C1C',
+    color: colors.danger,
     fontSize: 12,
     marginTop: 6,
   },
@@ -625,32 +627,32 @@ const styles = StyleSheet.create({
     marginTop: 8,
     maxHeight: 180,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
   },
   predictionRow: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.border,
   },
   predictionMain: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
   },
   predictionSub: {
     fontSize: 12,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 16,
   },
@@ -660,7 +662,7 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 16,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     flex: 1,
   },
   iosPickerDone: {
@@ -669,7 +671,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   iosPickerDoneText: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '600',
     fontSize: 16,
   },
@@ -679,31 +681,31 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   chip: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   chipSelected: {
-    backgroundColor: '#1A73E8',
-    borderColor: '#1A73E8',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   chipTextSelected: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 4,
   },
@@ -715,11 +717,11 @@ const styles = StyleSheet.create({
   },
   stepperText: {
     fontSize: 20,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: 'bold',
   },
   stepperTextDisabled: {
-    color: '#CCCCCC',
+    color: colors.textLight,
   },
   stepperValue: {
     flex: 1,
@@ -728,10 +730,10 @@ const styles = StyleSheet.create({
   stepperNumber: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   noticeBanner: {
-    backgroundColor: '#FFF3CD',
+    backgroundColor: colors.warningLight,
     marginHorizontal: 20,
     padding: 16,
     borderRadius: 12,
@@ -746,7 +748,7 @@ const styles = StyleSheet.create({
   noticeText: {
     flex: 1,
     fontSize: 14,
-    color: '#856404',
+    color: colors.warning,
     lineHeight: 20,
   },
   bottomContainer: {
@@ -757,12 +759,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 30,
     paddingTop: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.textWhite,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.border,
   },
   postButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -773,7 +775,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   postButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },

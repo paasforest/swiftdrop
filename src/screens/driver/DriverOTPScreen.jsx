@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TextInput, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
+import { colors, spacing, radius, typography } from '../../theme/theme';
+import { AppButton } from '../../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -94,15 +96,13 @@ const DriverOTPScreen = ({ navigation, route }) => {
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-        <TouchableOpacity
-          style={[styles.confirmButton, isVerifying && { opacity: 0.7 }]}
+        <AppButton
+          label="Confirm OTP"
           onPress={handleVerify}
+          variant="primary"
+          loading={isVerifying}
           disabled={isVerifying || timeRemaining <= 0}
-        >
-          <Text style={styles.confirmButtonText}>
-            {isVerifying ? 'Verifying...' : 'Confirm OTP'}
-          </Text>
-        </TouchableOpacity>
+        />
       </View>
     </SafeAreaView>
   );
@@ -111,33 +111,32 @@ const DriverOTPScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     width,
     height,
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingTop: 40,
     alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
+    ...typography.h2,
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 40,
   },
   infoBox: {
-    backgroundColor: '#E8F4FF',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
     marginBottom: 40,
     width: '100%',
   },
   infoText: {
-    fontSize: 16,
-    color: '#1A73E8',
+    ...typography.body,
+    color: colors.primary,
     textAlign: 'center',
     fontWeight: '500',
   },
@@ -148,38 +147,27 @@ const styles = StyleSheet.create({
   },
   otpInput: {
     width: '60%',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     fontSize: 22,
     textAlign: 'center',
+    color: colors.textPrimary,
   },
   expiryText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 40,
   },
   errorText: {
-    color: '#d93025',
+    color: colors.danger,
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 24,
-  },
-  confirmButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    width: '100%',
-  },
-  confirmButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

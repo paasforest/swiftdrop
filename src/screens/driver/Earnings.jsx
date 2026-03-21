@@ -9,9 +9,12 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { BottomTabBar } from '../../components/ui';
 
 const { width, height } = Dimensions.get('window');
 
@@ -63,19 +66,19 @@ const Earnings = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Earnings</Text>
-        <Text style={styles.subtitle}>From completed jobs in your account (API data).</Text>
+        <Text style={styles.subtitle}>From completed deliveries on your account.</Text>
 
         <View style={styles.summary}>
-          <Text style={styles.summaryLabel}>Completed jobs (loaded)</Text>
+          <Text style={styles.summaryLabel}>Completed deliveries</Text>
           <Text style={styles.summaryValue}>{completed.length}</Text>
-          <Text style={styles.summaryLabel}>Sum of driver_earnings</Text>
+          <Text style={styles.summaryLabel}>Total Earned</Text>
           <Text style={styles.summaryMoney}>{formatMoney(totalEarnings)}</Text>
         </View>
 
-        {loading ? <ActivityIndicator style={{ marginVertical: 24 }} color="#1A73E8" /> : null}
+        {loading ? <ActivityIndicator style={{ marginVertical: 24 }} color={colors.primary} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Text style={styles.section}>Job history</Text>
+        <Text style={styles.section}>Delivery history</Text>
         {orders.length === 0 && !loading ? (
           <Text style={styles.empty}>No jobs yet.</Text>
         ) : (
@@ -90,15 +93,19 @@ const Earnings = ({ navigation }) => {
                   {o.dropoff_address || '—'}
                 </Text>
               </View>
-              <Text style={styles.rowMoney}>{formatMoney(o.driver_earnings)}</Text>
+              <View style={styles.perDeliveryCol}>
+                <Text style={styles.perDeliveryLabel}>Per Delivery</Text>
+                <Text style={styles.rowMoney}>{formatMoney(o.driver_earnings)}</Text>
+              </View>
             </View>
           ))
         )}
 
-        <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
+        <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
       </ScrollView>
+      <BottomTabBar navigation={navigation} variant="driver" active="earnings" />
     </SafeAreaView>
   );
 };
@@ -106,95 +113,102 @@ const Earnings = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     width,
-    height,
+    minHeight: height,
+    paddingBottom: 72,
   },
   scroll: {
-    padding: 20,
+    padding: spacing.md,
     paddingBottom: 40,
   },
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 8,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: 14,
-    color: '#666666',
-    marginBottom: 20,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
   },
   summary: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    ...shadows.card,
   },
   summaryLabel: {
     fontSize: 13,
-    color: '#666666',
-    marginTop: 8,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
   },
   summaryValue: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   summaryMoney: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#FF6B35',
+    color: colors.accent,
   },
   error: {
-    color: '#d93025',
+    color: colors.danger,
     marginBottom: 12,
   },
   section: {
     fontSize: 17,
     fontWeight: '600',
     marginBottom: 12,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   empty: {
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 16,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     padding: 14,
     marginBottom: 10,
+    ...shadows.card,
   },
   rowTitle: {
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   rowSub: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
+  },
+  perDeliveryCol: {
+    alignItems: 'flex-end',
+    marginLeft: 12,
+    minWidth: 110,
+  },
+  perDeliveryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
   rowMoney: {
     fontWeight: '700',
-    color: '#4CAF50',
-    marginLeft: 12,
+    color: colors.success,
+    fontSize: 16,
   },
   back: {
     marginTop: 24,
     alignItems: 'center',
-  },
-  backText: {
-    color: '#1A73E8',
-    fontSize: 16,
-    fontWeight: '600',
+    paddingVertical: 8,
   },
 });
 

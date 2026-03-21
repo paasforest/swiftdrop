@@ -12,8 +12,10 @@ import {
   Modal,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -168,7 +170,7 @@ const DriverReview = () => {
       <View style={styles.content}>
         <View style={styles.leftCol}>
           {loading ? (
-            <ActivityIndicator color="#1A73E8" style={{ marginTop: 24 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
           ) : listError ? (
             <Text style={styles.errText}>{listError}</Text>
           ) : (
@@ -202,15 +204,15 @@ const DriverReview = () => {
           {!selectedId && !detailLoading && (
             <Text style={styles.hint}>Select a driver to review details</Text>
           )}
-          {detailLoading && <ActivityIndicator color="#1A73E8" style={{ marginTop: 40 }} />}
+          {detailLoading && <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />}
           {detailError ? <Text style={styles.errText}>{detailError}</Text> : null}
 
           {d && !detailLoading && (
             <ScrollView style={styles.detailScroll} keyboardShouldPersistTaps="handled">
               <View style={styles.detailHeader}>
                 <Text style={styles.detailTitle}>Application detail</Text>
-                <TouchableOpacity onPress={() => { setSelectedId(null); setDetail(null); }}>
-                  <Text style={styles.closeButton}>✕</Text>
+                <TouchableOpacity onPress={() => { setSelectedId(null); setDetail(null); }} accessibilityLabel="Close">
+                  <Ionicons name="close" size={24} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -301,29 +303,29 @@ const DriverReview = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: colors.background,
     minHeight: height,
   },
   header: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingTop: 16,
     paddingBottom: 8,
   },
   title: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   successBanner: {
     marginTop: 8,
-    color: '#065F46',
+    color: colors.success,
     fontWeight: '600',
   },
   content: {
     flex: 1,
     flexDirection: width > 640 ? 'row' : 'column',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   leftCol: {
     width: width > 640 ? 300 : '100%',
@@ -332,40 +334,40 @@ const styles = StyleSheet.create({
   },
   rightCol: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     minHeight: 200,
   },
   driverCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
   },
   driverCardSelected: {
-    borderColor: '#1A73E8',
+    borderColor: colors.primary,
     borderWidth: 2,
   },
-  driverName: { fontSize: 16, fontWeight: '700', color: '#111' },
-  driverPhone: { fontSize: 13, color: '#666', marginTop: 4 },
-  driverMeta: { fontSize: 12, color: '#444', marginTop: 4 },
-  driverDate: { fontSize: 11, color: '#888', marginTop: 4 },
+  driverName: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  driverPhone: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  driverMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  driverDate: { fontSize: 11, color: colors.textLight, marginTop: 4 },
   pendingBadge: {
     alignSelf: 'flex-start',
     marginTop: 8,
-    backgroundColor: '#FFF3E0',
+    backgroundColor: colors.warningLight,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  pendingBadgeText: { color: '#E65100', fontWeight: '700', fontSize: 12 },
-  emptyText: { color: '#666', padding: 16 },
-  errText: { color: '#B91C1C', padding: 12 },
-  hint: { padding: 20, color: '#888' },
+  pendingBadgeText: { color: colors.warning, fontWeight: '700', fontSize: 12 },
+  emptyText: { color: colors.textSecondary, padding: 16 },
+  errText: { color: colors.danger, padding: 12 },
+  hint: { padding: 20, color: colors.textLight },
   detailScroll: { flex: 1, padding: 16 },
   detailHeader: {
     flexDirection: 'row',
@@ -373,70 +375,70 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  detailTitle: { fontSize: 18, fontWeight: '700' },
-  closeButton: { fontSize: 22, color: '#666' },
+  detailTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
   rowTop: { flexDirection: 'row', marginBottom: 16 },
-  profilePhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#EEE' },
-  profilePhotoPh: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#EEE' },
+  profilePhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.border },
+  profilePhotoPh: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.border },
   basicBlock: { flex: 1, marginLeft: 12, justifyContent: 'center' },
-  driverNameLarge: { fontSize: 18, fontWeight: '800', color: '#111' },
-  metaLine: { fontSize: 13, color: '#555', marginTop: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 10, marginTop: 8 },
+  driverNameLarge: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  metaLine: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 10, marginTop: 8, color: colors.textPrimary },
   thumbGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   thumbWrap: { width: '30%', minWidth: 90, marginBottom: 12 },
-  thumbLabel: { fontSize: 10, color: '#666', marginBottom: 4 },
-  thumbImg: { width: '100%', height: 72, borderRadius: 8, backgroundColor: '#F3F4F6' },
+  thumbLabel: { fontSize: 10, color: colors.textSecondary, marginBottom: 4 },
+  thumbImg: { width: '100%', height: 72, borderRadius: 8, backgroundColor: colors.background },
   thumbPlaceholder: {
     width: '100%',
     height: 72,
     borderRadius: 8,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbPlaceholderText: { color: '#999' },
+  thumbPlaceholderText: { color: colors.textLight },
   vehicleBox: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.background,
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,
   },
-  vehLine: { fontSize: 14, color: '#333', marginBottom: 4 },
+  vehLine: { fontSize: 14, color: colors.textPrimary, marginBottom: 4 },
   approveBtn: {
-    backgroundColor: '#16A34A',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 10,
   },
-  approveBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  approveBtnText: { color: colors.textWhite, fontWeight: '800', fontSize: 16 },
   rejectBtn: {
-    backgroundColor: '#DC2626',
+    backgroundColor: colors.danger,
     paddingVertical: 14,
     borderRadius: 10,
     alignItems: 'center',
   },
-  rejectBtnText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  rejectBtnText: { color: colors.textWhite, fontWeight: '800', fontSize: 16 },
   btnDisabled: { opacity: 0.6 },
   rejectBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: colors.overlayMedium,
     justifyContent: 'center',
     padding: 20,
   },
   rejectCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: colors.surface,
     borderRadius: 14,
     padding: 16,
   },
-  rejectTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
+  rejectTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10, color: colors.textPrimary },
   rejectInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.border,
     borderRadius: 10,
     minHeight: 100,
     padding: 10,
     textAlignVertical: 'top',
+    color: colors.textPrimary,
   },
   rejectActions: {
     flexDirection: 'row',
@@ -444,14 +446,14 @@ const styles = StyleSheet.create({
     marginTop: 14,
     gap: 16,
   },
-  rejectCancel: { color: '#666', fontWeight: '700', padding: 8 },
+  rejectCancel: { color: colors.textSecondary, fontWeight: '700', padding: 8 },
   rejectConfirm: {
-    backgroundColor: '#DC2626',
+    backgroundColor: colors.danger,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
   },
-  rejectConfirmText: { color: '#FFF', fontWeight: '800' },
+  rejectConfirmText: { color: colors.textWhite, fontWeight: '800' },
 });
 
 export default DriverReview;

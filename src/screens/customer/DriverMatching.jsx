@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, Animated } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -59,17 +61,15 @@ const DriverMatching = () => {
     console.log('Cancel order');
   };
 
-  const renderDots = () => {
-    const dots = ['•', '•', '•'];
-    return dots.map((dot, index) => {
+  const renderDots = () =>
+    [0, 1, 2].map((index) => {
       const opacity = dotsAnimation.interpolate({
         inputRange: [0, 0.33, 0.66, 1],
         outputRange: [0.3, 1, 0.3, 0.3],
         extrapolate: 'clamp',
       });
-      
       return (
-        <Animated.Text
+        <Animated.View
           key={index}
           style={[
             styles.loadingDot,
@@ -85,12 +85,9 @@ const DriverMatching = () => {
               ],
             },
           ]}
-        >
-          {dot}
-        </Animated.Text>
+        />
       );
     });
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -121,7 +118,7 @@ const DriverMatching = () => {
         
         {/* Center Parcel Icon */}
         <View style={styles.centerIcon}>
-          <Text style={styles.parcelIcon}>📦</Text>
+          <Ionicons name="cube-outline" size={40} color={colors.textWhite} />
         </View>
       </View>
 
@@ -172,7 +169,7 @@ const DriverMatching = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     width: width,
     height: height,
     justifyContent: 'center',
@@ -191,25 +188,18 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 2,
-    borderColor: '#1A73E8',
+    borderColor: colors.primary,
     backgroundColor: 'transparent',
   },
   centerIcon: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    ...shadows.card,
     elevation: 8,
-  },
-  parcelIcon: {
-    fontSize: 40,
-    color: '#FFFFFF',
   },
   content: {
     alignItems: 'center',
@@ -218,7 +208,7 @@ const styles = StyleSheet.create({
   mainText: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -228,30 +218,29 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   loadingDot: {
-    fontSize: 32,
-    color: '#1A73E8',
-    marginHorizontal: 2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+    marginHorizontal: 4,
   },
   subText: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   orderSummary: {
     position: 'absolute',
     bottom: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    left: spacing.lg,
+    right: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    ...shadows.card,
     elevation: 8,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -261,19 +250,19 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     width: 60,
   },
   summaryText: {
     flex: 1,
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     textAlign: 'right',
     fontWeight: '500',
   },
   summaryPrice: {
     fontSize: 16,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '600',
   },
   cancelButton: {
@@ -283,7 +272,7 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     textDecorationLine: 'underline',
   },
 });

@@ -12,9 +12,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -350,7 +352,7 @@ const PickupConfirm = ({ navigation, route }) => {
         {!photoAsset ? (
           <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto} disabled={capturingPhoto || uploading}>
             <View style={styles.cameraInner}>
-              <Text style={styles.cameraIcon}>📷</Text>
+              <Ionicons name="camera-outline" size={48} color={colors.primary} style={{ marginBottom: 16 }} />
               <Text style={styles.cameraText}>{capturingPhoto ? 'Capturing...' : 'Tap to capture'}</Text>
             </View>
           </TouchableOpacity>
@@ -363,7 +365,7 @@ const PickupConfirm = ({ navigation, route }) => {
 
             {uploading ? (
               <View style={styles.progressBlock}>
-                <ActivityIndicator color="#1A73E8" />
+                <ActivityIndicator color={colors.primary} />
                 <Text style={styles.progressText}>{`Uploading ${Math.round(uploadProgress * 100)}%`}</Text>
               </View>
             ) : (
@@ -390,8 +392,8 @@ const PickupConfirm = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation?.goBack?.()}>
-          <Text style={styles.backArrow}>←</Text>
+        <TouchableOpacity onPress={() => navigation?.goBack?.()} accessibilityLabel="Go back">
+          <Ionicons name="chevron-back" size={28} color={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Confirm Pickup</Text>
         <View style={styles.placeholder} />
@@ -402,7 +404,7 @@ const PickupConfirm = ({ navigation, route }) => {
           <View style={styles.stepContainer}>
             {markingArrival ? (
               <>
-                <ActivityIndicator size="large" color="#1A73E8" />
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.hintText}>Marking you as arrived at pickup...</Text>
               </>
             ) : (
@@ -427,7 +429,7 @@ const PickupConfirm = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     width: width,
     height: height,
   },
@@ -435,25 +437,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingTop: 20,
     paddingBottom: 16,
-  },
-  backArrow: {
-    fontSize: 24,
-    color: '#1A73E8',
-    fontWeight: 'bold',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   placeholder: {
-    width: 24,
+    width: 28,
   },
   stepContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingBottom: 40,
   },
   stepHeader: {
@@ -462,17 +459,17 @@ const styles = StyleSheet.create({
   },
   stepNumber: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   stepTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
   },
   instructionText: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 32,
     lineHeight: 24,
@@ -485,53 +482,53 @@ const styles = StyleSheet.create({
   otpInput: {
     width: 60,
     height: 60,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
+    borderColor: colors.border,
+    borderRadius: radius.md,
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     marginHorizontal: 8,
     textAlign: 'center',
   },
   confirmButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
     marginBottom: 32,
   },
   confirmButtonDisabled: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
   },
   confirmButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
   errorText: {
     marginBottom: 12,
     marginTop: -4,
-    color: '#D32F2F',
+    color: colors.danger,
     fontSize: 14,
     textAlign: 'center',
   },
   hintText: {
     marginTop: 12,
     textAlign: 'center',
-    color: '#666666',
+    color: colors.textSecondary,
     fontSize: 14,
   },
   retryButton: {
     marginTop: 18,
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
   },
   retryButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -539,11 +536,11 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   cameraButton: {
-    backgroundColor: '#F8F9FA',
+    backgroundColor: colors.background,
     borderWidth: 2,
-    borderColor: '#E0E0E0',
+    borderColor: colors.border,
     borderStyle: 'dashed',
-    borderRadius: 12,
+    borderRadius: radius.md,
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
@@ -551,17 +548,13 @@ const styles = StyleSheet.create({
   cameraInner: {
     alignItems: 'center',
   },
-  cameraIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
   cameraText: {
     fontSize: 16,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   photoPreview: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
     height: 200,
     justifyContent: 'center',
     alignItems: 'center',
@@ -571,7 +564,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 120,
     borderRadius: 10,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     marginBottom: 10,
   },
   photoIcon: {
@@ -580,12 +573,12 @@ const styles = StyleSheet.create({
   },
   photoText: {
     fontSize: 16,
-    color: '#4CAF50',
+    color: colors.success,
     fontWeight: '500',
     marginBottom: 16,
   },
   retakeButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 8,
@@ -593,7 +586,7 @@ const styles = StyleSheet.create({
   },
   retakeText: {
     fontSize: 14,
-    color: '#666666',
+    color: colors.textSecondary,
   },
   successRow: {
     flexDirection: 'row',
@@ -601,17 +594,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 18,
   },
-  successTick: {
-    color: '#4CAF50',
-    fontSize: 28,
-    marginRight: 10,
-    fontWeight: '700',
-  },
   successText: {
-    color: '#4CAF50',
+    color: colors.success,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+    flex: 1,
   },
   photoButtonRow: {
     flexDirection: 'row',
@@ -619,14 +607,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   usePhotoButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: colors.success,
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 8,
     marginLeft: 10,
   },
   usePhotoButtonText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
@@ -637,7 +625,7 @@ const styles = StyleSheet.create({
   },
   progressText: {
     marginTop: 8,
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',

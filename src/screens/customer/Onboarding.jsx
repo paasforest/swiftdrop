@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { colors, spacing, radius } from '../../theme/theme';
+import { AppText, AppButton } from '../../components/ui';
+import { OnboardingSlideArt } from '../../components/onboarding/OnboardingArt';
 
 const { width, height } = Dimensions.get('window');
 
@@ -9,22 +12,19 @@ const Onboarding = ({ navigation }) => {
   const slides = [
     {
       id: 1,
-      title: 'Deliver Anything, Anywhere',
+      title: 'Deliver anything, anywhere',
       subtitle: 'Connect with drivers already going your way',
-      illustration: '📦'
     },
     {
       id: 2,
-      title: 'Track Every Step',
+      title: 'Track every step',
       subtitle: 'Live tracking from pickup to delivery',
-      illustration: '📍'
     },
     {
       id: 3,
-      title: 'Safe & Secure',
+      title: 'Safe & secure',
       subtitle: 'OTP confirmation and photo proof on every delivery',
-      illustration: '🛡️'
-    }
+    },
   ];
 
   const nextSlide = () => {
@@ -43,46 +43,43 @@ const Onboarding = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Skip button */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={skipOnboarding}>
-          <Text style={styles.skipText}>Skip</Text>
+        <TouchableOpacity onPress={skipOnboarding} hitSlop={12}>
+          <AppText variant="body" color="primary" style={{ fontWeight: '600' }}>
+            Skip
+          </AppText>
         </TouchableOpacity>
       </View>
 
-      {/* Main content */}
       <View style={styles.content}>
-        {/* Illustration */}
-        <Text style={styles.illustration}>{slides[currentSlide].illustration}</Text>
-        
-        {/* Title and subtitle */}
-        <Text style={styles.title}>{slides[currentSlide].title}</Text>
-        <Text style={styles.subtitle}>{slides[currentSlide].subtitle}</Text>
+        <View style={styles.artWrap}>
+          <OnboardingSlideArt index={currentSlide} />
+        </View>
+        <AppText variant="h1" color="textPrimary" style={styles.title}>
+          {slides[currentSlide].title}
+        </AppText>
+        <AppText variant="body" color="textSecondary" style={styles.subtitle}>
+          {slides[currentSlide].subtitle}
+        </AppText>
       </View>
 
-      {/* Navigation dots */}
       <View style={styles.dotsContainer}>
         {slides.map((_, index) => (
           <View
             key={index}
             style={[
               styles.dot,
-              { backgroundColor: index === currentSlide ? '#1A73E8' : '#E0E0E0' }
+              { backgroundColor: index === currentSlide ? colors.primary : colors.border },
             ]}
           />
         ))}
       </View>
 
-      {/* Bottom button */}
       <View style={styles.bottomContainer}>
         {currentSlide === slides.length - 1 ? (
-          <TouchableOpacity style={styles.getStartedButton} onPress={getStarted}>
-            <Text style={styles.getStartedText}>Get Started</Text>
-          </TouchableOpacity>
+          <AppButton label="Get started" variant="primary" onPress={getStarted} />
         ) : (
-          <TouchableOpacity style={styles.nextButton} onPress={nextSlide}>
-            <Text style={styles.nextText}>Next</Text>
-          </TouchableOpacity>
+          <AppButton label="Next" variant="primary" onPress={nextSlide} />
         )}
       </View>
     </SafeAreaView>
@@ -92,80 +89,50 @@ const Onboarding = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    width: width,
-    height: height,
+    backgroundColor: colors.surface,
+    width,
+    minHeight: height,
   },
   header: {
     alignItems: 'flex-end',
-    paddingRight: 20,
-    paddingTop: 20,
-  },
-  skipText: {
-    fontSize: 16,
-    color: '#1A73E8',
-    fontWeight: '500',
+    paddingRight: spacing.lg,
+    paddingTop: spacing.lg,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: spacing.xl,
   },
-  illustration: {
-    fontSize: 120,
-    marginBottom: 40,
+  artWrap: {
+    marginBottom: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 160,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666666',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 40,
+    lineHeight: 22,
+    marginBottom: spacing.lg,
   },
   dotsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 40,
+    marginBottom: spacing.xl,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginHorizontal: 4,
+    marginHorizontal: spacing.xs,
   },
   bottomContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
-  nextButton: {
-    backgroundColor: '#1A73E8',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  nextText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  getStartedButton: {
-    backgroundColor: '#FF6B35',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  getStartedText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
   },
 });
 

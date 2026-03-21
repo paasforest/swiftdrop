@@ -16,6 +16,7 @@ import {
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -314,12 +315,12 @@ const AddressEntry = ({ navigation }) => {
           pitchEnabled={false}
         >
           {dropoffCoords && (
-            <Marker coordinate={dropoffCoords} title="Delivery" pinColor="#FF6B35" />
+            <Marker coordinate={dropoffCoords} title="Delivery" pinColor={colors.accent} />
           )}
           {polylineCoords && (
             <Polyline
               coordinates={polylineCoords}
-              strokeColor="#1A73E8"
+              strokeColor={colors.primary}
               strokeWidth={3}
               lineDashPattern={[8, 6]}
             />
@@ -342,7 +343,7 @@ const AddressEntry = ({ navigation }) => {
         <View style={styles.topBanner} pointerEvents="none">
           {locating ? (
             <View style={styles.topBannerInner}>
-              <ActivityIndicator color="#1A73E8" size="small" />
+              <ActivityIndicator color={colors.primary} size="small" />
               <Text style={[styles.topBannerText, { marginLeft: 8 }]}>
                 Getting your location…
               </Text>
@@ -376,7 +377,7 @@ const AddressEntry = ({ navigation }) => {
               value={pickupAddress || (locating ? '…' : 'Move map to set pickup')}
               editable={false}
               placeholder="Pickup"
-              placeholderTextColor="#888"
+              placeholderTextColor={colors.textLight}
             />
           </View>
 
@@ -390,7 +391,7 @@ const AddressEntry = ({ navigation }) => {
                 if (!t.trim()) setDropoffCoords(null);
               }}
               placeholder="Where to?"
-              placeholderTextColor="#888"
+              placeholderTextColor={colors.textLight}
               returnKeyType="search"
             />
           </View>
@@ -423,7 +424,7 @@ const AddressEntry = ({ navigation }) => {
           )}
 
           {placesLoading ? (
-            <ActivityIndicator style={{ marginTop: 8 }} color="#1A73E8" />
+            <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
           ) : null}
         </View>
 
@@ -493,7 +494,7 @@ const PIN_SIZE = 40;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
   },
   mapWrap: {
     flex: 1,
@@ -511,13 +512,13 @@ const styles = StyleSheet.create({
     width: 14,
     height: 6,
     borderRadius: 7,
-    backgroundColor: '#000',
+    backgroundColor: colors.black,
     opacity: 0.12,
   },
   centerPinShadowDragging: {
     opacity: 0.28,
     transform: [{ scaleX: 1.25 }],
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
     shadowRadius: 4,
@@ -531,10 +532,10 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#34A853',
+    backgroundColor: colors.success,
     borderWidth: 3,
-    borderColor: '#fff',
-    shadowColor: '#000',
+    borderColor: colors.surface,
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
     shadowRadius: 2,
@@ -550,14 +551,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 10,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: '#34A853',
+    borderTopColor: colors.success,
     marginTop: -2,
   },
   topBanner: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 8 : 12,
-    left: 16,
-    right: 16,
+    left: spacing.md,
+    right: spacing.md,
     alignItems: 'center',
   },
   topBannerInner: {
@@ -566,57 +567,50 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: radius.md,
     maxWidth: width - 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
+    ...shadows.card,
   },
   topBannerText: {
     fontSize: 14,
-    color: '#1A1A1A',
+    color: colors.textPrimary,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: spacing.sm,
   },
   topBannerSubtle: {
     fontSize: 13,
-    color: '#666',
+    color: colors.textSecondary,
   },
   topBannerError: {
     fontSize: 13,
-    color: '#c5221f',
+    color: colors.danger,
   },
   recenterBtn: {
     position: 'absolute',
-    right: 16,
-    bottom: 16,
+    right: spacing.md,
+    bottom: spacing.md,
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    ...shadows.card,
     elevation: 4,
   },
   recenterBtnText: {
     fontSize: 22,
-    color: '#1A73E8',
+    color: colors.primary,
     fontWeight: '700',
   },
   bottomPanel: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.md,
     paddingTop: 14,
-    paddingBottom: 12,
-    shadowColor: '#000',
+    paddingBottom: spacing.sm,
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -629,10 +623,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F7F9',
-    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#E8EAED',
+    borderColor: colors.border,
     marginBottom: 10,
     paddingHorizontal: 4,
   },
@@ -640,61 +634,61 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#34A853',
-    marginLeft: 12,
+    backgroundColor: colors.success,
+    marginLeft: spacing.sm,
   },
   redDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#EA4335',
-    marginLeft: 12,
+    backgroundColor: colors.danger,
+    marginLeft: spacing.sm,
   },
   input: {
     flex: 1,
     paddingVertical: 14,
     paddingHorizontal: 10,
     fontSize: 16,
-    color: '#202124',
+    color: colors.textPrimary,
   },
   inputReadonly: {
-    color: '#5F6368',
+    color: colors.textSecondary,
   },
   predictions: {
     maxHeight: 160,
     borderWidth: 1,
-    borderColor: '#E8EAED',
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
   },
   predictionRow: {
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EAED',
+    borderBottomColor: colors.border,
   },
   predictionMain: {
     fontSize: 15,
-    color: '#202124',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   predictionSub: {
     fontSize: 12,
-    color: '#5F6368',
+    color: colors.textSecondary,
     marginTop: 2,
   },
   placesErrorText: {
-    color: '#c5221f',
+    color: colors.danger,
     fontSize: 12,
     marginTop: 4,
   },
   confirmCard: {
-    backgroundColor: '#F8FAFD',
-    borderRadius: 16,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.lg,
     padding: 14,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: '#D2E3FC',
+    borderColor: colors.primary,
   },
   confirmRow: {
     flexDirection: 'row',
@@ -705,7 +699,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#34A853',
+    backgroundColor: colors.success,
     marginTop: 6,
     marginRight: 10,
   },
@@ -713,49 +707,49 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#EA4335',
+    backgroundColor: colors.danger,
     marginTop: 6,
     marginRight: 10,
   },
   confirmAddr: {
     flex: 1,
     fontSize: 14,
-    color: '#202124',
+    color: colors.textPrimary,
     lineHeight: 20,
   },
   distanceText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1A73E8',
+    color: colors.primary,
     marginBottom: 12,
     marginLeft: 18,
   },
   confirmButton: {
-    backgroundColor: '#1A73E8',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: radius.md,
     alignItems: 'center',
   },
   confirmButtonDisabled: {
-    backgroundColor: '#B0BEC5',
+    backgroundColor: colors.border,
   },
   confirmButtonText: {
-    color: '#fff',
+    color: colors.textWhite,
     fontSize: 16,
     fontWeight: '700',
   },
   confirmHint: {
     fontSize: 13,
-    color: '#5F6368',
+    color: colors.textSecondary,
     textAlign: 'center',
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
   },
   backLink: {
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
   },
   backLinkText: {
-    color: '#1A73E8',
+    color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },

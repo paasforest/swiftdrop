@@ -5,18 +5,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { resetToLogin } from '../../navigationHelpers';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
-
-const { width, height } = Dimensions.get('window');
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { AppText, BottomTabBar, StatusBadge } from '../../components/ui';
 
 function firstName(fullName) {
   if (!fullName || typeof fullName !== 'string') return 'there';
@@ -29,17 +29,18 @@ function formatMoney(n) {
   return `R${x.toFixed(2)}`;
 }
 
-function humanStatus(status) {
-  if (!status) return '';
-  return String(status).replace(/_/g, ' ');
-}
-
 function greetingPrefix() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+const TIER_ICONS = {
+  standard: { name: 'time-outline', color: colors.success },
+  express: { name: 'flash-outline', color: colors.primary },
+  urgent: { name: 'flame-outline', color: colors.accent },
+};
 
 const Home = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,27 +55,24 @@ const Home = ({ navigation }) => {
     {
       id: 'standard',
       name: 'Standard',
-      icon: '🕐',
       time: 'Estimated',
       price: 'Pricing shown next',
-      color: '#4CAF50',
+      key: 'standard',
     },
     {
       id: 'express',
       name: 'Express',
-      icon: '⚡',
       time: 'Estimated',
       price: 'Pricing shown next',
-      color: '#1A73E8',
       popular: true,
+      key: 'express',
     },
     {
       id: 'urgent',
       name: 'Urgent',
-      icon: '🔥',
       time: 'Estimated',
       price: 'Pricing shown next',
-      color: '#FF6B35',
+      key: 'urgent',
     },
   ];
 
@@ -114,7 +112,6 @@ const Home = ({ navigation }) => {
   };
 
   const handleTierSelect = () => {
-    // Start the real address -> order flow
     navigation.navigate('AddressEntry');
   };
 
@@ -127,36 +124,36 @@ const Home = ({ navigation }) => {
     navigation.navigate('Tracking', { orderId: order.id });
   };
 
-  const handleLogout = () => {
-    resetToLogin(navigation);
-  };
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+      <LinearGradient colors={[colors.primary, colors.gradientEnd]} style={styles.heroGradient}>
+        <View style={styles.heroInner}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>
+            <AppText variant="h2" color="textWhite">
               {greetingPrefix()}, {displayName}
-            </Text>
-            <Text style={styles.subtitle}>Ready to send something?</Text>
+            </AppText>
+            <AppText variant="small" color="textWhite" style={styles.heroSubtitle}>
+              Ready to send something?
+            </AppText>
           </View>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Log out</Text>
-          </TouchableOpacity>
         </View>
+      </LinearGradient>
 
+      <ScrollView showsVerticalScrollIndicator={false}>
         {refundMessage ? (
           <View style={styles.refundBanner}>
-            <Text style={styles.refundBannerText}>{refundMessage}</Text>
+            <AppText variant="small" style={styles.refundBannerText}>
+              {refundMessage}
+            </AppText>
           </View>
         ) : null}
 
-        <TouchableOpacity style={styles.searchBar} onPress={handleNewDelivery}>
-          <Text style={styles.searchIcon}>📍</Text>
+        <TouchableOpacity style={styles.searchBar} onPress={handleNewDelivery} activeOpacity={0.92}>
+          <Ionicons name="location-outline" size={24} color={colors.textWhite} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Where to deliver?"
+            placeholderTextColor="rgba(255,255,255,0.85)"
             value={searchQuery}
             onChangeText={setSearchQuery}
             editable={false}
@@ -164,54 +161,70 @@ const Home = ({ navigation }) => {
         </TouchableOpacity>
 
         <View style={styles.tiersSection}>
-          <Text style={styles.sectionTitle}>Choose Delivery Speed</Text>
+          <AppText variant="h3" color="textPrimary" style={styles.sectionTitle}>
+            Choose delivery speed
+          </AppText>
           <View style={styles.tiersContainer}>
-            {deliveryTiers.map((tier) => (
-              <TouchableOpacity key={tier.id} style={styles.tierCard} onPress={handleTierSelect}>
-                {tier.popular && (
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularText}>Popular</Text>
-                  </View>
-                )}
-                <Text style={styles.tierIcon}>{tier.icon}</Text>
-                <Text style={styles.tierName}>{tier.name}</Text>
-                <Text style={styles.tierTime}>{tier.time}</Text>
-                <Text style={styles.tierPrice}>{tier.price}</Text>
-              </TouchableOpacity>
-            ))}
+            {deliveryTiers.map((tier) => {
+              const ic = TIER_ICONS[tier.id];
+              return (
+                <TouchableOpacity key={tier.id} style={styles.tierCard} onPress={handleTierSelect} activeOpacity={0.85}>
+                  {tier.popular && (
+                    <View style={styles.popularBadge}>
+                      <AppText variant="label" style={styles.popularText}>
+                        Popular
+                      </AppText>
+                    </View>
+                  )}
+                  <Ionicons name={ic.name} size={32} color={ic.color} style={styles.tierIcon} />
+                  <AppText variant="small" color="textPrimary" style={styles.tierName}>
+                    {tier.name}
+                  </AppText>
+                  <AppText variant="small" color="textSecondary">
+                    {tier.time}
+                  </AppText>
+                  <AppText variant="small" color="primary" style={styles.tierPrice}>
+                    {tier.price}
+                  </AppText>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
         <View style={styles.recentSection}>
-          <Text style={styles.sectionTitle}>Your deliveries</Text>
+          <AppText variant="h3" color="textPrimary" style={styles.sectionTitle}>
+            Your deliveries
+          </AppText>
           {loadError ? (
-            <Text style={styles.hintText}>{loadError}</Text>
+            <AppText variant="small" color="danger" style={styles.hintText}>
+              {loadError}
+            </AppText>
           ) : null}
           {loading ? (
-            <ActivityIndicator style={{ marginVertical: 24 }} color="#1A73E8" />
+            <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.primary} />
           ) : orders.length === 0 ? (
-            <Text style={styles.hintText}>No deliveries yet. Start one with the address bar above.</Text>
+            <AppText variant="body" color="textSecondary" style={styles.hintText}>
+              No deliveries yet. Start one with the address bar above.
+            </AppText>
           ) : (
             orders.map((order) => (
               <TouchableOpacity
                 key={order.id}
                 style={styles.deliveryCard}
                 onPress={() => handleDeliveryPress(order)}
+                activeOpacity={0.85}
               >
                 <View style={styles.deliveryHeader}>
                   <Text style={styles.deliveryDestination} numberOfLines={2}>
                     {order.dropoff_address || 'Delivery'}
                   </Text>
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusText}>{humanStatus(order.status)}</Text>
-                  </View>
+                  <StatusBadge status={order.status} />
                 </View>
                 <View style={styles.deliveryFooter}>
                   <Text style={styles.deliveryDate}>
                     {order.order_number}{' '}
-                    {order.updated_at
-                      ? new Date(order.updated_at).toLocaleString()
-                      : ''}
+                    {order.updated_at ? new Date(order.updated_at).toLocaleString() : ''}
                   </Text>
                   <Text style={styles.deliveryPrice}>{formatMoney(order.total_price)}</Text>
                 </View>
@@ -221,20 +234,7 @@ const Home = ({ navigation }) => {
         </View>
       </ScrollView>
 
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem}>
-          <Text style={styles.navIconActive}>🏠</Text>
-          <Text style={styles.navTextActive}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Tracking')}>
-          <Text style={styles.navIcon}>📍</Text>
-          <Text style={styles.navText}>Track</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={handleLogout}>
-          <Text style={styles.navIcon}>🚪</Text>
-          <Text style={styles.navText}>Log out</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomTabBar navigation={navigation} variant="customer" active="home" />
     </SafeAreaView>
   );
 };
@@ -242,93 +242,69 @@ const Home = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-    width,
-    height,
+    backgroundColor: colors.background,
+    paddingBottom: 72,
   },
-  header: {
+  heroGradient: {
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+  },
+  heroInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
   },
-  greeting: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1A1A1A',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 4,
-  },
-  logoutButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  logoutText: {
-    fontSize: 14,
-    color: '#d93025',
-    fontWeight: '600',
+  heroSubtitle: {
+    marginTop: spacing.xs,
+    opacity: 0.92,
   },
   refundBanner: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 14,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    padding: spacing.sm + 6,
+    backgroundColor: colors.successLight,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#C8E6C9',
+    borderColor: colors.success,
+    opacity: 0.95,
   },
   refundBannerText: {
-    fontSize: 14,
-    color: '#1B5E20',
-    fontWeight: '800',
+    color: colors.success,
+    fontWeight: '700',
     lineHeight: 18,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginBottom: 24,
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    alignSelf: 'stretch',
+    width: '100%',
+    backgroundColor: colors.primary,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    ...shadows.card,
   },
   searchIcon: {
-    fontSize: 20,
-    marginRight: 12,
+    marginRight: spacing.sm,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#1A1A1A',
+    fontWeight: '600',
+    color: colors.textWhite,
   },
   tiersSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   hintText: {
-    fontSize: 14,
-    color: '#666666',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
   tiersContainer: {
     flexDirection: 'row',
@@ -336,92 +312,61 @@ const styles = StyleSheet.create({
   },
   tierCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: radius.md,
     alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginHorizontal: spacing.xs,
+    ...shadows.card,
     position: 'relative',
   },
   popularBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 6,
+    top: spacing.sm,
+    right: spacing.sm,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.xs + 2,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: radius.sm,
   },
   popularText: {
-    color: '#FFFFFF',
+    color: colors.textWhite,
     fontSize: 10,
-    fontWeight: '600',
   },
   tierIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   tierName: {
-    fontSize: 14,
     fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  tierTime: {
-    fontSize: 12,
-    color: '#666666',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   tierPrice: {
-    fontSize: 14,
     fontWeight: '600',
-    color: '#1A73E8',
+    marginTop: spacing.xs,
   },
   recentSection: {
-    paddingHorizontal: 20,
-    paddingBottom: 88,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   deliveryCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+    ...shadows.card,
   },
   deliveryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   deliveryDestination: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
-    color: '#1A1A1A',
-    marginRight: 12,
-  },
-  statusBadge: {
-    backgroundColor: '#E8F4FF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    maxWidth: '45%',
-  },
-  statusText: {
-    color: '#1A73E8',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    color: colors.textPrimary,
+    marginRight: spacing.sm,
   },
   deliveryFooter: {
     flexDirection: 'row',
@@ -430,49 +375,14 @@ const styles = StyleSheet.create({
   },
   deliveryDate: {
     fontSize: 12,
-    color: '#666666',
+    color: colors.textSecondary,
     flex: 1,
-    marginRight: 8,
+    marginRight: spacing.sm,
   },
   deliveryPrice: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A73E8',
-  },
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-    paddingBottom: 20,
-    paddingTop: 12,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  navIcon: {
-    fontSize: 24,
-    color: '#666666',
-    marginBottom: 4,
-  },
-  navIconActive: {
-    fontSize: 24,
-    color: '#1A73E8',
-    marginBottom: 4,
-  },
-  navText: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  navTextActive: {
-    fontSize: 12,
-    color: '#1A73E8',
-    fontWeight: '600',
+    color: colors.primary,
   },
 });
 
