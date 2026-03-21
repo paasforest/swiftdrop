@@ -214,11 +214,21 @@ const DriverHome = ({ navigation }) => {
               <Ionicons name="star" size={18} color={colors.warning} />
               <Text style={styles.driverRatingLight}> {rating}</Text>
             </View>
-            <TouchableOpacity onPress={() => resetToLogin(navigation)} style={styles.inlineLogout}>
-              <Text style={styles.inlineLogoutLight}>Log out</Text>
-            </TouchableOpacity>
           </View>
-          <AvatarPlaceholder size={60} />
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              onPress={() => resetToLogin(navigation)}
+              style={styles.logoutHeaderBtn}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+              accessibilityHint="Signs out and returns to the login screen"
+            >
+              <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.95)" />
+              <Text style={styles.logoutHeaderBtnText}>Log out</Text>
+            </TouchableOpacity>
+            <AvatarPlaceholder size={60} />
+          </View>
         </View>
       </GradientHeader>
 
@@ -363,10 +373,34 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   driverInfo: {
     flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.sm,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  logoutHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginRight: 10,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  logoutHeaderBtnText: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.95)',
   },
   driverNameLight: {
     fontSize: 24,
@@ -383,15 +417,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textWhite,
     fontWeight: '600',
-  },
-  inlineLogout: {
-    alignSelf: 'flex-start',
-  },
-  inlineLogoutLight: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 14,
-    fontWeight: '700',
-    textDecorationLine: 'underline',
   },
   toggleSection: {
     paddingHorizontal: 16,

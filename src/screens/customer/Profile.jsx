@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
+import { View, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { resetToLogin } from '../../navigationHelpers';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppText, AppButton, BottomTabBar } from '../../components/ui';
+import { AppText, BottomTabBar } from '../../components/ui';
 import AvatarPlaceholder from '../../components/AvatarPlaceholder';
 
 const Profile = ({ navigation, route }) => {
@@ -30,7 +31,7 @@ const Profile = ({ navigation, route }) => {
             {user?.email || user?.phone || ''}
           </AppText>
           <AppText variant="small" color="textLight" style={styles.role}>
-            {isDriver ? 'Driver' : role === 'admin' ? 'Admin' : 'Customer'}
+            {isDriver ? 'Driver' : isAdmin ? 'Admin' : 'Customer'}
           </AppText>
         </View>
 
@@ -43,7 +44,32 @@ const Profile = ({ navigation, route }) => {
           </AppText>
         </View>
 
-        <AppButton label="Log out" variant="danger" onPress={handleLogout} />
+        <View style={styles.sessionCard}>
+          <AppText variant="label" color="textLight" style={styles.sessionLabel}>
+            Session
+          </AppText>
+          <TouchableOpacity
+            style={styles.logoutRow}
+            onPress={handleLogout}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Log out"
+            accessibilityHint="Signs out of your account on this device"
+          >
+            <View style={styles.logoutIconCircle}>
+              <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+            </View>
+            <View style={styles.logoutTextBlock}>
+              <AppText variant="body" color="textPrimary" style={styles.logoutTitle}>
+                Log out
+              </AppText>
+              <AppText variant="small" color="textSecondary">
+                Sign out of this device
+              </AppText>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
       {!isAdmin &&
         (isDriver ? (
@@ -83,6 +109,43 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.lg,
     ...shadows.card,
+  },
+  sessionCard: {
+    marginBottom: spacing.lg,
+  },
+  sessionLabel: {
+    marginBottom: spacing.xs,
+    marginLeft: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  logoutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  logoutIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: `${colors.danger}18`,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  logoutTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  logoutTitle: {
+    fontWeight: '600',
+    marginBottom: 2,
   },
 });
 
