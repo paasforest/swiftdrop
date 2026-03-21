@@ -21,6 +21,9 @@ import { colors, spacing, radius, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
+const MAX_SUGGESTIONS = 5;
+const AUTOCOMPLETE_DEBOUNCE_MS = 180;
+
 const DEFAULT_REGION = {
   latitude: -33.9249,
   longitude: 18.4241,
@@ -72,7 +75,8 @@ async function fetchPlacePredictions(input) {
   if (json.status !== 'OK') {
     throw new Error(json.error_message || json.status || 'Places error');
   }
-  return json.predictions || [];
+  const list = json.predictions || [];
+  return list.slice(0, MAX_SUGGESTIONS);
 }
 
 async function fetchPlaceDetails(placeId) {
@@ -96,69 +100,40 @@ async function fetchPlaceDetails(placeId) {
   };
 }
 
+/** Centers map on user GPS only — does not set pickup/delivery state. */
 const AddressEntry = ({ navigation }) => {
   const mapRef = useRef(null);
-  const reverseDebounceRef = useRef(null);
   const cardSlideAnim = useRef(new Animated.Value(0)).current;
-  const programmaticMapMoveRef = useRef(false);
-  /** Ignore region events right after animate/fit — map center ≠ pickup after fit. */
-  const ignoreRegionEventsUntilRef = useRef(0);
-  /** True only while user is panning — never overwrite typed/places pickup from map otherwise. */
-  const userIsPanningMapRef = useRef(false);
 
-  const markProgrammaticMapMove = useCallback((ignoreMs = 1100) => {
-    ignoreRegionEventsUntilRef.current = Date.now() + ignoreMs;
-    programmaticMapMoveRef.current = true;
-    userIsPanningMapRef.current = false;
-  }, []);
-
-  const [locating, setLocating] = useState(true);
+  const [mapCentering, setMapCentering] = useState(true);
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState(null);
+
   const [pickupCoords, setPickupCoords] = useState(null);
   const [pickupAddress, setPickupAddress] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [dropoffCoords, setDropoffCoords] = useState(null);
 
-  const [reverseBusy, setReverseBusy] = useState(false);
-
   const [pickupPredictions, setPickupPredictions] = useState([]);
   const [deliveryPredictions, setDeliveryPredictions] = useState([]);
   const [placesLoadingPickup, setPlacesLoadingPickup] = useState(false);
   const [placesLoadingDelivery, setPlacesLoadingDelivery] = useState(false);
-  const [placesError, setPlacesError] = useState(null);
+  const [placesErrorPickup, setPlacesErrorPickup] = useState(null);
+  const [placesErrorDelivery, setPlacesErrorDelivery] = useState(null);
 
-  /** Which field's autocomplete list to show */
   const [focusedField, setFocusedField] = useState(null);
 
-  const debouncedPickup = useDebounced(pickupAddress, 350);
-  const debouncedDelivery = useDebounced(deliveryAddress, 350);
+  const debouncedPickup = useDebounced(pickupAddress, AUTOCOMPLETE_DEBOUNCE_MS);
+  const debouncedDelivery = useDebounced(deliveryAddress, AUTOCOMPLETE_DEBOUNCE_MS);
 
   const distanceKm = useMemo(
     () => (pickupCoords && dropoffCoords ? haversineKm(pickupCoords, dropoffCoords) : 0),
     [pickupCoords, dropoffCoords]
   );
 
-  const reverseGeocodePickup = useCallback((center) => {
-    if (reverseDebounceRef.current) clearTimeout(reverseDebounceRef.current);
-    reverseDebounceRef.current = setTimeout(async () => {
-      setReverseBusy(true);
-      try {
-        const [place] = await Location.reverseGeocodeAsync(center);
-        const line = formatAddressFromGeocode(place);
-        setPickupAddress(line || 'Selected location');
-      } catch {
-        setPickupAddress(
-          `${center.latitude.toFixed(5)}, ${center.longitude.toFixed(5)}`
-        );
-      } finally {
-        setReverseBusy(false);
-      }
-    }, 400);
-  }, []);
-
-  const runInitialGps = useCallback(async () => {
-    setLocating(true);
+  /** On open: only move camera to current location — never fill pickup field. */
+  const centerMapOnCurrentLocation = useCallback(async () => {
+    setMapCentering(true);
     setLocationError(null);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -172,8 +147,6 @@ const AddressEntry = ({ navigation }) => {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       };
-      markProgrammaticMapMove(1100);
-      setPickupCoords(coord);
       mapRef.current?.animateToRegion(
         {
           ...coord,
@@ -182,32 +155,19 @@ const AddressEntry = ({ navigation }) => {
         },
         600
       );
-      try {
-        const [place] = await Location.reverseGeocodeAsync(coord);
-        const line = formatAddressFromGeocode(place);
-        setPickupAddress(line || `${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
-      } catch {
-        setPickupAddress(`${coord.latitude.toFixed(5)}, ${coord.longitude.toFixed(5)}`);
-      }
     } catch (e) {
       setLocationError(e.message || 'Could not get location');
-      markProgrammaticMapMove(1100);
       mapRef.current?.animateToRegion(DEFAULT_REGION, 400);
     } finally {
-      setLocating(false);
+      setMapCentering(false);
     }
-  }, [markProgrammaticMapMove]);
-
-  useEffect(() => {
-    runInitialGps();
-  }, [runInitialGps]);
-
-  const onMapRegionChange = useCallback(() => {
-    if (Date.now() < ignoreRegionEventsUntilRef.current) return;
-    userIsPanningMapRef.current = true;
   }, []);
 
-  /** Pickup autocomplete */
+  useEffect(() => {
+    centerMapOnCurrentLocation();
+  }, [centerMapOnCurrentLocation]);
+
+  /** Pickup autocomplete — South Africa only (country:za in fetchPlacePredictions). */
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -217,22 +177,22 @@ const AddressEntry = ({ navigation }) => {
       }
       if (!debouncedPickup || debouncedPickup.trim().length < 2) {
         setPickupPredictions([]);
-        setPlacesError(null);
+        setPlacesErrorPickup(null);
         return;
       }
       if (!GOOGLE_MAPS_API_KEY) {
-        setPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
+        setPlacesErrorPickup('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
         setPickupPredictions([]);
         return;
       }
       setPlacesLoadingPickup(true);
-      setPlacesError(null);
+      setPlacesErrorPickup(null);
       try {
         const list = await fetchPlacePredictions(debouncedPickup);
         if (!cancelled) setPickupPredictions(list);
       } catch (e) {
         if (!cancelled) {
-          setPlacesError(e.message || 'Autocomplete failed');
+          setPlacesErrorPickup(e.message || 'Autocomplete failed');
           setPickupPredictions([]);
         }
       } finally {
@@ -255,18 +215,24 @@ const AddressEntry = ({ navigation }) => {
       }
       if (!debouncedDelivery || debouncedDelivery.trim().length < 2) {
         setDeliveryPredictions([]);
+        setPlacesErrorDelivery(null);
         return;
       }
       if (!GOOGLE_MAPS_API_KEY) {
+        setPlacesErrorDelivery('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
         setDeliveryPredictions([]);
         return;
       }
       setPlacesLoadingDelivery(true);
+      setPlacesErrorDelivery(null);
       try {
         const list = await fetchPlacePredictions(debouncedDelivery);
         if (!cancelled) setDeliveryPredictions(list);
       } catch (e) {
-        if (!cancelled) setDeliveryPredictions([]);
+        if (!cancelled) {
+          setPlacesErrorDelivery(e.message || 'Autocomplete failed');
+          setDeliveryPredictions([]);
+        }
       } finally {
         if (!cancelled) setPlacesLoadingDelivery(false);
       }
@@ -277,45 +243,13 @@ const AddressEntry = ({ navigation }) => {
     };
   }, [debouncedDelivery, focusedField]);
 
-  const onRegionChangeComplete = useCallback(
-    (region) => {
-      if (Date.now() < ignoreRegionEventsUntilRef.current) {
-        return;
-      }
-      // Programmatic move finished — skip pickup update unless user was panning (interrupt).
-      if (programmaticMapMoveRef.current) {
-        if (!userIsPanningMapRef.current) {
-          programmaticMapMoveRef.current = false;
-          return;
-        }
-        programmaticMapMoveRef.current = false;
-        // fall through: user dragged during/after camera animation
-      }
-      // Do not move pickup or change address from map unless the user actually panned.
-      // (Fits/animates can leave the camera between pins — center is not pickup.)
-      if (!userIsPanningMapRef.current) {
-        return;
-      }
-      userIsPanningMapRef.current = false;
-      const center = {
-        latitude: region.latitude,
-        longitude: region.longitude,
-      };
-      setPickupCoords(center);
-      reverseGeocodePickup(center);
-    },
-    [reverseGeocodePickup]
-  );
-
   const fitBothPins = useCallback(() => {
     if (!mapRef.current || !pickupCoords || !dropoffCoords) return;
-    markProgrammaticMapMove(1600);
-    userIsPanningMapRef.current = false;
     mapRef.current.fitToCoordinates([pickupCoords, dropoffCoords], {
       edgePadding: { top: 120, right: 80, bottom: 200, left: 80 },
       animated: true,
     });
-  }, [pickupCoords, dropoffCoords, markProgrammaticMapMove]);
+  }, [pickupCoords, dropoffCoords]);
 
   useEffect(() => {
     if (pickupCoords && dropoffCoords) {
@@ -342,64 +276,70 @@ const AddressEntry = ({ navigation }) => {
     }
   }, [pickupCoords, dropoffCoords, pickupAddress, deliveryAddress, cardSlideAnim]);
 
-  const onSelectPickupPrediction = useCallback(async (p) => {
-    Keyboard.dismiss();
-    setPickupPredictions([]);
-    setPlacesError(null);
-    try {
-      const details = await fetchPlaceDetails(p.place_id);
-      const addr = details.formatted_address || p.description || '';
-      setPickupAddress(addr);
-      const coord = { latitude: details.latitude, longitude: details.longitude };
-      setPickupCoords(coord);
-      markProgrammaticMapMove(1100);
-      mapRef.current?.animateToRegion(
-        {
-          latitude: coord.latitude,
-          longitude: coord.longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
-        },
-        500
-      );
-      if (dropoffCoords) {
-        setTimeout(() => fitBothPins(), 600);
+  const onSelectPickupPrediction = useCallback(
+    async (p) => {
+      Keyboard.dismiss();
+      setPickupPredictions([]);
+      setPlacesErrorPickup(null);
+      try {
+        const details = await fetchPlaceDetails(p.place_id);
+        const addr = details.formatted_address || p.description || '';
+        setPickupAddress(addr);
+        const coord = { latitude: details.latitude, longitude: details.longitude };
+        setPickupCoords(coord);
+        mapRef.current?.animateToRegion(
+          {
+            latitude: coord.latitude,
+            longitude: coord.longitude,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          500
+        );
+        if (dropoffCoords) {
+          setTimeout(() => fitBothPins(), 600);
+        }
+      } catch (e) {
+        setPlacesErrorPickup(e.message || 'Could not load place');
       }
-    } catch (e) {
-      setPlacesError(e.message || 'Could not load place');
-    }
-  }, [dropoffCoords, fitBothPins, markProgrammaticMapMove]);
+    },
+    [dropoffCoords, fitBothPins]
+  );
 
-  const onSelectDeliveryPrediction = useCallback(async (p) => {
-    Keyboard.dismiss();
-    setDeliveryPredictions([]);
-    setPlacesError(null);
-    try {
-      const details = await fetchPlaceDetails(p.place_id);
-      setDeliveryAddress(p.description || details.formatted_address);
-      setDropoffCoords({
-        latitude: details.latitude,
-        longitude: details.longitude,
-      });
-      markProgrammaticMapMove(1100);
-      mapRef.current?.animateToRegion(
-        {
+  const onSelectDeliveryPrediction = useCallback(
+    async (p) => {
+      Keyboard.dismiss();
+      setDeliveryPredictions([]);
+      setPlacesErrorDelivery(null);
+      try {
+        const details = await fetchPlaceDetails(p.place_id);
+        const addr = details.formatted_address || p.description || '';
+        setDeliveryAddress(addr);
+        setDropoffCoords({
           latitude: details.latitude,
           longitude: details.longitude,
-          latitudeDelta: 0.02,
-          longitudeDelta: 0.02,
-        },
-        500
-      );
-      if (pickupCoords) {
-        setTimeout(() => fitBothPins(), 600);
+        });
+        mapRef.current?.animateToRegion(
+          {
+            latitude: details.latitude,
+            longitude: details.longitude,
+            latitudeDelta: 0.02,
+            longitudeDelta: 0.02,
+          },
+          500
+        );
+        if (pickupCoords) {
+          setTimeout(() => fitBothPins(), 600);
+        }
+      } catch (e) {
+        setPlacesErrorDelivery(e.message || 'Could not load place');
       }
-    } catch (e) {
-      setPlacesError(e.message || 'Could not load place');
-    }
-  }, [pickupCoords, fitBothPins, markProgrammaticMapMove]);
+    },
+    [pickupCoords, fitBothPins]
+  );
 
-  const useMyLocation = useCallback(async () => {
+  /** Manual only — fills pickup from GPS + reverse geocode. Never called on mount. */
+  const useCurrentLocation = useCallback(async () => {
     setLocationBusy(true);
     setLocationError(null);
     try {
@@ -414,7 +354,6 @@ const AddressEntry = ({ navigation }) => {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       };
-      markProgrammaticMapMove(1100);
       setPickupCoords(coord);
       try {
         const [place] = await Location.reverseGeocodeAsync(coord);
@@ -431,12 +370,15 @@ const AddressEntry = ({ navigation }) => {
         },
         600
       );
+      if (dropoffCoords) {
+        setTimeout(() => fitBothPins(), 650);
+      }
     } catch (e) {
       setLocationError(e.message || 'Could not get location');
     } finally {
       setLocationBusy(false);
     }
-  }, [markProgrammaticMapMove]);
+  }, [dropoffCoords, fitBothPins]);
 
   const handleConfirm = () => {
     if (!pickupCoords || !dropoffCoords) return;
@@ -461,14 +403,10 @@ const AddressEntry = ({ navigation }) => {
   const polylineCoords =
     pickupCoords && dropoffCoords ? [pickupCoords, dropoffCoords] : null;
 
-  const predictions =
-    focusedField === 'pickup'
-      ? pickupPredictions
-      : focusedField === 'delivery'
-        ? deliveryPredictions
-        : [];
-  const predictionsLoading =
-    focusedField === 'pickup' ? placesLoadingPickup : placesLoadingDelivery;
+  const showPickupDropdown =
+    focusedField === 'pickup' && debouncedPickup.trim().length >= 2;
+  const showDeliveryDropdown =
+    focusedField === 'delivery' && debouncedDelivery.trim().length >= 2;
 
   const canConfirm =
     pickupCoords &&
@@ -487,8 +425,6 @@ const AddressEntry = ({ navigation }) => {
           showsUserLocation
           showsMyLocationButton={false}
           mapType="standard"
-          onRegionChange={onMapRegionChange}
-          onRegionChangeComplete={onRegionChangeComplete}
           rotateEnabled
           pitchEnabled={false}
         >
@@ -509,24 +445,17 @@ const AddressEntry = ({ navigation }) => {
         </MapView>
 
         <View style={styles.topBanner} pointerEvents="box-none">
-          {locating ? (
+          {mapCentering ? (
             <View style={styles.topBannerInner}>
               <ActivityIndicator color={colors.primary} size="small" />
-              <Text style={[styles.topBannerText, { marginLeft: 8 }]}>
-                Getting your location…
-              </Text>
+              <Text style={[styles.topBannerText, { marginLeft: 8 }]}>Loading map…</Text>
             </View>
           ) : locationError ? (
             <View style={styles.topBannerInner}>
               <Text style={styles.topBannerError}>{locationError}</Text>
             </View>
-          ) : reverseBusy ? (
-            <View style={styles.topBannerInner}>
-              <Text style={styles.topBannerSubtle}>Updating pickup from map…</Text>
-            </View>
           ) : null}
         </View>
-
       </View>
 
       <View style={styles.bottomPanel}>
@@ -547,21 +476,36 @@ const AddressEntry = ({ navigation }) => {
               returnKeyType="search"
               onFocus={() => setFocusedField('pickup')}
               onBlur={() => {
-                setTimeout(() => setFocusedField((f) => (f === 'pickup' ? null : f)), 200);
+                setTimeout(() => setFocusedField((f) => (f === 'pickup' ? null : f)), 220);
               }}
             />
-            <TouchableOpacity
-              style={styles.inlineLocate}
-              onPress={useMyLocation}
-              disabled={locationBusy || locating}
-              hitSlop={8}
-              accessibilityLabel="Use my location for pickup"
-            >
-              <Ionicons name="navigate-circle-outline" size={26} color={colors.primary} />
-            </TouchableOpacity>
           </View>
 
-          <View style={styles.row}>
+          {showPickupDropdown ? (
+            <PredictionDropdown
+              loading={placesLoadingPickup}
+              predictions={pickupPredictions}
+              error={placesErrorPickup}
+              onSelect={onSelectPickupPrediction}
+            />
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.useLocationLink}
+            onPress={useCurrentLocation}
+            disabled={locationBusy || mapCentering}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            accessibilityRole="button"
+            accessibilityLabel="Use current location for pickup"
+          >
+            {locationBusy ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Text style={styles.useLocationLinkText}>Use current location</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={[styles.row, { marginTop: spacing.sm }]}>
             <View style={styles.redDot} />
             <TextInput
               style={styles.input}
@@ -575,48 +519,19 @@ const AddressEntry = ({ navigation }) => {
               returnKeyType="search"
               onFocus={() => setFocusedField('delivery')}
               onBlur={() => {
-                setTimeout(() => setFocusedField((f) => (f === 'delivery' ? null : f)), 200);
+                setTimeout(() => setFocusedField((f) => (f === 'delivery' ? null : f)), 220);
               }}
             />
           </View>
 
-          {placesError ? <Text style={styles.placesErrorText}>{placesError}</Text> : null}
-
-          {predictions.length > 0 && focusedField && (
-            <ScrollView
-              style={styles.predictions}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-            >
-              {predictions.map((item) => (
-                <TouchableOpacity
-                  key={item.place_id}
-                  style={styles.predictionRow}
-                  onPress={() =>
-                    focusedField === 'pickup'
-                      ? onSelectPickupPrediction(item)
-                      : onSelectDeliveryPrediction(item)
-                  }
-                >
-                  <Text style={styles.predictionMain} numberOfLines={2}>
-                    {item.structured_formatting?.main_text || item.description}
-                  </Text>
-                  <Text style={styles.predictionSub} numberOfLines={1}>
-                    {item.structured_formatting?.secondary_text || ''}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-
-          {predictionsLoading ? (
-            <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
+          {showDeliveryDropdown ? (
+            <PredictionDropdown
+              loading={placesLoadingDelivery}
+              predictions={deliveryPredictions}
+              error={placesErrorDelivery}
+              onSelect={onSelectDeliveryPrediction}
+            />
           ) : null}
-
-          <Text style={styles.mapHint}>
-            Tip: pan the map to move pickup — your typed or chosen address won't be replaced unless
-            you move the map.
-          </Text>
         </View>
 
         <Animated.View
@@ -647,8 +562,8 @@ const AddressEntry = ({ navigation }) => {
             </>
           ) : (
             <Text style={styles.confirmHint}>
-              Enter pickup and delivery addresses (or drag the map for pickup), then choose
-              suggestions.
+              Select pickup and delivery from the suggestions, or use &quot;Use current location&quot;
+              for pickup.
             </Text>
           )}
         </Animated.View>
@@ -661,6 +576,48 @@ const AddressEntry = ({ navigation }) => {
     </SafeAreaView>
   );
 };
+
+function PredictionDropdown({ loading, predictions, error, onSelect }) {
+  return (
+    <View style={styles.predictionsWrap}>
+      {loading ? (
+        <View style={styles.predictionsLoadingInner}>
+          <ActivityIndicator color={colors.primary} size="small" />
+        </View>
+      ) : error ? (
+        <Text style={styles.predictionsError}>{error}</Text>
+      ) : predictions.length === 0 ? (
+        <Text style={styles.predictionsEmpty}>No addresses found</Text>
+      ) : (
+        <ScrollView
+          style={styles.predictionsScroll}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+        >
+          {predictions.map((item, index) => (
+            <TouchableOpacity
+              key={item.place_id}
+              style={[
+                styles.predictionRow,
+                index === predictions.length - 1 && styles.predictionRowLast,
+              ]}
+              onPress={() => onSelect(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.predictionMain} numberOfLines={2}>
+                {item.structured_formatting?.main_text || item.description}
+              </Text>
+              <Text style={styles.predictionSub} numberOfLines={2}>
+                {item.structured_formatting?.secondary_text || ''}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+}
 
 function useDebounced(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -702,10 +659,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
-  topBannerSubtle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
   topBannerError: {
     fontSize: 13,
     color: colors.danger,
@@ -722,7 +675,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 12,
-    maxHeight: height * 0.52,
+    maxHeight: height * 0.55,
   },
   inputBlock: {
     marginBottom: 6,
@@ -734,7 +687,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    marginBottom: 10,
+    marginBottom: 0,
     paddingHorizontal: 4,
   },
   greenDot: {
@@ -758,43 +711,76 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
   },
-  inlineLocate: {
-    padding: spacing.sm,
-    marginRight: spacing.xs,
+  useLocationLink: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    marginLeft: spacing.sm + 10,
+    marginBottom: spacing.xs,
+    minHeight: 22,
+    justifyContent: 'center',
   },
-  predictions: {
-    maxHeight: 160,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+  useLocationLinkText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  predictionsWrap: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    maxHeight: 220,
     backgroundColor: colors.surface,
+    borderBottomLeftRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: colors.black,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  predictionsScroll: {
+    maxHeight: 220,
+  },
+  predictionsLoadingInner: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  predictionsError: {
+    color: colors.danger,
+    fontSize: 13,
+    padding: spacing.md,
+  },
+  predictionsEmpty: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    padding: spacing.md,
+    textAlign: 'center',
   },
   predictionRow: {
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  predictionRowLast: {
+    borderBottomWidth: 0,
   },
   predictionMain: {
     fontSize: 15,
     color: colors.textPrimary,
-    fontWeight: '500',
+    fontWeight: '700',
   },
   predictionSub: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 2,
-  },
-  placesErrorText: {
-    color: colors.danger,
-    fontSize: 12,
     marginTop: 4,
-  },
-  mapHint: {
-    fontSize: 11,
-    color: colors.textLight,
-    marginTop: 4,
-    lineHeight: 16,
+    fontWeight: '400',
   },
   confirmCard: {
     backgroundColor: colors.primaryLight,
