@@ -1,5 +1,6 @@
 import { CommonActions } from '@react-navigation/native';
 import { clearAuth } from './authStore';
+import { registerForPushNotificationsAsync } from './services/pushNotificationService';
 
 export function resetToRoleHome(navigation, user) {
   const type = user?.user_type;
@@ -13,6 +14,8 @@ export function resetToRoleHome(navigation, user) {
       routes: [{ name }],
     })
   );
+
+  registerForPushNotificationsAsync().catch(() => {});
 }
 
 export function resetToLogin(navigation) {

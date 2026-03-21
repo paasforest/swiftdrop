@@ -97,9 +97,12 @@ async function expireJobOffers(orderId) {
 }
 
 async function notifyDriversNewOffer(driverIds, order) {
-  const msg = `New delivery: ${order.pickup_address} to ${order.dropoff_address} — Earn R${order.driver_earnings || order.total_price}. Accept within 15 seconds.`;
+  const earn = Number(order.driver_earnings || order.total_price || 0);
+  const amountStr = Number.isFinite(earn) ? earn.toFixed(2) : '0.00';
+  const title = 'New Delivery Job!';
+  const body = `Earn R${amountStr} — ${order.pickup_address} to ${order.dropoff_address}`;
   for (const driverId of driverIds) {
-    await sendPushNotification(driverId, 'New Job Offer', msg, {
+    await sendPushNotification(driverId, title, body, {
       orderId: order.id,
       orderNumber: order.order_number,
       type: 'job_offer',
@@ -110,9 +113,9 @@ async function notifyDriversNewOffer(driverIds, order) {
 async function notifyCustomerNoDriver(customerId, order) {
   await sendPushNotification(
     customerId,
-    'No driver available',
-    'No driver available right now. We will keep trying or you can cancel for a full refund.',
-    { orderId: order.id, type: 'no_driver' }
+    'No Driver Available',
+    'Still searching. Cancel for full refund.',
+    { orderId: order.id, type: 'unmatched' }
   );
 }
 
@@ -285,9 +288,9 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
 
   await sendPushNotification(
     driverId,
-    'Return load available',
-    `Return load available — earn R${earnText} on your way back. Tap to view.`,
-    { orderId: best.id, type: 'return_load_offer', returnLoadForOrderId: orderId }
+    'Return Load Available',
+    `Earn R${earnText} on your way back`,
+    { orderId: best.id, type: 'return_load', returnLoadForOrderId: orderId }
   );
 }
 

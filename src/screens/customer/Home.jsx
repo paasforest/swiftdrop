@@ -14,6 +14,7 @@ import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
+import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -101,6 +102,10 @@ const Home = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       loadOrders();
+      const auth = getAuth();
+      if (auth?.token) {
+        registerForPushNotificationsAsync().catch(() => {});
+      }
     }, [loadOrders])
   );
 

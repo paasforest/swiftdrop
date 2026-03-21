@@ -13,6 +13,8 @@ router.get('/customer', auth, order.getCustomerOrders);
 router.get('/driver/dashboard', auth, order.getDriverDashboard);
 router.get('/driver', auth, order.getDriverOrders);
 
+router.get('/pending-offer', auth, order.getPendingOffer);
+
 router.post('/', auth, order.createOrder);
 
 router.get('/:id/tracking', auth, order.getOrderTracking);

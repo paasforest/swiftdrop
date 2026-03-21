@@ -250,33 +250,30 @@ const AddressEntry = ({ navigation }) => {
     }
   }, [dropoffCoords, cardSlideAnim]);
 
-  const onSelectPrediction = useCallback(
-    async (p) => {
-      Keyboard.dismiss();
-      setPredictions([]);
-      setPlacesError(null);
-      try {
-        const details = await fetchPlaceDetails(p.place_id);
-        setDeliveryAddress(p.description || details.formatted_address);
-        setDropoffCoords({
+  const onSelectPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setPredictions([]);
+    setPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      setDeliveryAddress(p.description || details.formatted_address);
+      setDropoffCoords({
+        latitude: details.latitude,
+        longitude: details.longitude,
+      });
+      mapRef.current?.animateToRegion(
+        {
           latitude: details.latitude,
           longitude: details.longitude,
-        });
-        mapRef.current?.animateToRegion(
-          {
-            latitude: details.latitude,
-            longitude: details.longitude,
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
-          },
-          500
-        );
-      } catch (e) {
-        setPlacesError(e.message || 'Could not load place');
-      }
-    },
-    []
-  );
+          latitudeDelta: 0.02,
+          longitudeDelta: 0.02,
+        },
+        500
+      );
+    } catch (e) {
+      setPlacesError(e.message || 'Could not load place');
+    }
+  }, []);
 
   const handleConfirm = () => {
     if (!pickupCoords || !dropoffCoords) return;
@@ -298,9 +295,7 @@ const AddressEntry = ({ navigation }) => {
   });
 
   const polylineCoords =
-    pickupCoords && dropoffCoords
-      ? [pickupCoords, dropoffCoords]
-      : null;
+    pickupCoords && dropoffCoords ? [pickupCoords, dropoffCoords] : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -331,7 +326,6 @@ const AddressEntry = ({ navigation }) => {
           )}
         </MapView>
 
-        {/* Fixed centre pickup pin (Uber-style): map moves underneath */}
         <View style={styles.centerPinContainer} pointerEvents="none">
           <View
             style={[

@@ -8,7 +8,6 @@ import {
   Dimensions,
   ActivityIndicator,
   Linking,
-  Platform,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAuth } from '../../authStore';
@@ -57,7 +56,6 @@ const TrackingWithMap = ({ navigation, route }) => {
   const [error, setError] = useState(null);
   const [driverLocation, setDriverLocation] = useState(null);
   const [eta, setEta] = useState(null);
-  const mapRef = useRef(null);
   const lastStatusRef = useRef(null);
   const deliveredReachedRef = useRef(false);
   const deliveredNavigatedRef = useRef(false);
@@ -67,6 +65,7 @@ const TrackingWithMap = ({ navigation, route }) => {
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const pollingErrorRef = useRef(null);
+  const mapRef = useRef(null);
 
   function computeTimeTakenString(orderData) {
     try {
@@ -179,16 +178,6 @@ const TrackingWithMap = ({ navigation, route }) => {
       if (delivery_coords) {
         const estimatedTime = calculateETA(location, delivery_coords);
         setEta(estimatedTime);
-      }
-
-      // Auto-zoom map to show driver
-      if (mapRef.current && location) {
-        mapRef.current.animateToRegion({
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }, 1000);
       }
     });
 
@@ -402,22 +391,21 @@ const TrackingWithMap = ({ navigation, route }) => {
         longitudeDelta: 0.05,
       }
     : pickup_coords
-    ? {
-        latitude: pickup_coords.latitude,
-        longitude: pickup_coords.longitude,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      }
-    : {
-        latitude: -33.9249,
-        longitude: 18.4241, // Cape Town default
-        latitudeDelta: 0.5,
-        longitudeDelta: 0.5,
-      };
+      ? {
+          latitude: pickup_coords.latitude,
+          longitude: pickup_coords.longitude,
+          latitudeDelta: 0.1,
+          longitudeDelta: 0.1,
+        }
+      : {
+          latitude: -33.9249,
+          longitude: 18.4241,
+          latitudeDelta: 0.5,
+          longitudeDelta: 0.5,
+        };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Map */}
       <MapView
         ref={mapRef}
         style={styles.map}
@@ -427,7 +415,6 @@ const TrackingWithMap = ({ navigation, route }) => {
         showsMyLocationButton={false}
         onMapReady={handleCenterMap}
       >
-        {/* Pickup Marker */}
         {pickup_coords && (
           <Marker
             coordinate={pickup_coords}
@@ -437,7 +424,6 @@ const TrackingWithMap = ({ navigation, route }) => {
           />
         )}
 
-        {/* Delivery Marker */}
         {delivery_coords && (
           <Marker
             coordinate={delivery_coords}
@@ -447,7 +433,6 @@ const TrackingWithMap = ({ navigation, route }) => {
           />
         )}
 
-        {/* Driver Marker (Real-time) */}
         {driverLocation && (
           <Marker
             coordinate={{
@@ -464,7 +449,6 @@ const TrackingWithMap = ({ navigation, route }) => {
           </Marker>
         )}
 
-        {/* Route Line */}
         {driverLocation && delivery_coords && (
           <Polyline
             coordinates={[
@@ -481,7 +465,6 @@ const TrackingWithMap = ({ navigation, route }) => {
         )}
       </MapView>
 
-      {/* Center Map Button */}
       <TouchableOpacity style={styles.centerButton} onPress={handleCenterMap}>
         <Text style={styles.centerButtonText}>📍</Text>
       </TouchableOpacity>

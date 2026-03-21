@@ -1,7 +1,12 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
+
+import { navigationRef, navigateFromNotificationData } from './src/navigationRef';
+import { alertForegroundNotification } from './src/services/pushNotificationService';
 
 // Customer Screens
 import Onboarding from './src/screens/customer/Onboarding';
@@ -39,10 +44,54 @@ import Reports from './src/screens/admin/Reports';
 const Stack = createStackNavigator();
 
 export default function App() {
+  const notificationResponseSub = useRef(null);
+  const notificationReceivedSub = useRef(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('swiftdrop_deliveries', {
+        name: 'SwiftDrop Deliveries',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+      }).catch((e) => console.warn('[push] channel', e?.message || e));
+    }
+  }, []);
+
+  useEffect(() => {
+    notificationReceivedSub.current = Notifications.addNotificationReceivedListener((notification) => {
+      alertForegroundNotification(notification);
+    });
+    return () => {
+      notificationReceivedSub.current?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    notificationResponseSub.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data || {};
+      navigateFromNotificationData(data);
+    });
+    return () => {
+      notificationResponseSub.current?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response?.notification) {
+          const data = response.notification.request.content.data || {};
+          navigateFromNotificationData(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <StatusBar style="auto" />
-      <Stack.Navigator 
+      <Stack.Navigator
         initialRouteName="Onboarding"
         screenOptions={{
           headerShown: false,

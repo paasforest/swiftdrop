@@ -23,6 +23,15 @@
           "apiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
         }
       }
-    }
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "sounds": [],
+          "mode": "production"
+        }
+      ]
+    ]
   }
 }

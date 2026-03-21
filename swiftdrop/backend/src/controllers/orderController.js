@@ -538,6 +538,66 @@ async function getOrderTracking(req, res) {
   }
 }
 
+/**
+ * GET /api/orders/pending-offer — driver’s current pending job offer (if any).
+ */
+async function getPendingOffer(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const driverId = req.user.id;
+    const r = await db.query(
+      `SELECT jo.expires_at,
+              o.id AS order_id, o.pickup_address, o.dropoff_address, o.pickup_lat, o.pickup_lng,
+              o.dropoff_lat, o.dropoff_lng, o.parcel_type, o.parcel_size, o.special_handling,
+              o.driver_earnings, o.delivery_tier, o.status
+       FROM job_offers jo
+       INNER JOIN orders o ON o.id = jo.order_id
+       WHERE jo.driver_id = $1 AND jo.status = 'pending' AND o.status = 'matching'
+       ORDER BY jo.expires_at ASC
+       LIMIT 1`,
+      [driverId]
+    );
+    if (r.rows.length === 0) {
+      return res.json({ offer: null });
+    }
+
+    const row = r.rows[0];
+    const dist = haversineKm(
+      parseFloat(row.pickup_lat),
+      parseFloat(row.pickup_lng),
+      parseFloat(row.dropoff_lat),
+      parseFloat(row.dropoff_lng)
+    );
+    const zone = zoneForDistance(dist);
+    const timeEstimateMinutes = Math.max(15, Math.round(15 + dist * 1.2));
+
+    const expiresAt = row.expires_at;
+    const offerExpiresIso =
+      expiresAt instanceof Date ? expiresAt.toISOString() : new Date(expiresAt).toISOString();
+
+    const offer = {
+      orderId: row.order_id,
+      pickup_address: row.pickup_address,
+      dropoff_address: row.dropoff_address,
+      distance_km: Math.round(dist * 10) / 10,
+      zone,
+      driver_earns: parseFloat(row.driver_earnings) || 0,
+      parcel_type: row.parcel_type || '',
+      parcel_size: row.parcel_size || '',
+      time_estimate: `${timeEstimateMinutes} min`,
+      special_handling: row.special_handling || null,
+      offer_expires_at: offerExpiresIso,
+    };
+
+    return res.json({ offer });
+  } catch (err) {
+    console.error('getPendingOffer:', err);
+    return res.status(500).json({ error: 'Failed to fetch offer' });
+  }
+}
+
 async function acceptOrder(req, res) {
   try {
     const { id } = req.params;
@@ -579,11 +639,21 @@ async function acceptOrder(req, res) {
       client.release();
     }
 
+    const driverUserRes = await db.query(`SELECT full_name FROM users WHERE id = $1`, [driverId]);
+    const driverName = driverUserRes.rows[0]?.full_name?.trim() || 'Your driver';
+
     await sendPushNotification(
       order.customer_id,
-      'Driver found!',
-      `Your driver is on the way to collect your parcel.`,
-      { orderId: id, type: 'driver_matched' }
+      'Driver Found!',
+      `${driverName} is on the way`,
+      { orderId: id, type: 'order_update' }
+    );
+
+    await sendPushNotification(
+      driverId,
+      'Job Confirmed',
+      `Navigate to ${order.pickup_address}`,
+      { orderId: id, type: 'order_update' }
     );
 
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
@@ -596,12 +666,18 @@ async function acceptOrder(req, res) {
 
 async function declineOrder(req, res) {
   try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
     const { id } = req.params;
     const driverId = req.user.id;
-    await db.query(
-      `UPDATE job_offers SET status = 'declined' WHERE order_id = $1 AND driver_id = $2`,
+    const result = await db.query(
+      `UPDATE job_offers SET status = 'declined' WHERE order_id = $1 AND driver_id = $2 AND status = 'pending' RETURNING id`,
       [id, driverId]
     );
+    if (result.rowCount === 0) {
+      return res.json({ message: 'No pending offer (already expired or resolved)', alreadyResolved: true });
+    }
     return res.json({ message: 'Offer declined' });
   } catch (err) {
     console.error('declineOrder:', err);
@@ -641,9 +717,9 @@ async function updateOrderStatus(req, res) {
     if (status === 'pickup_arrived') {
       await sendPushNotification(
         order.customer_id,
-        'Driver arrived',
-        `Your driver has arrived. Share your pickup code: ${order.pickup_otp}`,
-        { orderId: id, type: 'pickup_arrived' }
+        'Driver Has Arrived',
+        `Your pickup code is: ${order.pickup_otp}`,
+        { orderId: id, type: 'otp_pickup', otp: order.pickup_otp }
       );
     }
 
@@ -658,9 +734,9 @@ async function updateOrderStatus(req, res) {
 
       await sendPushNotification(
         order.customer_id,
-        'Delivery arrival',
-        `Driver has arrived with your parcel. Your delivery code is: ${order.delivery_otp}`,
-        { orderId: id, type: 'delivery_arrived' }
+        'Driver At Delivery Address',
+        `Delivery code: ${order.delivery_otp}`,
+        { orderId: id, type: 'otp_delivery', otp: order.delivery_otp }
       );
 
       if (customerPhone && order.delivery_otp && driverFullName) {
@@ -697,9 +773,9 @@ async function confirmPickupOTP(req, res) {
 
     await sendPushNotification(
       order.customer_id,
-      'Parcel collected',
-      `Your parcel has been collected and is on the way to ${order.dropoff_address}`,
-      { orderId: id, type: 'collected' }
+      'Parcel Collected',
+      `On the way to ${order.dropoff_address}`,
+      { orderId: id, type: 'order_update' }
     );
 
     // Driver-side only: offer return load after intercity pickup confirmation.
@@ -735,7 +811,7 @@ async function confirmDeliveryOTP(req, res) {
     await sendPushNotification(
       order.customer_id,
       'Delivered!',
-      'Your parcel has been successfully delivered. Rate your driver.',
+      'Your parcel has been delivered',
       { orderId: id, type: 'delivered' }
     );
 
@@ -769,13 +845,6 @@ async function uploadPickupPhoto(req, res) {
       [url, id]
     );
 
-    await sendPushNotification(
-      order.customer_id,
-      'Parcel collected',
-      `Your parcel has been collected and is on the way to ${order.dropoff_address}`,
-      { orderId: id, type: 'collected' }
-    );
-
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
     return res.json(updated.rows[0]);
   } catch (err) {
@@ -802,18 +871,20 @@ async function uploadDeliveryPhoto(req, res) {
     const url = result.secure_url;
 
     // Release payment only after delivery photo evidence is successfully uploaded.
-    await releaseEscrow(id);
+    const payout = await releaseEscrow(id);
 
     await db.query(
       `UPDATE orders SET delivery_photo_url = $1, status = 'completed', updated_at = NOW() WHERE id = $2`,
       [url, id]
     );
 
+    const driverAmount = Number(payout?.driverAmount);
+    const amtStr = Number.isFinite(driverAmount) ? driverAmount.toFixed(2) : '0.00';
     await sendPushNotification(
-      order.customer_id,
-      'Delivered!',
-      'Your parcel has been successfully delivered. Rate your driver.',
-      { orderId: id, type: 'delivered' }
+      order.driver_id,
+      'Payment Received',
+      `R${amtStr} added to your earnings`,
+      { orderId: id, type: 'payment' }
     );
 
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
@@ -942,6 +1013,7 @@ module.exports = {
   getDriverDashboard,
   cancelOrder,
   getOrderTracking,
+  getPendingOffer,
   acceptOrder,
   declineOrder,
   updateOrderStatus,

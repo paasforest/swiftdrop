@@ -6,6 +6,8 @@ const orderRoutes = require('./src/routes/orderRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const adminDriverRoutes = require('./src/routes/adminDriverRoutes');
 const ratingsRoutes = require('./src/routes/ratingsRoutes');
+const driverRoutes = require('./src/routes/driverRoutes');
+const notificationRoutes = require('./src/routes/notificationRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -18,6 +20,8 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminDriverRoutes);
 app.use('/api', ratingsRoutes);
+app.use('/api/drivers', driverRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
   res.json({ name: 'SwiftDrop API', version: '1.0.0' });
