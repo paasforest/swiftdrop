@@ -6,7 +6,11 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "db:migrate": "npm run db:migrate --prefix swiftdrop/backend",
+    "db:ensure-admin": "npm run db:ensure-admin --prefix swiftdrop/backend",
+    "db:reset-admin-password": "npm run db:reset-admin-password --prefix swiftdrop/backend",
+    "db:seed": "npm run db:seed --prefix swiftdrop/backend"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "8.4.4",
