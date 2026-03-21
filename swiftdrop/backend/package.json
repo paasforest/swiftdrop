@@ -8,6 +8,7 @@
     "db:migrate": "node src/database/migrate.js",
     "db:ensure-admin": "node src/database/ensureAdmin.js",
     "db:reset-admin-password": "node src/database/resetAdminPassword.js",
+    "db:ensure-test-driver": "node src/database/ensureTestDriver.js",
     "db:seed": "node src/database/seed.js",
     "test:auth": "node tests/auth.test.js"
   },
