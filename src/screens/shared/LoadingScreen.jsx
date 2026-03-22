@@ -1,14 +1,13 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions, useNavigation } from '@react-navigation/native';
-import AppText from '../../components/ui/AppText';
 import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
 import { loadAuth, setAuth, clearAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { resetToRoleHome } from '../../navigationHelpers';
-import { colors } from '../../theme/theme';
 
+const BRAND_BLUE = '#1A73E8';
 const MIN_MS = 800;
 
 function sleep(ms) {
@@ -91,11 +90,9 @@ export default function LoadingScreen() {
 
   return (
     <View style={styles.root}>
-      <ParcelLogoIcon size={60} color={colors.primary} />
-      <AppText variant="h2" color="primary" style={styles.brand}>
-        SwiftDrop
-      </AppText>
-      <ActivityIndicator size="small" color={colors.primary} style={styles.spinner} />
+      <ParcelLogoIcon size={80} color="#FFFFFF" />
+      <Text style={styles.title}>SwiftDrop</Text>
+      <ActivityIndicator size="small" color="#FFFFFF" style={styles.spinner} />
     </View>
   );
 }
@@ -103,15 +100,17 @@ export default function LoadingScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
+    backgroundColor: BRAND_BLUE,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  brand: {
-    marginTop: 12,
-    fontWeight: '800',
+  title: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 16,
   },
   spinner: {
-    marginTop: 16,
+    marginTop: 8,
   },
 });

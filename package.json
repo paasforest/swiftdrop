@@ -11,7 +11,8 @@
     "db:ensure-admin": "npm run db:ensure-admin --prefix swiftdrop/backend",
     "db:reset-admin-password": "npm run db:reset-admin-password --prefix swiftdrop/backend",
     "db:seed": "npm run db:seed --prefix swiftdrop/backend",
-    "db:ensure-test-driver": "npm run db:ensure-test-driver --prefix swiftdrop/backend"
+    "db:ensure-test-driver": "npm run db:ensure-test-driver --prefix swiftdrop/backend",
+    "generate-assets": "node scripts/generateAssets.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -42,7 +43,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "babel-preset-expo": "~54.0.10"
+    "babel-preset-expo": "~54.0.10",
+    "sharp": "^0.33.5"
   },
   "private": true
 }

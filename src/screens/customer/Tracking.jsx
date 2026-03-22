@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
-import SwiftDropLogoMark from '../../components/SwiftDropLogoMark';
 import AvatarPlaceholder from '../../components/AvatarPlaceholder';
 
 const { width, height } = Dimensions.get('window');
@@ -123,9 +122,7 @@ const Tracking = ({ navigation, route }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <SwiftDropLogoMark />
-        </View>
+        <View style={styles.mapPlaceholder} />
       </View>
 
       <View style={styles.bottomSheet}>

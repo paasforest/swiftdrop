@@ -9,7 +9,6 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import { AppButton } from '../../components/ui';
@@ -36,18 +35,13 @@ export default function WelcomeScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
-      <LinearGradient
-        colors={['#1A73E8', '#1557B0']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.gradient, { height: HEADER_H }]}
-      >
+      <View style={[styles.headerHero, { height: HEADER_H }]}>
         <View style={styles.logoMark}>
-          <ParcelLogoIcon size={28} color={colors.textWhite} />
+          <ParcelLogoIcon size={36} color={colors.textWhite} />
         </View>
         <Text style={styles.brandTitle}>SwiftDrop</Text>
         <Text style={styles.tagline}>Deliver Anything. Same Day.</Text>
-      </LinearGradient>
+      </View>
 
       <View style={styles.card}>
         <ScrollView
@@ -133,15 +127,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
-  gradient: {
+  headerHero: {
     width,
+    backgroundColor: '#1A73E8',
     alignItems: 'center',
     paddingTop: spacing.xxl,
   },
   logoMark: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -149,13 +144,13 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     color: colors.textWhite,
-    fontSize: 22,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '700',
     textAlign: 'center',
   },
   tagline: {
-    color: 'rgba(255,255,255,0.95)',
-    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
     textAlign: 'center',
     marginTop: spacing.xs,
   },

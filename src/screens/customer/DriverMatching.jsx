@@ -16,6 +16,7 @@ import { getAuth } from '../../authStore';
 import { API_BASE_URL } from '../../apiConfig';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius } from '../../theme/theme';
+import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
 
 const { width, height } = Dimensions.get('window');
 
@@ -409,11 +410,11 @@ const DriverMatching = ({ navigation, route }) => {
                 </View>
               ) : (
                 <View style={styles.centerIcon}>
-                  <Ionicons
-                    name={noDriverFound ? 'warning-outline' : 'cube-outline'}
-                    size={34}
-                    color={RADAR_BLUE}
-                  />
+                  {noDriverFound ? (
+                    <Ionicons name="warning-outline" size={34} color={RADAR_BLUE} />
+                  ) : (
+                    <ParcelLogoIcon size={34} color={RADAR_BLUE} />
+                  )}
                 </View>
               )}
             </View>
