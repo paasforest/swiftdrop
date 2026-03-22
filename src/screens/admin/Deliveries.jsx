@@ -1,26 +1,27 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  Dimensions,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   Image,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AppText from '../../components/ui/AppText';
+import AdminHeader from '../../components/admin/AdminHeader';
+import FullImageModal from '../../components/admin/FullImageModal';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { colors, spacing, radius } from '../../theme/theme';
-
-const { width, height } = Dimensions.get('window');
+import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
 
 const STATUS_OPTIONS = [
   { key: 'all', label: 'All' },
   { key: 'active', label: 'Active' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'completed', label: 'Done' },
   { key: 'disputed', label: 'Disputed' },
   { key: 'cancelled', label: 'Cancelled' },
 ];
@@ -40,12 +41,17 @@ function formatWhen(iso) {
   }
 }
 
+function tierLabel(t) {
+  if (!t) return '—';
+  return String(t).charAt(0).toUpperCase() + String(t).slice(1);
+}
+
 function statusBadgeStyle(status) {
   const s = String(status || '').toLowerCase();
-  if (['delivered', 'completed'].includes(s)) return { bg: colors.successLight, fg: colors.success };
-  if (s === 'disputed') return { bg: colors.dangerLight, fg: colors.danger };
-  if (s === 'cancelled') return { bg: colors.background, fg: colors.textSecondary };
-  return { bg: colors.primaryLight, fg: colors.primary };
+  if (['delivered', 'completed'].includes(s)) return { bg: colors.successLight, fg: colors.success, label: 'Done' };
+  if (s === 'disputed') return { bg: colors.dangerLight, fg: colors.danger, label: 'Disputed' };
+  if (s === 'cancelled') return { bg: colors.background, fg: colors.textSecondary, label: 'Cancelled' };
+  return { bg: colors.primaryLight, fg: colors.primary, label: 'Active' };
 }
 
 const Deliveries = () => {
@@ -61,9 +67,10 @@ const Deliveries = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
 
-  const [selectedId, setSelectedId] = useState(null);
+  const [detailVisible, setDetailVisible] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [previewUri, setPreviewUri] = useState(null);
 
   useEffect(() => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
@@ -94,11 +101,8 @@ const Deliveries = () => {
       const data = await getJson(`/api/admin/deliveries?${qs.toString()}`, { token: auth.token });
       const rows = Array.isArray(data.deliveries) ? data.deliveries : [];
       setTotal(Number(data.total) || 0);
-      if (page === 1) {
-        setDeliveries(rows);
-      } else {
-        setDeliveries((prev) => [...prev, ...rows]);
-      }
+      if (page === 1) setDeliveries(rows);
+      else setDeliveries((prev) => [...prev, ...rows]);
     } catch (e) {
       setError(e.message || 'Failed to load');
       if (page === 1) setDeliveries([]);
@@ -115,7 +119,7 @@ const Deliveries = () => {
   const openDetail = async (row) => {
     const auth = getAuth();
     if (!auth?.token) return;
-    setSelectedId(row.id);
+    setDetailVisible(true);
     setDetail(null);
     setDetailLoading(true);
     try {
@@ -129,312 +133,244 @@ const Deliveries = () => {
   };
 
   const closeDetail = () => {
-    setSelectedId(null);
+    setDetailVisible(false);
     setDetail(null);
   };
 
   const d = detail;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Deliveries</Text>
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.root}>
+        <AdminHeader mode="simple" title="Deliveries" />
 
-      <View style={styles.filterBar}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.sm }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Order # or customer name"
+            placeholder="Search orders or customers..."
             placeholderTextColor={colors.textLight}
             value={searchInput}
             onChangeText={setSearchInput}
           />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
-          {STATUS_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.key}
-              style={[
-                styles.filterChip,
-                selectedStatus === opt.key && styles.filterChipActive,
-              ]}
-              onPress={() => {
-                setSelectedStatus(opt.key);
-                setPage(1);
-              }}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedStatus === opt.key && styles.filterChipTextActive,
-                ]}
+
+        <View style={styles.filterRow}>
+          {STATUS_OPTIONS.map((opt) => {
+            const on = selectedStatus === opt.key;
+            return (
+              <Pressable key={opt.key} onPress={() => { setSelectedStatus(opt.key); setPage(1); }} style={styles.filterItem}>
+                <AppText style={[adminType.body, { color: on ? colors.primary : colors.textSecondary, fontWeight: on ? '700' : '400' }]}>
+                  {opt.label}
+                </AppText>
+                {on ? <View style={styles.filterUnderline} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {error ? <AppText color="danger" style={{ paddingHorizontal: spacing.md }}>{error}</AppText> : null}
+        {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} /> : null}
+
+        <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+          {deliveries.map((row) => {
+            const st = statusBadgeStyle(row.status);
+            return (
+              <Pressable
+                key={String(row.id)}
+                style={({ pressed }) => [styles.card, pressed && { opacity: 0.92 }]}
+                onPress={() => openDetail(row)}
               >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {loading ? <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} /> : null}
-
-      <View style={styles.mainRow}>
-        <ScrollView style={styles.tableScroll} horizontal>
-          <View style={styles.table}>
-            <View style={styles.tableHeader}>
-              <Text style={[styles.cell, styles.headerCell, { width: 120 }]}>Order</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 100 }]}>Customer</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 100 }]}>Driver</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 160 }]}>From</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 160 }]}>To</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 90 }]}>Status</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 80 }]}>Amount</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 130 }]}>Created</Text>
-              <Text style={[styles.cell, styles.headerCell, { width: 72 }]}> </Text>
-            </View>
-            {deliveries.map((row) => {
-              const st = statusBadgeStyle(row.status);
-              return (
-                <View key={String(row.id)} style={styles.tableRow}>
-                  <Text style={[styles.cell, { width: 120 }]} numberOfLines={1}>
+                <View style={styles.cardTop}>
+                  <AppText style={[adminType.title, { color: colors.textPrimary }]}>
                     {row.order_number || `#${row.id}`}
-                  </Text>
-                  <Text style={[styles.cell, { width: 100 }]} numberOfLines={1}>
-                    {row.customer_name || '—'}
-                  </Text>
-                  <Text style={[styles.cell, { width: 100 }]} numberOfLines={1}>
-                    {row.driver_name || '—'}
-                  </Text>
-                  <Text style={[styles.cell, { width: 160 }]} numberOfLines={2}>
-                    {row.pickup_address || '—'}
-                  </Text>
-                  <Text style={[styles.cell, { width: 160 }]} numberOfLines={2}>
-                    {row.dropoff_address || '—'}
-                  </Text>
-                  <View style={{ width: 90, justifyContent: 'center' }}>
-                    <View style={[styles.badge, { backgroundColor: st.bg }]}>
-                      <Text style={[styles.badgeText, { color: st.fg }]} numberOfLines={1}>
-                        {row.status}
-                      </Text>
-                    </View>
+                  </AppText>
+                  <View style={[styles.pill, { backgroundColor: st.bg }]}>
+                    <AppText style={[adminType.badge, { color: st.fg }]}>{st.label}</AppText>
                   </View>
-                  <Text style={[styles.cell, { width: 80 }]}>
-                    {formatMoney(row.payment_amount ?? row.total_price)}
-                  </Text>
-                  <Text style={[styles.cell, { width: 130, fontSize: 11 }]}>
-                    {formatWhen(row.created_at)}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.viewBtn, { width: 72 }]}
-                    onPress={() => openDetail(row)}
-                  >
-                    <Text style={styles.viewBtnText}>View</Text>
-                  </TouchableOpacity>
                 </View>
-              );
-            })}
-          </View>
+                <View style={styles.addrRow}>
+                  <AppText style={[adminType.body, { flex: 1, color: colors.textSecondary }]} numberOfLines={2}>
+                    {row.pickup_address || '—'}
+                  </AppText>
+                  <Ionicons name="arrow-forward" size={14} color={colors.textLight} style={{ marginHorizontal: 6 }} />
+                  <AppText style={[adminType.body, { flex: 1, color: colors.textSecondary }]} numberOfLines={2}>
+                    {row.dropoff_address || '—'}
+                  </AppText>
+                </View>
+                <View style={styles.cardBottom}>
+                  <AppText style={[adminType.label, { color: colors.textSecondary, flex: 1 }]} numberOfLines={1}>
+                    {row.driver_name || 'No driver'} · {tierLabel(row.delivery_tier)}
+                  </AppText>
+                  <AppText style={[adminType.title, { color: colors.textPrimary }]}>
+                    {formatMoney(row.payment_amount ?? row.total_price)}
+                  </AppText>
+                </View>
+              </Pressable>
+            );
+          })}
         </ScrollView>
 
-        {selectedId && (
-          <View style={styles.detailPanel}>
-            <View style={styles.detailHeader}>
-              <Text style={styles.detailTitle}>Delivery detail</Text>
-              <TouchableOpacity onPress={closeDetail}>
-                <Text style={styles.closeButton}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            {detailLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
-            ) : d ? (
-              <ScrollView>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>Order: </Text>
-                  {d.order_number || d.id}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>Customer: </Text>
-                  {d.customer_name || '—'}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>Driver: </Text>
-                  {d.driver_name || '—'}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>From: </Text>
-                  {d.pickup_address}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>To: </Text>
-                  {d.dropoff_address}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>Status: </Text>
-                  {d.status}
-                </Text>
-                <Text style={styles.dLine}>
-                  <Text style={styles.dLab}>Total: </Text>
-                  {formatMoney(d.total_price)}
-                </Text>
-                <Text style={styles.dSection}>Photos</Text>
-                <View style={styles.photoRow}>
-                  <View style={styles.photoCol}>
-                    <Text style={styles.photoLab}>Pickup</Text>
-                    {d.pickup_photo_url ? (
-                      <Image source={{ uri: d.pickup_photo_url }} style={styles.photoImg} />
-                    ) : (
-                      <Text style={styles.noPh}>No photo</Text>
-                    )}
-                  </View>
-                  <View style={styles.photoCol}>
-                    <Text style={styles.photoLab}>Delivery</Text>
-                    {d.delivery_photo_url ? (
-                      <Image source={{ uri: d.delivery_photo_url }} style={styles.photoImg} />
-                    ) : (
-                      <Text style={styles.noPh}>No photo</Text>
-                    )}
-                  </View>
-                </View>
-                <Text style={styles.dSection}>OTP times</Text>
-                <Text style={styles.dLine}>Pickup confirmed: {formatWhen(d.pickup_confirmed_at)}</Text>
-                <Text style={styles.dLine}>Delivery confirmed: {formatWhen(d.delivery_confirmed_at)}</Text>
-                <Text style={styles.dSection}>Payment</Text>
-                <Text style={styles.dLine}>Commission: {formatMoney(d.commission_amount)}</Text>
-                <Text style={styles.dLine}>Driver earnings: {formatMoney(d.driver_earnings)}</Text>
-              </ScrollView>
-            ) : null}
-          </View>
-        )}
-      </View>
+        {!loading && deliveries.length < total ? (
+          <Pressable style={styles.moreBtn} onPress={() => setPage((p) => p + 1)} disabled={loadingMore}>
+            {loadingMore ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <AppText style={[adminType.body, { color: colors.primary, fontWeight: '700' }]}>Load more</AppText>
+            )}
+          </Pressable>
+        ) : null}
 
-      {!loading && deliveries.length < total ? (
-        <TouchableOpacity
-          style={styles.moreBtn}
-          onPress={() => setPage((p) => p + 1)}
-          disabled={loadingMore}
-        >
-          {loadingMore ? (
-            <ActivityIndicator color={colors.primary} />
-          ) : (
-            <Text style={styles.moreBtnText}>Load more</Text>
-          )}
-        </TouchableOpacity>
-      ) : null}
-    </View>
+        <Modal visible={detailVisible} animationType="slide" transparent onRequestClose={closeDetail}>
+          <View style={styles.sheetBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeDetail} />
+            <View style={styles.sheet}>
+              <View style={styles.sheetGrab}>
+                <View style={styles.grabBar} />
+              </View>
+              {detailLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
+              ) : d ? (
+                <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40 }}>
+                  <View style={styles.sheetHead}>
+                    <AppText style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>Delivery detail</AppText>
+                    <Pressable onPress={closeDetail} hitSlop={12}>
+                      <Ionicons name="close" size={24} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                  <AppText style={[adminType.label, { color: colors.textSecondary }]}>Order</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{d.order_number || d.id}</AppText>
+                  <AppText style={[adminType.label, { color: colors.textSecondary, marginTop: 8 }]}>Date</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{formatWhen(d.created_at)}</AppText>
+                  <AppText style={[adminType.label, { color: colors.textSecondary, marginTop: 8 }]}>Status</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{d.status}</AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>Addresses</AppText>
+                  <AppText style={[adminType.body, { color: colors.textSecondary }]}>From</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{d.pickup_address}</AppText>
+                  <AppText style={[adminType.body, { color: colors.textSecondary, marginTop: 6 }]}>To</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{d.dropoff_address}</AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>Driver</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>{d.driver_name || '—'}</AppText>
+                  <AppText style={[adminType.body, { color: colors.textSecondary }]}>{d.driver_phone || '—'}</AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md, marginBottom: 8 }]}>Photos</AppText>
+                  <View style={styles.photoRow}>
+                    <Pressable style={styles.photoBox} onPress={() => d.pickup_photo_url && setPreviewUri(d.pickup_photo_url)}>
+                      {d.pickup_photo_url ? (
+                        <Image source={{ uri: d.pickup_photo_url }} style={styles.photoImg} />
+                      ) : (
+                        <AppText style={[adminType.label, { color: colors.textLight }]}>No pickup</AppText>
+                      )}
+                      <AppText style={[adminType.badge, { textAlign: 'center', marginTop: 4 }]}>Pickup</AppText>
+                    </Pressable>
+                    <Pressable style={styles.photoBox} onPress={() => d.delivery_photo_url && setPreviewUri(d.delivery_photo_url)}>
+                      {d.delivery_photo_url ? (
+                        <Image source={{ uri: d.delivery_photo_url }} style={styles.photoImg} />
+                      ) : (
+                        <AppText style={[adminType.label, { color: colors.textLight }]}>No delivery</AppText>
+                      )}
+                      <AppText style={[adminType.badge, { textAlign: 'center', marginTop: 4 }]}>Delivery</AppText>
+                    </Pressable>
+                  </View>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>OTP times</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>
+                    Pickup: {formatWhen(d.pickup_confirmed_at)}
+                  </AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>
+                    Delivery: {formatWhen(d.delivery_confirmed_at)}
+                  </AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>Price breakdown</AppText>
+                  <View style={styles.kv}>
+                    <Row label="Delivery fee" value={formatMoney(d.base_price)} />
+                    <Row label="Parcel protection" value={formatMoney(d.insurance_fee)} />
+                    <Row label="Total paid" value={formatMoney(d.total_price)} bold />
+                    <Row label="Platform commission" value={formatMoney(d.commission_amount)} />
+                    <Row label="Driver earnings" value={formatMoney(d.driver_earnings)} />
+                  </View>
+                </ScrollView>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+
+        <FullImageModal visible={!!previewUri} uri={previewUri} onClose={() => setPreviewUri(null)} />
+      </View>
+    </SafeAreaView>
   );
 };
 
+function Row({ label, value, bold }) {
+  return (
+    <View style={styles.kvRow}>
+      <AppText style={[adminType.label, { color: colors.textSecondary }]}>{label}</AppText>
+      <AppText style={[adminType.body, { color: colors.textPrimary, fontWeight: bold ? '700' : '400' }]}>{value}</AppText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    minHeight: height,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: 20,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-  },
-  filterBar: {
-    paddingHorizontal: spacing.md,
-    marginBottom: 8,
-  },
+  safe: { flex: 1, backgroundColor: colors.adminHeader },
+  root: { flex: 1, backgroundColor: colors.adminContent },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
+    backgroundColor: colors.background,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.adminCard,
     paddingHorizontal: 12,
-    marginBottom: 10,
-  },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: colors.textPrimary },
-  chipsRow: { flexGrow: 0 },
-  filterChip: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginRight: 8,
   },
-  filterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  filterChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
-  filterChipTextActive: { color: colors.textWhite },
-  errorText: { color: colors.danger, paddingHorizontal: spacing.md },
-  mainRow: { flex: 1, flexDirection: width > 700 ? 'row' : 'column' },
-  tableScroll: { flex: 1 },
-  table: { minWidth: width > 700 ? width - 420 : width - 32, paddingHorizontal: 8 },
-  tableHeader: {
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 14, color: colors.textPrimary },
+  filterRow: {
     flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingBottom: 8,
-    marginBottom: 4,
+    flexWrap: 'wrap',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 12,
   },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    paddingVertical: 10,
-  },
-  cell: { fontSize: 11, color: colors.textPrimary, paddingRight: 6 },
-  headerCell: { fontWeight: '800', color: colors.textPrimary, fontSize: 11 },
-  badge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, alignSelf: 'flex-start' },
-  badgeText: { fontSize: 9, fontWeight: '700' },
-  viewBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  viewBtnText: { color: colors.textWhite, fontWeight: '700', fontSize: 11 },
-  detailPanel: {
-    width: width > 700 ? 380 : '100%',
-    maxHeight: width > 700 ? height - 100 : 320,
+  filterItem: { marginRight: 4 },
+  filterUnderline: { height: 2, backgroundColor: colors.primary, marginTop: 4, borderRadius: 1 },
+  list: { flex: 1, paddingHorizontal: spacing.md },
+  card: {
     backgroundColor: colors.surface,
-    borderTopWidth: width > 700 ? 0 : 1,
-    borderLeftWidth: width > 700 ? 1 : 0,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
     borderColor: colors.border,
-    padding: 12,
+    ...shadows.card,
   },
-  detailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
+  addrRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  cardBottom: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  moreBtn: { padding: 14, alignItems: 'center', backgroundColor: colors.primaryLight, margin: spacing.md, borderRadius: radius.adminCard },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    maxHeight: '90%',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
-  detailTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  closeButton: { fontSize: 20, color: colors.textSecondary },
-  dLine: { fontSize: 13, color: colors.textPrimary, marginBottom: 6, lineHeight: 18 },
-  dLab: { fontWeight: '700', color: colors.textSecondary },
-  dSection: { fontWeight: '800', marginTop: 12, marginBottom: 6, color: colors.textPrimary },
-  photoRow: { flexDirection: 'row' },
-  photoCol: { flex: 1, marginRight: 12 },
-  photoLab: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+  sheetGrab: { alignItems: 'center', paddingVertical: 8 },
+  grabBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  photoRow: { flexDirection: 'row', gap: 12 },
+  photoBox: { flex: 1 },
   photoImg: { width: '100%', height: 100, borderRadius: radius.sm, backgroundColor: colors.border },
-  noPh: { fontSize: 12, color: colors.textLight, fontStyle: 'italic' },
-  moreBtn: {
-    padding: 14,
-    alignItems: 'center',
-    backgroundColor: colors.primaryLight,
-    margin: spacing.md,
-    borderRadius: 10,
+  kv: {
+    backgroundColor: colors.background,
+    borderRadius: radius.adminCard,
+    padding: spacing.sm,
+    marginTop: 8,
   },
-  moreBtnText: { color: colors.primary, fontWeight: '800' },
+  kvRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
 });
 
 export default Deliveries;

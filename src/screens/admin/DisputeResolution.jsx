@@ -1,808 +1,390 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, TextInput } from 'react-native';
-import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Image,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import AppText from '../../components/ui/AppText';
+import AppButton from '../../components/ui/AppButton';
+import AdminHeader from '../../components/admin/AdminHeader';
+import FullImageModal from '../../components/admin/FullImageModal';
+import { getAuth } from '../../authStore';
+import { getJson, patchJson } from '../../apiClient';
+import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
 
-const { width, height } = Dimensions.get('window');
+const TYPE_LABELS = {
+  lost_item: 'Lost item',
+  damaged: 'Damaged',
+  not_delivered: 'Not delivered',
+  wrong_item: 'Wrong item',
+  driver_behaviour: 'Driver behaviour',
+  other: 'Other',
+};
+
+function hoursOpen(createdAt) {
+  if (!createdAt) return 0;
+  try {
+    const diff = Date.now() - new Date(createdAt).getTime();
+    return Math.max(0, diff / 3600000);
+  } catch {
+    return 0;
+  }
+}
+
+function formatHours(h) {
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  return `${Math.floor(h)}h`;
+}
 
 const DisputeResolution = () => {
-  const [selectedDispute, setSelectedDispute] = useState(null);
-  const [decision, setDecision] = useState('');
+  const [disputes, setDisputes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const [resolution, setResolution] = useState('refund_customer');
   const [notes, setNotes] = useState('');
+  const [partialAmount, setPartialAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [previewUri, setPreviewUri] = useState(null);
 
-  const disputes = [
-    {
-      id: '#DSP001',
-      customer: 'Sarah L.',
-      driver: 'David R.',
-      deliveryId: '#SD2024031804',
-      reason: 'Damaged parcel',
-      date: '2024-03-18',
-      urgency: 'Open',
-      timeRemaining: '23h 45m',
-      customerClaim: 'Package arrived with broken items inside. The box was crushed on one side.',
-      driverResponse: 'I delivered the package as received. The damage must have occurred during transit or at pickup.',
-      evidence: {
-        pickupPhoto: 'pickup_damaged.jpg',
-        deliveryPhoto: 'delivery_damaged.jpg',
-        otpConfirmed: true,
-        pickupTime: '3:30 PM',
-        deliveryTime: '4:15 PM'
-      }
-    },
-    {
-      id: '#DSP002',
-      customer: 'Mike T.',
-      driver: 'Lisa S.',
-      deliveryId: '#SD2024031805',
-      reason: 'Late delivery',
-      date: '2024-03-17',
-      urgency: 'In Review',
-      timeRemaining: '18h 20m',
-      customerClaim: 'Driver was 2 hours late for pickup, causing me to miss my appointment.',
-      driverResponse: 'Traffic was heavy due to accident on N1. I kept the customer updated via chat.',
-      evidence: {
-        pickupPhoto: null,
-        deliveryPhoto: null,
-        otpConfirmed: false,
-        pickupTime: null,
-        deliveryTime: null
-      }
-    },
-    {
-      id: '#DSP003',
-      customer: 'Anna B.',
-      driver: 'Tom W.',
-      deliveryId: '#SD2024031806',
-      reason: 'Wrong item delivered',
-      date: '2024-03-16',
-      urgency: 'Resolved',
-      timeRemaining: 'Resolved',
-      customerClaim: 'Driver delivered wrong package to wrong address.',
-      driverResponse: 'Customer gave incorrect address initially. Corrected the mistake within 30 minutes.',
-      evidence: {
-        pickupPhoto: 'pickup_wrong.jpg',
-        deliveryPhoto: 'delivery_corrected.jpg',
-        otpConfirmed: true,
-        pickupTime: '2:45 PM',
-        deliveryTime: '3:15 PM'
-      }
+  const load = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setError('Not signed in');
+      setLoading(false);
+      return;
     }
-  ];
-
-  const handleSelectDispute = (dispute) => {
-    setSelectedDispute(dispute);
-    setDecision('');
-    setNotes('');
-  };
-
-  const handleCloseDetail = () => {
-    setSelectedDispute(null);
-    setDecision('');
-    setNotes('');
-  };
-
-  const handleSendDecision = () => {
-    console.log('Send decision:', { dispute: selectedDispute.id, decision, notes });
-  };
-
-  const getUrgencyColor = (urgency) => {
-    switch (urgency) {
-      case 'Open':
-        return colors.danger;
-      case 'In Review':
-        return colors.warning;
-      case 'Resolved':
-        return colors.success;
-      default:
-        return colors.textSecondary;
+    setError(null);
+    setLoading(true);
+    try {
+      const data = await getJson('/api/disputes?status=open', { token: auth.token });
+      setDisputes(Array.isArray(data.disputes) ? data.disputes : []);
+    } catch (e) {
+      setError(e.message || 'Failed to load disputes');
+      setDisputes([]);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const getUrgencyBg = (urgency) => {
-    switch (urgency) {
-      case 'Open':
-        return colors.dangerLight;
-      case 'In Review':
-        return colors.warningLight;
-      case 'Resolved':
-        return colors.successLight;
-      default:
-        return colors.background;
-    }
-  };
-
-  const renderDisputeList = () => (
-    <View style={styles.disputeList}>
-      {disputes.map((dispute) => (
-        <TouchableOpacity
-          key={dispute.id}
-          style={[
-            styles.disputeCard,
-            selectedDispute?.id === dispute.id && styles.disputeCardSelected
-          ]}
-          onPress={() => handleSelectDispute(dispute)}
-        >
-          <View style={styles.disputeHeader}>
-            <View style={styles.disputeInfo}>
-              <Text style={styles.disputeId}>{dispute.id}</Text>
-              <Text style={styles.disputeReason}>{dispute.reason}</Text>
-              <Text style={styles.disputeDetails}>
-                {dispute.customer} vs {dispute.driver}
-              </Text>
-              <Text style={styles.disputeDate}>{dispute.date}</Text>
-            </View>
-            <View style={[
-              styles.urgencyBadge,
-              { backgroundColor: getUrgencyBg(dispute.urgency) }
-            ]}>
-              <Text style={[
-                styles.urgencyText,
-                { color: getUrgencyColor(dispute.urgency) }
-              ]}>
-                {dispute.urgency}
-              </Text>
-            </View>
-          </View>
-          {dispute.urgency !== 'Resolved' && (
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerText}>Time remaining: {dispute.timeRemaining}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      ))}
-    </View>
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
   );
 
-  const renderTimeline = () => {
-    if (!selectedDispute) return null;
+  const openDetail = async (row) => {
+    const auth = getAuth();
+    if (!auth?.token) return;
+    setDetailVisible(true);
+    setDetail(null);
+    setResolution('refund_customer');
+    setNotes('');
+    setPartialAmount('');
+    setDetailLoading(true);
+    try {
+      const data = await getJson(`/api/disputes/${row.id}`, { token: auth.token });
+      setDetail(data);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to load dispute');
+      setDetailVisible(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
-    const timelineEvents = [
-      {
-        time: selectedDispute.evidence.pickupTime || 'N/A',
-        title: 'Pickup',
-        description: 'Driver collected parcel',
-        status: selectedDispute.evidence.pickupTime ? 'completed' : 'pending'
-      },
-      {
-        time: selectedDispute.evidence.deliveryTime || 'N/A',
-        title: 'Delivery',
-        description: 'Parcel delivered to recipient',
-        status: selectedDispute.evidence.deliveryTime ? 'completed' : 'pending'
-      },
-      {
-        time: selectedDispute.date,
-        title: 'Dispute Opened',
-        description: 'Customer filed dispute',
-        status: 'completed'
+  const closeDetail = () => {
+    setDetailVisible(false);
+    setDetail(null);
+  };
+
+  const submit = async () => {
+    if (!detail?.dispute?.id) return;
+    const auth = getAuth();
+    if (!auth?.token) return;
+
+    const body = {
+      resolution,
+      resolution_notes: notes.trim() || undefined,
+    };
+    if (resolution === 'partial_refund') {
+      const amt = parseFloat(partialAmount);
+      if (!Number.isFinite(amt) || amt <= 0) {
+        Alert.alert('Amount required', 'Enter a valid partial refund amount.');
+        return;
       }
-    ];
+      body.refund_amount = amt;
+    }
 
-    return (
-      <View style={styles.timelineSection}>
-        <Text style={styles.sectionTitle}>Delivery Timeline</Text>
-        {timelineEvents.map((event, index) => (
-          <View key={index} style={styles.timelineItem}>
-            <View style={[
-              styles.timelineDot,
-              event.status === 'completed' ? styles.timelineDotCompleted : styles.timelineDotPending
-            ]} />
-            <View style={styles.timelineContent}>
-              <Text style={styles.timelineTime}>{event.time}</Text>
-              <Text style={styles.timelineTitle}>{event.title}</Text>
-              <Text style={styles.timelineDescription}>{event.description}</Text>
-            </View>
-            {index < timelineEvents.length - 1 && (
-              <View style={styles.timelineLine} />
-            )}
-          </View>
-        ))}
-      </View>
-    );
+    setSubmitting(true);
+    try {
+      await patchJson(`/api/disputes/${detail.dispute.id}/resolve`, body, { token: auth.token });
+      setToast('Decision sent');
+      closeDetail();
+      await load();
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to resolve');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const renderEvidence = () => {
-    if (!selectedDispute) return null;
-
-    return (
-      <View style={styles.evidenceSection}>
-        <Text style={styles.sectionTitle}>Evidence</Text>
-        
-        <View style={styles.photosContainer}>
-          <View style={styles.photoBlock}>
-            <Text style={styles.photoLabel}>Pickup Photo</Text>
-            {selectedDispute.evidence.pickupPhoto ? (
-              <TouchableOpacity style={styles.photoThumbnail}>
-                <Text style={styles.photoIcon}>📷</Text>
-                <Text style={styles.photoText}>Tap to view</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.noPhotoText}>No photo available</Text>
-            )}
-          </View>
-          
-          <View style={styles.photoBlock}>
-            <Text style={styles.photoLabel}>Delivery Photo</Text>
-            {selectedDispute.evidence.deliveryPhoto ? (
-              <TouchableOpacity style={styles.photoThumbnail}>
-                <Text style={styles.photoIcon}>📷</Text>
-                <Text style={styles.photoText}>Tap to view</Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.noPhotoText}>No photo available</Text>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.otpSection}>
-          <Text style={styles.otpLabel}>OTP Confirmation Log</Text>
-          <View style={styles.otpRow}>
-            <Text style={styles.otpField}>Pickup OTP:</Text>
-            <Text style={styles.otpValue}>
-              {selectedDispute.evidence.otpConfirmed ? 
-                `Confirmed at ${selectedDispute.evidence.pickupTime}` : 
-                'Not confirmed'
-              }
-            </Text>
-          </View>
-          <View style={styles.otpRow}>
-            <Text style={styles.otpField}>Delivery OTP:</Text>
-            <Text style={styles.otpValue}>
-              {selectedDispute.evidence.deliveryTime ? 
-                `Confirmed at ${selectedDispute.evidence.deliveryTime}` : 
-                'Not confirmed'
-              }
-            </Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderClaims = () => {
-    if (!selectedDispute) return null;
-
-    return (
-      <View style={styles.claimsSection}>
-        <Text style={styles.sectionTitle}>Claims & Responses</Text>
-        
-        <View style={styles.claimBlock}>
-          <Text style={styles.claimTitle}>Customer Claim</Text>
-          <View style={styles.claimContent}>
-            <Text style={styles.claimAuthor}>{selectedDispute.customer}</Text>
-            <Text style={styles.claimText}>{selectedDispute.customerClaim}</Text>
-          </View>
-        </View>
-
-        <View style={styles.claimBlock}>
-          <Text style={styles.claimTitle}>Driver Response</Text>
-          <View style={styles.claimContent}>
-            <Text style={styles.claimAuthor}>{selectedDispute.driver}</Text>
-            <Text style={styles.claimText}>{selectedDispute.driverResponse}</Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderDecision = () => {
-    if (!selectedDispute || selectedDispute.urgency === 'Resolved') return null;
-
-    return (
-      <View style={styles.decisionSection}>
-        <Text style={styles.sectionTitle}>Admin Decision</Text>
-        
-        <View style={styles.decisionOptions}>
-          {[
-            { value: 'refund', label: 'Refund Customer' },
-            { value: 'no_refund', label: 'No Refund' },
-            { value: 'partial_refund', label: 'Partial Refund' },
-            { value: 'escalate', label: 'Escalate' }
-          ].map((option) => (
-            <TouchableOpacity
-              key={option.value}
-              style={[
-                styles.decisionOption,
-                decision === option.value && styles.decisionOptionSelected
-              ]}
-              onPress={() => setDecision(option.value)}
-            >
-              <View style={styles.radioCircle}>
-                {decision === option.value && (
-                  <View style={styles.radioSelected} />
-                )}
-              </View>
-              <Text style={styles.decisionLabel}>{option.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.notesSection}>
-          <Text style={styles.notesLabel}>Notes</Text>
-          <TextInput
-            style={styles.notesInput}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Add detailed notes about your decision..."
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[
-            styles.sendDecisionButton,
-            !decision && styles.sendDecisionButtonDisabled
-          ]}
-          onPress={handleSendDecision}
-          disabled={!decision}
-        >
-          <Text style={styles.sendDecisionButtonText}>Send Decision</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderDisputeDetail = () => {
-    if (!selectedDispute) return null;
-
-    return (
-      <View style={styles.detailPanel}>
-        <View style={styles.detailHeader}>
-          <Text style={styles.detailTitle}>Dispute Resolution</Text>
-          <TouchableOpacity onPress={handleCloseDetail}>
-            <Text style={styles.closeButton}>✕</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Dispute Info */}
-          <View style={styles.disputeInfoHeader}>
-            <Text style={styles.disputeTitle}>{selectedDispute.id}</Text>
-            <View style={styles.disputeMeta}>
-              <Text style={styles.disputeReasonLarge}>{selectedDispute.reason}</Text>
-              <Text style={styles.disputeParticipants}>
-                {selectedDispute.customer} vs {selectedDispute.driver}
-              </Text>
-              <View style={[
-                styles.urgencyBadgeLarge,
-                { backgroundColor: getUrgencyBg(selectedDispute.urgency) }
-              ]}>
-                <Text style={[
-                  styles.urgencyTextLarge,
-                  { color: getUrgencyColor(selectedDispute.urgency) }
-                ]}>
-                  {selectedDispute.urgency}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Timer */}
-          {selectedDispute.urgency !== 'Resolved' && (
-            <View style={styles.resolutionTimer}>
-              <Text style={styles.timerLabel}>24hr Resolution Timer</Text>
-              <Text style={styles.timerValue}>{selectedDispute.timeRemaining} remaining</Text>
-            </View>
-          )}
-
-          {/* Timeline */}
-          {renderTimeline()}
-
-          {/* Evidence */}
-          {renderEvidence()}
-
-          {/* Claims */}
-          {renderClaims()}
-
-          {/* Decision */}
-          {renderDecision()}
-        </ScrollView>
-      </View>
-    );
-  };
+  const order = detail?.order;
+  const dispute = detail?.dispute;
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Dispute Resolution</Text>
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.root}>
+        <AdminHeader mode="simple" title="Disputes" />
 
-      {/* Main Content */}
-      <View style={styles.content}>
-        {/* Dispute List */}
-        {renderDisputeList()}
+        {toast ? (
+          <View style={styles.toast}>
+            <AppText style={[adminType.body, { color: colors.textWhite }]}>{toast}</AppText>
+          </View>
+        ) : null}
 
-        {/* Dispute Detail */}
-        {renderDisputeDetail()}
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />
+        ) : error ? (
+          <AppText color="danger" style={{ padding: spacing.md }}>{error}</AppText>
+        ) : (
+          <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+            {disputes.length === 0 ? (
+              <AppText style={[adminType.body, { color: colors.textSecondary }]}>No open disputes.</AppText>
+            ) : (
+              disputes.map((row) => {
+                const h = hoursOpen(row.created_at);
+                const urgent = h > 12;
+                return (
+                  <Pressable
+                    key={String(row.id)}
+                    style={({ pressed }) => [styles.card, pressed && { opacity: 0.92 }, urgent && styles.cardUrgent]}
+                    onPress={() => openDetail(row)}
+                  >
+                    <View style={styles.cardTop}>
+                      <AppText style={[adminType.title, { color: colors.textPrimary }]}>#{row.id}</AppText>
+                      <View style={[styles.pill, { backgroundColor: colors.dangerLight }]}>
+                        <AppText style={[adminType.badge, { color: colors.danger }]}>
+                          {TYPE_LABELS[row.dispute_type] || row.dispute_type}
+                        </AppText>
+                      </View>
+                    </View>
+                    <AppText style={[adminType.body, { color: colors.textSecondary, marginTop: 4 }]}>{row.order_number}</AppText>
+                    <AppText style={[adminType.body, { color: colors.textPrimary, marginTop: 6 }]}>
+                      {row.customer_name} vs {row.driver_name || 'Driver'}
+                    </AppText>
+                    <AppText style={[adminType.label, { color: urgent ? colors.danger : colors.textLight, marginTop: 6 }]}>
+                      Open {formatHours(h)} · {urgent ? 'Needs attention' : 'In SLA'}
+                    </AppText>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+
+        <Modal visible={detailVisible} animationType="slide" transparent onRequestClose={closeDetail}>
+          <View style={styles.sheetBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeDetail} />
+            <View style={styles.sheet}>
+              <View style={styles.sheetTop}>
+                <Pressable onPress={closeDetail} hitSlop={12} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name="chevron-back" size={22} color={colors.textWhite} />
+                  <AppText style={[adminType.title, { color: colors.textWhite }]}>
+                    Dispute #{dispute?.id || '—'}
+                  </AppText>
+                </Pressable>
+              </View>
+
+              {detailLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
+              ) : detail && dispute && order ? (
+                <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+                  {hoursOpen(dispute.created_at) > 12 ? (
+                    <View style={styles.banner}>
+                      <AppText style={[adminType.body, { color: colors.danger, fontWeight: '700' }]}>
+                        Resolve within {Math.max(0, 24 - Math.floor(hoursOpen(dispute.created_at)))}h — over 12h open
+                      </AppText>
+                    </View>
+                  ) : null}
+
+                  <AppText style={[adminType.title, { marginBottom: 8 }]}>Evidence</AppText>
+                  <View style={styles.photoRow}>
+                    <Pressable style={styles.photoBox} onPress={() => order.pickup_photo_url && setPreviewUri(order.pickup_photo_url)}>
+                      {order.pickup_photo_url ? (
+                        <Image source={{ uri: order.pickup_photo_url }} style={styles.photoImg} />
+                      ) : (
+                        <View style={[styles.photoImg, { backgroundColor: colors.background, justifyContent: 'center' }]}>
+                          <AppText style={[adminType.label, { color: colors.textLight, textAlign: 'center' }]}>No pickup</AppText>
+                        </View>
+                      )}
+                      <AppText style={[adminType.badge, { textAlign: 'center', marginTop: 4 }]}>Pickup</AppText>
+                    </Pressable>
+                    <Pressable style={styles.photoBox} onPress={() => order.delivery_photo_url && setPreviewUri(order.delivery_photo_url)}>
+                      {order.delivery_photo_url ? (
+                        <Image source={{ uri: order.delivery_photo_url }} style={styles.photoImg} />
+                      ) : (
+                        <View style={[styles.photoImg, { backgroundColor: colors.background, justifyContent: 'center' }]}>
+                          <AppText style={[adminType.label, { color: colors.textLight, textAlign: 'center' }]}>No delivery</AppText>
+                        </View>
+                      )}
+                      <AppText style={[adminType.badge, { textAlign: 'center', marginTop: 4 }]}>Delivery</AppText>
+                    </Pressable>
+                  </View>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>Customer claim</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary, marginTop: 4 }]}>{dispute.description}</AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md }]}>Parties</AppText>
+                  <AppText style={[adminType.body, { color: colors.textPrimary }]}>
+                    Customer: {detail.customer?.full_name}
+                  </AppText>
+                  <AppText style={[adminType.body, { color: colors.textSecondary }]}>
+                    Driver: {detail.driver?.full_name || '—'}
+                  </AppText>
+                  <AppText style={[adminType.label, { color: colors.textSecondary, marginTop: 6 }]}>
+                    Order {order.order_number} · {TYPE_LABELS[dispute.dispute_type] || dispute.dispute_type}
+                  </AppText>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.lg, marginBottom: 8 }]}>Resolution</AppText>
+                  {[
+                    { value: 'refund_customer', label: 'Refund customer' },
+                    { value: 'no_refund', label: 'No refund' },
+                    { value: 'partial_refund', label: 'Partial refund' },
+                  ].map((opt) => (
+                    <Pressable
+                      key={opt.value}
+                      style={styles.radioRow}
+                      onPress={() => setResolution(opt.value)}
+                    >
+                      <View style={styles.radioOuter}>
+                        {resolution === opt.value ? <View style={styles.radioInner} /> : null}
+                      </View>
+                      <AppText style={[adminType.body, { color: colors.textPrimary, flex: 1 }]}>{opt.label}</AppText>
+                    </Pressable>
+                  ))}
+
+                  {resolution === 'partial_refund' ? (
+                    <TextInput
+                      style={styles.amountIn}
+                      placeholder="Refund amount (R)"
+                      placeholderTextColor={colors.textLight}
+                      keyboardType="decimal-pad"
+                      value={partialAmount}
+                      onChangeText={setPartialAmount}
+                    />
+                  ) : null}
+
+                  <AppText style={[adminType.label, { color: colors.textSecondary, marginTop: spacing.sm }]}>Notes</AppText>
+                  <TextInput
+                    style={styles.notesIn}
+                    placeholder="Add notes for the record…"
+                    placeholderTextColor={colors.textLight}
+                    multiline
+                    value={notes}
+                    onChangeText={setNotes}
+                  />
+
+                  <AppButton label="Send decision" onPress={submit} loading={submitting} style={{ marginTop: spacing.md }} />
+                </ScrollView>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
+
+        <FullImageModal visible={!!previewUri} uri={previewUri} onClose={() => setPreviewUri(null)} />
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    width: width,
-    height: height,
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-  },
-  content: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-  },
-  disputeList: {
-    width: 300,
-    marginRight: 24,
-  },
-  disputeCard: {
-    backgroundColor: colors.textWhite,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  disputeCardSelected: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  disputeHeader: {
-    marginBottom: 8,
-  },
-  disputeInfo: {
-    marginBottom: 8,
-  },
-  disputeId: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  disputeReason: {
-    fontSize: 12,
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  disputeDetails: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  disputeDate: {
-    fontSize: 10,
-    color: colors.textLight,
-  },
-  urgencyBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  urgencyText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  timerContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  timerText: {
-    fontSize: 10,
-    color: colors.danger,
-    fontWeight: '500',
-  },
-  detailPanel: {
-    flex: 1,
-    backgroundColor: colors.textWhite,
-    borderRadius: 12,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
-  },
-  detailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  detailTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  closeButton: {
-    fontSize: 20,
-    color: colors.textSecondary,
-  },
-  disputeInfoHeader: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  disputeTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  disputeMeta: {
-    marginBottom: 12,
-  },
-  disputeReasonLarge: {
-    fontSize: 16,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  disputeParticipants: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  urgencyBadgeLarge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  urgencyTextLarge: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  resolutionTimer: {
-    backgroundColor: colors.accentLight,
-    padding: 12,
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-  },
-  timerLabel: {
-    fontSize: 12,
-    color: colors.accent,
-    marginBottom: 4,
-  },
-  timerValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.accent,
-  },
-  timelineSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 16,
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    position: 'relative',
-  },
-  timelineDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 16,
-    marginTop: 2,
-  },
-  timelineDotCompleted: {
-    backgroundColor: colors.success,
-  },
-  timelineDotPending: {
-    backgroundColor: colors.border,
-  },
-  timelineLine: {
-    position: 'absolute',
-    left: 6,
-    top: 14,
-    width: 2,
-    height: 32,
-    backgroundColor: colors.border,
-  },
-  timelineContent: {
-    flex: 1,
-  },
-  timelineTime: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  timelineTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  timelineDescription: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  evidenceSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  photosContainer: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 20,
-  },
-  photoBlock: {
-    flex: 1,
-  },
-  photoLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  photoThumbnail: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 20,
+  safe: { flex: 1, backgroundColor: colors.adminHeader },
+  root: { flex: 1, backgroundColor: colors.adminContent },
+  toast: {
+    backgroundColor: colors.primary,
+    paddingVertical: 10,
     alignItems: 'center',
   },
-  photoIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
   },
-  photoText: {
-    fontSize: 12,
-    color: colors.primary,
+  cardUrgent: { borderColor: colors.dangerLight },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    maxHeight: '94%',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
-  noPhotoText: {
-    fontSize: 12,
-    color: colors.textLight,
-    fontStyle: 'italic',
+  sheetTop: {
+    backgroundColor: colors.adminHeader,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
-  otpSection: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 16,
+  banner: {
+    backgroundColor: colors.dangerLight,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    marginBottom: spacing.sm,
   },
-  otpLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  otpRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  otpField: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  otpValue: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: '500',
-  },
-  claimsSection: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  claimBlock: {
-    marginBottom: 20,
-  },
-  claimTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  claimContent: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: 12,
-  },
-  claimAuthor: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  claimText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 20,
-  },
-  decisionSection: {
-    padding: 20,
-  },
-  decisionOptions: {
-    marginBottom: 20,
-  },
-  decisionOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  decisionOptionSelected: {
-    backgroundColor: colors.primaryLight,
-  },
-  radioCircle: {
+  photoRow: { flexDirection: 'row', gap: 12 },
+  photoBox: { flex: 1 },
+  photoImg: { width: '100%', height: 110, borderRadius: radius.sm, backgroundColor: colors.border },
+  radioRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  radioOuter: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: colors.border,
-    marginRight: 12,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  radioSelected: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
-    margin: 5,
-  },
-  decisionLabel: {
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  notesSection: {
-    marginBottom: 20,
-  },
-  notesLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  notesInput: {
-    backgroundColor: colors.background,
+  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+  amountIn: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     padding: 12,
     fontSize: 14,
-    minHeight: 80,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
   },
-  sendDecisionButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  sendDecisionButtonDisabled: {
-    backgroundColor: colors.border,
-  },
-  sendDecisionButtonText: {
-    color: colors.textWhite,
-    fontSize: 16,
-    fontWeight: '600',
+  notesIn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    minHeight: 88,
+    padding: 10,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    color: colors.textPrimary,
   },
 });
 

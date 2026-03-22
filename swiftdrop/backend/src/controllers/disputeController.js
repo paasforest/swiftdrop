@@ -136,6 +136,10 @@ async function getAllDisputes(req, res) {
     const rows = await db.query(
       `SELECT d.*,
         o.order_number, o.status AS order_status, o.total_price,
+        o.pickup_address, o.dropoff_address,
+        o.pickup_photo_url, o.delivery_photo_url,
+        o.pickup_confirmed_at, o.delivery_confirmed_at,
+        o.base_price, o.insurance_fee, o.commission_amount, o.driver_earnings,
         c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone,
         dr.full_name AS driver_name, dr.phone AS driver_phone
        FROM disputes d

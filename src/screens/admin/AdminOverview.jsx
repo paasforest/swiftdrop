@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import AppText from '../../components/ui/AppText';
+import AdminHeader from '../../components/admin/AdminHeader';
+import AdminAvatar from '../../components/admin/AdminAvatar';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
-
-const { width, height } = Dimensions.get('window');
+import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
 
 function formatMoney(n) {
   const x = Number(n);
@@ -12,8 +15,26 @@ function formatMoney(n) {
   return `R${x.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
+function initialsFromName(name) {
+  if (!name) return '?';
+  return String(name)
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function regBadgeLabel(t) {
+  if (t === 'uber_bolt') return 'Uber / Bolt';
+  if (t === 'new_driver') return 'New driver';
+  return String(t || '—');
+}
+
 const AdminOverview = () => {
+  const navigation = useNavigation();
   const [stats, setStats] = useState(null);
+  const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -27,8 +48,12 @@ const AdminOverview = () => {
     setError(null);
     setLoading(true);
     try {
-      const data = await getJson('/api/admin/dashboard-stats', { token: auth.token });
+      const [data, drivers] = await Promise.all([
+        getJson('/api/admin/dashboard-stats', { token: auth.token }),
+        getJson('/api/admin/drivers?status=pending', { token: auth.token }).catch(() => ({ drivers: [] })),
+      ]);
       setStats(data);
+      setPending(Array.isArray(drivers.drivers) ? drivers.drivers : []);
     } catch (e) {
       setError(e.message || 'Failed to load dashboard');
       setStats(null);
@@ -37,13 +62,17 @@ const AdminOverview = () => {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const s = stats || {};
+  const auth = getAuth();
+  const adminName = auth?.user?.full_name || 'Admin';
 
-  const cards = [
+  const kpis = [
     {
       key: 'active',
       label: 'Active deliveries',
@@ -59,9 +88,9 @@ const AdminOverview = () => {
       border: colors.success,
     },
     {
-      key: 'revenue',
+      key: 'rev',
       label: 'Today revenue',
-      value: formatMoney(s.today_revenue),
+      value: formatMoney(s.platform_revenue_today ?? 0),
       color: colors.accent,
       border: colors.accent,
     },
@@ -71,151 +100,174 @@ const AdminOverview = () => {
       value: s.open_disputes ?? '—',
       color: colors.danger,
       border: colors.danger,
-      badge: Number(s.open_disputes) > 0,
-    },
-    {
-      key: 'pending',
-      label: 'Pending applications',
-      value: s.pending_driver_applications ?? '—',
-      color: colors.warning,
-      border: colors.warning,
-    },
-    {
-      key: 'unmatched',
-      label: 'Unmatched orders',
-      value: s.unmatched_orders ?? '—',
-      color: colors.textSecondary,
-      border: colors.textLight,
+      dot: Number(s.open_disputes) > 0,
     },
   ];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dashboard Overview</Text>
-        <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.root}>
+        <AdminHeader
+          mode="overview"
+          subtitle={new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+          right={<AdminAvatar name={adminName} size={28} />}
+        />
 
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.kpiContainer}>
-            {cards.map((c) => (
-              <View
-                key={c.key}
-                style={[styles.kpiCard, { borderTopColor: c.border, borderTopWidth: 4 }]}
-              >
-                <View style={styles.kpiTop}>
-                  <Text style={[styles.kpiNumber, { color: c.color }]}>{c.value}</Text>
-                  {c.badge ? <View style={styles.alertDot} /> : null}
-                </View>
-                <Text style={styles.kpiLabel}>{c.label}</Text>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {loading ? (
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 32 }} />
+          ) : error ? (
+            <AppText color="danger" style={{ padding: spacing.md }}>{error}</AppText>
+          ) : (
+            <>
+              <View style={styles.kpiGrid}>
+                {kpis.map((c) => (
+                  <View key={c.key} style={[styles.kpiCard, { borderLeftColor: c.border }]}>
+                    <View style={styles.kpiTop}>
+                      <AppText style={[adminType.title, { color: c.color }]}>{String(c.value)}</AppText>
+                      {c.dot ? <View style={styles.alertDot} /> : null}
+                    </View>
+                    <AppText style={[adminType.label, { color: colors.textSecondary, marginTop: 4 }]}>{c.label}</AppText>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
 
-          <View style={styles.mapContainer}>
-            <Text style={styles.mapTitle}>Operations</Text>
-            <View style={styles.mapPlaceholder}>
-              <Text style={styles.mapSub}>
-                Live map can be added here. Stats above refresh when you open this screen.
-              </Text>
-            </View>
-          </View>
+              <View style={styles.platformCard}>
+                <AppText style={[adminType.label, { color: colors.textSecondary }]}>Total platform revenue</AppText>
+                <AppText style={[styles.platformBig, { color: colors.success }]}>
+                  {formatMoney(s.total_platform_revenue_alltime ?? 0)}
+                </AppText>
+                <AppText style={[adminType.label, { color: colors.textLight, marginTop: 4 }]}>Platform earned total</AppText>
+              </View>
+
+              <AppText style={[adminType.title, styles.sectionTitle]}>Pending approvals</AppText>
+              {pending.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <AppText style={[adminType.body, { color: colors.textSecondary }]}>No pending applications.</AppText>
+                </View>
+              ) : (
+                pending.map((item) => (
+                  <Pressable
+                    key={String(item.user_id)}
+                    style={({ pressed }) => [styles.driverCard, pressed && { opacity: 0.92 }]}
+                    onPress={() => navigation.navigate('Drivers', { preSelectedUserId: item.user_id })}
+                  >
+                    <View style={styles.avatarSm}>
+                      <AppText style={[adminType.badge, styles.avatarTxt]}>{initialsFromName(item.full_name)}</AppText>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <AppText style={[adminType.title, { color: colors.textPrimary }]}>{item.full_name}</AppText>
+                      <AppText style={[adminType.body, { color: colors.textSecondary, marginTop: 2 }]}>{item.phone}</AppText>
+                      <View style={styles.badgeRow}>
+                        <View style={styles.badgeGrey}>
+                          <AppText style={[adminType.badge, { color: colors.textSecondary }]}>{regBadgeLabel(item.registration_type)}</AppText>
+                        </View>
+                        <View style={styles.badgeAmber}>
+                          <AppText style={[adminType.badge, { color: colors.warning }]}>Pending</AppText>
+                        </View>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+
+              <View style={[styles.insuranceCard, { marginTop: spacing.md }]}>
+                <AppText style={[adminType.label, { color: colors.textSecondary }]}>Insurance pool balance</AppText>
+                <AppText style={[adminType.title, { color: colors.primary, marginTop: 6, fontSize: 18 }]}>
+                  {formatMoney(s.insurance_pool_balance ?? 0)}
+                </AppText>
+              </View>
+            </>
+          )}
         </ScrollView>
-      )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    width: width,
-    minHeight: height,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-  },
-  headerDate: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  errorText: {
-    color: colors.danger,
-    padding: spacing.lg,
-  },
-  kpiContainer: {
+  safe: { flex: 1, backgroundColor: colors.adminHeader },
+  root: { flex: 1, backgroundColor: colors.adminContent },
+  scroll: { flex: 1, backgroundColor: colors.adminContent },
+  scrollContent: { padding: spacing.md, paddingBottom: 32 },
+  kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
     gap: 12,
   },
   kpiCard: {
-    flex: 1,
-    minWidth: width > 500 ? '30%' : '45%',
+    width: '47%',
+    flexGrow: 1,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.adminCard,
     padding: spacing.md,
+    borderLeftWidth: 4,
     ...shadows.card,
   },
-  kpiTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  kpiNumber: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  kpiLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
+  kpiTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   alertDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.danger,
-    marginBottom: 4,
   },
-  mapContainer: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
+  platformCard: {
+    marginTop: spacing.md,
+    backgroundColor: colors.successLight,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  mapTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  mapPlaceholder: {
+  platformBig: { fontSize: 22, fontWeight: '800', marginTop: 6 },
+  sectionTitle: { marginTop: spacing.lg, marginBottom: spacing.sm, color: colors.textPrimary },
+  emptyCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: 20,
-    minHeight: 100,
-    justifyContent: 'center',
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  mapSub: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
+  driverCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  avatarSm: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  avatarTxt: { color: colors.primary, fontSize: 12 },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  badgeGrey: {
+    backgroundColor: colors.background,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  badgeAmber: {
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  insuranceCard: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });
 

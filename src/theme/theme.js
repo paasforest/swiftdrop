@@ -45,6 +45,10 @@ export const colors = {
 
   /** Delivery tier selected card */
   tierSelectedBg: '#EBF5FB',
+
+  /** Admin shell */
+  adminHeader: '#1E293B',
+  adminContent: '#FFFFFF',
 };
 
 export const typography = {
@@ -69,9 +73,19 @@ export const spacing = {
 export const radius = {
   sm: 8,
   md: 12,
+  /** Admin cards */
+  adminCard: 10,
   lg: 16,
   xl: 24,
   full: 999,
+};
+
+/** Admin typography (px) */
+export const adminType = {
+  title: { fontSize: 14, fontWeight: '700' },
+  body: { fontSize: 12, fontWeight: '400' },
+  label: { fontSize: 10, fontWeight: '500' },
+  badge: { fontSize: 9, fontWeight: '700' },
 };
 
 export const shadows = {

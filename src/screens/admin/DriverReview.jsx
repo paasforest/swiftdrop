@@ -1,28 +1,36 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
-  Dimensions,
-  TouchableOpacity,
+  Pressable,
   Image,
   ActivityIndicator,
   TextInput,
   Modal,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import AppText from '../../components/ui/AppText';
+import AppButton from '../../components/ui/AppButton';
+import AdminHeader from '../../components/admin/AdminHeader';
+import FullImageModal from '../../components/admin/FullImageModal';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius } from '../../theme/theme';
+import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
 
-const { width, height } = Dimensions.get('window');
-
-function formatAppliedDate(iso) {
+function timeAgo(iso) {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString();
+    const d = new Date(iso);
+    const diff = Date.now() - d.getTime();
+    const h = Math.floor(diff / 3600000);
+    if (h < 1) return 'Just now';
+    if (h < 24) return `${h}h ago`;
+    const days = Math.floor(h / 24);
+    return `${days}d ago`;
   } catch {
     return '—';
   }
@@ -34,20 +42,26 @@ function regLabel(t) {
   return String(t || '—');
 }
 
-const Thumb = ({ uri, label }) => (
-  <View style={styles.thumbWrap}>
-    <Text style={styles.thumbLabel}>{label}</Text>
-    {uri ? (
-      <Image source={{ uri }} style={styles.thumbImg} resizeMode="cover" />
-    ) : (
-      <View style={styles.thumbPlaceholder}>
-        <Text style={styles.thumbPlaceholderText}>—</Text>
-      </View>
-    )}
-  </View>
-);
+function initials(name) {
+  if (!name) return '?';
+  return String(name)
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+const DOC_SLOTS = [
+  { key: 'selfie', label: 'Profile', field: 'selfie_url' },
+  { key: 'id', label: 'ID', field: 'id_document_url' },
+  { key: 'lic', label: 'Licence', field: 'license_url' },
+  { key: 'veh', label: 'Vehicle reg', field: 'vehicle_registration_url' },
+];
 
 const DriverReview = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
@@ -58,10 +72,12 @@ const DriverReview = () => {
   const [detailError, setDetailError] = useState(null);
 
   const [actionBusy, setActionBusy] = useState(false);
-  const [successMsg, setSuccessMsg] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+
+  const [previewUri, setPreviewUri] = useState(null);
 
   const loadList = useCallback(async () => {
     const auth = getAuth();
@@ -83,9 +99,16 @@ const DriverReview = () => {
     }
   }, []);
 
-  useEffect(() => {
-    loadList();
-  }, [loadList]);
+  useFocusEffect(
+    useCallback(() => {
+      loadList();
+      const id = route.params?.preSelectedUserId;
+      if (id) {
+        loadDetail(id);
+        navigation.setParams({ preSelectedUserId: undefined });
+      }
+    }, [loadList, route.params?.preSelectedUserId, navigation])
+  );
 
   const loadDetail = async (userId) => {
     const auth = getAuth();
@@ -104,29 +127,27 @@ const DriverReview = () => {
     }
   };
 
+  const closeDetail = () => {
+    setSelectedId(null);
+    setDetail(null);
+  };
+
   const handleApprove = async () => {
     if (!detail?.user_id) return;
     const auth = getAuth();
     if (!auth?.token) return;
     setActionBusy(true);
-    setSuccessMsg(null);
     try {
       await postJson(`/api/admin/drivers/${detail.user_id}/approve`, {}, { token: auth.token });
-      setSuccessMsg('Driver approved — they will receive an SMS notification');
-      setDetail(null);
-      setSelectedId(null);
+      setToast('Driver approved');
+      closeDetail();
       await loadList();
-      setTimeout(() => setSuccessMsg(null), 4000);
+      setTimeout(() => setToast(null), 3500);
     } catch (e) {
       Alert.alert('Error', e.message || 'Approval failed');
     } finally {
       setActionBusy(false);
     }
-  };
-
-  const openRejectModal = () => {
-    setRejectReason('');
-    setRejectModalVisible(true);
   };
 
   const submitReject = async () => {
@@ -140,17 +161,12 @@ const DriverReview = () => {
     if (!auth?.token) return;
     setActionBusy(true);
     try {
-      await postJson(
-        `/api/admin/drivers/${detail.user_id}/reject`,
-        { reason: r },
-        { token: auth.token }
-      );
+      await postJson(`/api/admin/drivers/${detail.user_id}/reject`, { reason: r }, { token: auth.token });
       setRejectModalVisible(false);
-      setSuccessMsg('Application rejected');
-      setDetail(null);
-      setSelectedId(null);
+      setToast('Application rejected');
+      closeDetail();
       await loadList();
-      setTimeout(() => setSuccessMsg(null), 4000);
+      setTimeout(() => setToast(null), 3500);
     } catch (e) {
       Alert.alert('Error', e.message || 'Reject failed');
     } finally {
@@ -161,299 +177,274 @@ const DriverReview = () => {
   const d = detail;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Driver applications</Text>
-        {successMsg ? <Text style={styles.successBanner}>{successMsg}</Text> : null}
-      </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.root}>
+        <AdminHeader mode="simple" title="Driver applications" />
 
-      <View style={styles.content}>
-        <View style={styles.leftCol}>
+        {toast ? (
+          <View style={styles.toast}>
+            <AppText style={[adminType.body, { color: colors.textWhite }]}>{toast}</AppText>
+          </View>
+        ) : null}
+
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false}>
           {loading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
           ) : listError ? (
-            <Text style={styles.errText}>{listError}</Text>
+            <AppText color="danger">{listError}</AppText>
           ) : (
-            <ScrollView>
-              {list.map((item) => (
-                <TouchableOpacity
-                  key={String(item.user_id)}
-                  style={[
-                    styles.driverCard,
-                    selectedId === item.user_id && styles.driverCardSelected,
-                  ]}
-                  onPress={() => loadDetail(item.user_id)}
-                >
-                  <Text style={styles.driverName}>{item.full_name}</Text>
-                  <Text style={styles.driverPhone}>{item.phone}</Text>
-                  <Text style={styles.driverMeta}>{regLabel(item.registration_type)}</Text>
-                  <Text style={styles.driverDate}>Applied: {formatAppliedDate(item.applied_at)}</Text>
-                  <View style={styles.pendingBadge}>
-                    <Text style={styles.pendingBadgeText}>Pending</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              {list.length === 0 && !loading ? (
-                <Text style={styles.emptyText}>No pending applications.</Text>
-              ) : null}
-            </ScrollView>
-          )}
-        </View>
-
-        <View style={styles.rightCol}>
-          {!selectedId && !detailLoading && (
-            <Text style={styles.hint}>Select a driver to review details</Text>
-          )}
-          {detailLoading && <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />}
-          {detailError ? <Text style={styles.errText}>{detailError}</Text> : null}
-
-          {d && !detailLoading && (
-            <ScrollView style={styles.detailScroll} keyboardShouldPersistTaps="handled">
-              <View style={styles.detailHeader}>
-                <Text style={styles.detailTitle}>Application detail</Text>
-                <TouchableOpacity onPress={() => { setSelectedId(null); setDetail(null); }} accessibilityLabel="Close">
-                  <Ionicons name="close" size={24} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.rowTop}>
-                {d.selfie_url ? (
-                  <Image source={{ uri: d.selfie_url }} style={styles.profilePhoto} />
-                ) : (
-                  <View style={styles.profilePhotoPh} />
-                )}
-                <View style={styles.basicBlock}>
-                  <Text style={styles.driverNameLarge}>{d.full_name}</Text>
-                  <Text style={styles.metaLine}>{d.email}</Text>
-                  <Text style={styles.metaLine}>{d.phone}</Text>
-                  <Text style={styles.metaLine}>Registration: {regLabel(d.registration_type)}</Text>
-                  <Text style={styles.metaLine}>Applied: {formatAppliedDate(d.applied_at)}</Text>
+            list.map((item) => (
+              <Pressable
+                key={String(item.user_id)}
+                style={({ pressed }) => [styles.card, selectedId === item.user_id && styles.cardOn, pressed && { opacity: 0.92 }]}
+                onPress={() => loadDetail(item.user_id)}
+              >
+                <View style={styles.avatarSm}>
+                  <AppText style={[adminType.badge, { color: colors.primary }]}>{initials(item.full_name)}</AppText>
                 </View>
-              </View>
-
-              <Text style={styles.sectionTitle}>Documents & photos</Text>
-              <View style={styles.thumbGrid}>
-                <Thumb uri={d.selfie_url} label="Profile (selfie)" />
-                <Thumb uri={d.id_document_url} label="ID document" />
-                <Thumb uri={d.license_url} label="Driver licence" />
-                <Thumb uri={d.vehicle_registration_url} label="Vehicle registration" />
-                <Thumb uri={d.license_disc_url} label="Licence disc" />
-                <Thumb uri={d.saps_clearance_url} label="SAPS clearance" />
-                <Thumb uri={d.uber_profile_screenshot_url} label="Uber/Bolt screenshot" />
-                <Thumb uri={d.vehicle_photo_url} label="Vehicle (main)" />
-                <Thumb uri={d.vehicle_photo_back_url} label="Vehicle back" />
-                <Thumb uri={d.vehicle_photo_side_url} label="Vehicle side" />
-              </View>
-
-              <Text style={styles.sectionTitle}>Vehicle</Text>
-              <View style={styles.vehicleBox}>
-                <Text style={styles.vehLine}>Make: {d.vehicle_make || '—'}</Text>
-                <Text style={styles.vehLine}>Model: {d.vehicle_model || '—'}</Text>
-                <Text style={styles.vehLine}>Year: {d.vehicle_year ?? '—'}</Text>
-                <Text style={styles.vehLine}>Colour: {d.vehicle_color || '—'}</Text>
-                <Text style={styles.vehLine}>Plate: {d.vehicle_plate || '—'}</Text>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.approveBtn, actionBusy && styles.btnDisabled]}
-                onPress={handleApprove}
-                disabled={actionBusy}
-              >
-                <Text style={styles.approveBtnText}>Approve Driver</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.rejectBtn, actionBusy && styles.btnDisabled]}
-                onPress={openRejectModal}
-                disabled={actionBusy}
-              >
-                <Text style={styles.rejectBtnText}>Reject Application</Text>
-              </TouchableOpacity>
-              <View style={{ height: 32 }} />
-            </ScrollView>
+                <View style={{ flex: 1 }}>
+                  <AppText style={[adminType.title, { color: colors.textPrimary }]}>{item.full_name}</AppText>
+                  <AppText style={[adminType.body, { color: colors.textSecondary }]}>{item.phone}</AppText>
+                  <View style={styles.rowBadges}>
+                    <View style={[styles.badge, item.registration_type === 'uber_bolt' ? styles.badgeBlue : styles.badgeGrey]}>
+                      <AppText style={[adminType.badge, { color: item.registration_type === 'uber_bolt' ? colors.primary : colors.textSecondary }]}>
+                        {regLabel(item.registration_type)}
+                      </AppText>
+                    </View>
+                    <AppText style={[adminType.label, { color: colors.textLight }]}>{timeAgo(item.applied_at)}</AppText>
+                    <View style={styles.badgeAmber}>
+                      <AppText style={[adminType.badge, { color: colors.warning }]}>Pending</AppText>
+                    </View>
+                  </View>
+                </View>
+              </Pressable>
+            ))
           )}
-        </View>
-      </View>
+          {!loading && list.length === 0 && !listError ? (
+            <AppText style={[adminType.body, { color: colors.textSecondary }]}>No pending applications.</AppText>
+          ) : null}
+        </ScrollView>
 
-      <Modal visible={rejectModalVisible} transparent animationType="fade">
-        <View style={styles.rejectBackdrop}>
-          <View style={styles.rejectCard}>
-            <Text style={styles.rejectTitle}>Rejection reason</Text>
-            <TextInput
-              style={styles.rejectInput}
-              multiline
-              placeholder="Explain why the application is rejected…"
-              value={rejectReason}
-              onChangeText={setRejectReason}
-            />
-            <View style={styles.rejectActions}>
-              <TouchableOpacity onPress={() => setRejectModalVisible(false)}>
-                <Text style={styles.rejectCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.rejectConfirm} onPress={submitReject}>
-                <Text style={styles.rejectConfirmText}>Submit reject</Text>
-              </TouchableOpacity>
+        <Modal visible={!!selectedId} animationType="slide" transparent onRequestClose={closeDetail}>
+          <View style={styles.sheetBackdrop}>
+            <Pressable style={styles.sheetScrim} onPress={closeDetail} />
+            <View style={styles.sheet}>
+              <View style={styles.sheetGrab}>
+                <View style={styles.grabBar} />
+              </View>
+              {detailLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
+              ) : detailError ? (
+                <AppText color="danger" style={{ padding: spacing.md }}>{detailError}</AppText>
+              ) : d ? (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetInner}>
+                  <View style={styles.sheetHead}>
+                    <AppText style={[adminType.title, { color: colors.textPrimary, fontSize: 16 }]}>Application detail</AppText>
+                    <Pressable onPress={closeDetail} hitSlop={12}>
+                      <Ionicons name="close" size={24} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.profileRow}>
+                    {d.selfie_url ? (
+                      <Image source={{ uri: d.selfie_url }} style={styles.bigPhoto} />
+                    ) : (
+                      <View style={[styles.bigPhoto, styles.ph]}>
+                        <AppText style={{ fontSize: 14, fontWeight: '700', color: colors.textSecondary }}>{initials(d.full_name)}</AppText>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <AppText style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{d.full_name}</AppText>
+                      <AppText style={[adminType.body, { color: colors.textSecondary, marginTop: 4 }]}>{d.phone}</AppText>
+                      <AppText style={[adminType.body, { color: colors.textSecondary }]}>{d.email}</AppText>
+                      <View style={[styles.badge, { marginTop: 8, alignSelf: 'flex-start' }, d.registration_type === 'uber_bolt' ? styles.badgeBlue : styles.badgeGrey]}>
+                        <AppText style={[adminType.badge, { color: d.registration_type === 'uber_bolt' ? colors.primary : colors.textSecondary }]}>
+                          {regLabel(d.registration_type)}
+                        </AppText>
+                      </View>
+                    </View>
+                  </View>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md, marginBottom: spacing.sm }]}>Documents</AppText>
+                  <View style={styles.docGrid}>
+                    {DOC_SLOTS.map((slot) => {
+                      const uri = d[slot.field];
+                      const ok = !!uri;
+                      return (
+                        <Pressable
+                          key={slot.key}
+                          style={[styles.docCell, ok ? styles.docOk : styles.docMiss]}
+                          onPress={() => uri && setPreviewUri(uri)}
+                          disabled={!uri}
+                        >
+                          {ok ? (
+                            <>
+                              <Image source={{ uri }} style={styles.docImg} resizeMode="cover" />
+                              <View style={styles.check}>
+                                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                              </View>
+                            </>
+                          ) : (
+                            <AppText style={[adminType.label, { color: colors.textSecondary, textAlign: 'center' }]}>{slot.label}</AppText>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <AppText style={[adminType.title, { marginTop: spacing.md, marginBottom: spacing.sm }]}>Vehicle details</AppText>
+                  <View style={styles.kv}>
+                    {[
+                      ['Make', d.vehicle_make],
+                      ['Model', d.vehicle_model],
+                      ['Year', d.vehicle_year],
+                      ['Colour', d.vehicle_color],
+                      ['Plate', d.vehicle_plate],
+                    ].map(([k, v]) => (
+                      <View key={k} style={styles.kvRow}>
+                        <AppText style={[adminType.label, { color: colors.textSecondary }]}>{k}</AppText>
+                        <AppText style={[adminType.body, { color: colors.textPrimary }]}>{v ?? '—'}</AppText>
+                      </View>
+                    ))}
+                  </View>
+
+                  <AppButton variant="success" label="Approve driver" onPress={handleApprove} loading={actionBusy} style={{ marginTop: spacing.md }} />
+                  <AppButton
+                    variant="outlineDanger"
+                    label="Reject application"
+                    onPress={() => { setRejectReason(''); setRejectModalVisible(true); }}
+                    disabled={actionBusy}
+                    style={{ marginTop: spacing.sm }}
+                  />
+                </ScrollView>
+              ) : null}
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
+        </Modal>
+
+        <Modal visible={rejectModalVisible} transparent animationType="fade">
+          <View style={styles.rejectBackdrop}>
+            <View style={styles.rejectCard}>
+              <AppText style={[adminType.title, { marginBottom: spacing.sm }]}>Rejection reason</AppText>
+              <TextInput
+                style={styles.rejectInput}
+                multiline
+                placeholder="Explain why the application is rejected…"
+                placeholderTextColor={colors.textLight}
+                value={rejectReason}
+                onChangeText={setRejectReason}
+              />
+              <View style={styles.rejectActions}>
+                <AppButton variant="outline" label="Cancel" fullWidth={false} onPress={() => setRejectModalVisible(false)} style={{ flex: 1, minWidth: 100 }} />
+                <AppButton variant="danger" label="Submit reject" fullWidth={false} onPress={submitReject} loading={actionBusy} style={{ flex: 1, minWidth: 120 }} />
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <FullImageModal visible={!!previewUri} uri={previewUri} onClose={() => setPreviewUri(null)} />
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    minHeight: height,
-  },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-  },
-  successBanner: {
-    marginTop: 8,
-    color: colors.success,
-    fontWeight: '600',
-  },
-  content: {
-    flex: 1,
-    flexDirection: width > 640 ? 'row' : 'column',
+  safe: { flex: 1, backgroundColor: colors.adminHeader },
+  root: { flex: 1, backgroundColor: colors.adminContent },
+  scroll: { flex: 1 },
+  scrollPad: { padding: spacing.md, paddingBottom: 32 },
+  toast: {
+    backgroundColor: colors.success,
+    paddingVertical: 10,
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-  },
-  leftCol: {
-    width: width > 640 ? 300 : '100%',
-    maxHeight: width > 640 ? height - 120 : 220,
-    marginRight: width > 640 ? 16 : 0,
-  },
-  rightCol: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 200,
-  },
-  driverCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  driverCardSelected: {
-    borderColor: colors.primary,
-    borderWidth: 2,
-  },
-  driverName: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
-  driverPhone: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
-  driverMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  driverDate: { fontSize: 11, color: colors.textLight, marginTop: 4 },
-  pendingBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    backgroundColor: colors.warningLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  pendingBadgeText: { color: colors.warning, fontWeight: '700', fontSize: 12 },
-  emptyText: { color: colors.textSecondary, padding: 16 },
-  errText: { color: colors.danger, padding: 12 },
-  hint: { padding: 20, color: colors.textLight },
-  detailScroll: { flex: 1, padding: 16 },
-  detailHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  detailTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
-  rowTop: { flexDirection: 'row', marginBottom: 16 },
-  profilePhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.border },
-  profilePhotoPh: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.border },
-  basicBlock: { flex: 1, marginLeft: 12, justifyContent: 'center' },
-  driverNameLarge: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
-  metaLine: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '800', marginBottom: 10, marginTop: 8, color: colors.textPrimary },
-  thumbGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  thumbWrap: { width: '30%', minWidth: 90, marginBottom: 12 },
-  thumbLabel: { fontSize: 10, color: colors.textSecondary, marginBottom: 4 },
-  thumbImg: { width: '100%', height: 72, borderRadius: 8, backgroundColor: colors.background },
-  thumbPlaceholder: {
-    width: '100%',
-    height: 72,
-    borderRadius: 8,
-    backgroundColor: colors.background,
+  card: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.adminCard,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  cardOn: { borderColor: colors.primary, borderWidth: 2 },
+  avatarSm: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  rowBadges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
+  badgeBlue: { backgroundColor: colors.primaryLight },
+  badgeGrey: { backgroundColor: colors.background },
+  badgeAmber: { backgroundColor: colors.warningLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheetScrim: { ...StyleSheet.absoluteFillObject },
+  sheet: {
+    maxHeight: '92%',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 24,
+  },
+  sheetGrab: { alignItems: 'center', paddingVertical: 8 },
+  grabBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border },
+  sheetInner: { paddingHorizontal: spacing.md, paddingBottom: 32 },
+  sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  profileRow: { flexDirection: 'row', gap: spacing.md },
+  bigPhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.border },
+  ph: { alignItems: 'center', justifyContent: 'center' },
+  docGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  docCell: {
+    width: '47%',
+    height: 50,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbPlaceholderText: { color: colors.textLight },
-  vehicleBox: {
+  docOk: { backgroundColor: colors.successLight },
+  docMiss: { backgroundColor: colors.background },
+  docImg: { width: '100%', height: '100%' },
+  check: { position: 'absolute', top: 4, right: 4, backgroundColor: colors.surface, borderRadius: 8 },
+  kv: {
     backgroundColor: colors.background,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: radius.adminCard,
+    padding: spacing.sm,
   },
-  vehLine: { fontSize: 14, color: colors.textPrimary, marginBottom: 4 },
-  approveBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  approveBtnText: { color: colors.textWhite, fontWeight: '800', fontSize: 16 },
-  rejectBtn: {
-    backgroundColor: colors.danger,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  rejectBtnText: { color: colors.textWhite, fontWeight: '800', fontSize: 16 },
-  btnDisabled: { opacity: 0.6 },
+  kvRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   rejectBackdrop: {
     flex: 1,
     backgroundColor: colors.overlayMedium,
     justifyContent: 'center',
-    padding: 20,
+    padding: spacing.md,
   },
   rejectCard: {
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
-  rejectTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10, color: colors.textPrimary },
   rejectInput: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: radius.sm,
     minHeight: 100,
     padding: 10,
     textAlignVertical: 'top',
     color: colors.textPrimary,
+    fontSize: 14,
   },
-  rejectActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 14,
-    gap: 16,
-  },
-  rejectCancel: { color: colors.textSecondary, fontWeight: '700', padding: 8 },
-  rejectConfirm: {
-    backgroundColor: colors.danger,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  rejectConfirmText: { color: colors.textWhite, fontWeight: '800' },
+  rejectActions: { flexDirection: 'row', gap: 12, marginTop: spacing.md },
 });
 
 export default DriverReview;

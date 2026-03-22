@@ -24,6 +24,8 @@ export default function AppButton({
     variant === 'accent' && styles.accent,
     variant === 'outline' && styles.outline,
     variant === 'outlineAccent' && styles.outlineAccent,
+    variant === 'outlineDanger' && styles.outlineDanger,
+    variant === 'success' && styles.success,
     variant === 'danger' && styles.danger,
     isDisabled && styles.disabled,
     style,
@@ -33,6 +35,8 @@ export default function AppButton({
     styles.label,
     variant === 'outline' && styles.labelOutline,
     variant === 'outlineAccent' && styles.labelOutlineAccent,
+    variant === 'outlineDanger' && styles.labelOutlineDanger,
+    variant === 'success' && styles.label,
     textStyle,
   ];
 
@@ -48,9 +52,13 @@ export default function AppButton({
           color={
             variant === 'outline'
               ? colors.primary
-              : variant === 'outlineAccent'
+              :     variant === 'outlineAccent'
                 ? colors.accent
-                : colors.textWhite
+                : variant === 'outlineDanger'
+                  ? colors.danger
+                  : variant === 'success'
+                    ? colors.textWhite
+                    : colors.textWhite
           }
         />
       ) : (
@@ -84,6 +92,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent,
   },
+  outlineDanger: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  success: {
+    backgroundColor: colors.success,
+  },
   danger: {
     backgroundColor: colors.danger,
   },
@@ -100,5 +116,8 @@ const styles = StyleSheet.create({
   },
   labelOutlineAccent: {
     color: colors.accent,
+  },
+  labelOutlineDanger: {
+    color: colors.danger,
   },
 });

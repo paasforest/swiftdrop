@@ -41,12 +41,8 @@ import DeliveryConfirm from './src/screens/driver/DeliveryConfirm';
 import Earnings from './src/screens/driver/Earnings';
 import DriverOTPScreen from './src/screens/driver/DriverOTPScreen';
 
-// Admin Screens
-import AdminOverview from './src/screens/admin/AdminOverview';
-import Deliveries from './src/screens/admin/Deliveries';
-import DriverReview from './src/screens/admin/DriverReview';
-import DisputeResolution from './src/screens/admin/DisputeResolution';
-import Reports from './src/screens/admin/Reports';
+// Admin (single tab shell)
+import AdminTabNavigator from './src/navigation/AdminTabNavigator';
 
 const Stack = createStackNavigator();
 
@@ -135,12 +131,8 @@ export default function App() {
         <Stack.Screen name="DeliveryConfirm" component={DeliveryConfirm} />
         <Stack.Screen name="Earnings" component={Earnings} />
 
-        {/* Admin Flow */}
-        <Stack.Screen name="AdminOverview" component={AdminOverview} />
-        <Stack.Screen name="Deliveries" component={Deliveries} />
-        <Stack.Screen name="DriverReview" component={DriverReview} />
-        <Stack.Screen name="DisputeResolution" component={DisputeResolution} />
-        <Stack.Screen name="Reports" component={Reports} />
+        {/* Admin: bottom tabs (Overview, Deliveries, Drivers, Disputes, Finance) */}
+        <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
       </Stack.Navigator>
     </NavigationContainer>
     </SafeAreaProvider>

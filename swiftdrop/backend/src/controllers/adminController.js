@@ -104,6 +104,9 @@ async function financeSummary(req, res) {
       insClaimMonth,
       insClaimAll,
       pendingTotal,
+      paidDriverToday,
+      paidDriverMonth,
+      claimsCountRes,
     ] = await Promise.all([
       db.query(`
         SELECT COALESCE(SUM(commission_amount), 0)::numeric AS s FROM platform_revenue
@@ -156,9 +159,27 @@ async function financeSummary(req, res) {
         SELECT COALESCE(SUM(driver_amount), 0)::numeric AS s FROM payments
         WHERE payout_status = 'pending'
       `),
+      db.query(`
+        SELECT COALESCE(SUM(driver_amount), 0)::numeric AS s FROM payments
+        WHERE payout_status = 'paid'
+          AND payout_date IS NOT NULL
+          AND (payout_date AT TIME ZONE 'UTC')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date
+      `),
+      db.query(`
+        SELECT COALESCE(SUM(driver_amount), 0)::numeric AS s FROM payments
+        WHERE payout_status = 'paid'
+          AND payout_date IS NOT NULL
+          AND payout_date >= date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+      `),
+      db.query(`
+        SELECT COUNT(*)::int AS c FROM insurance_pool WHERE claim_status = 'claimed'
+      `),
     ]);
 
     const pending = parseFloat(pendingTotal.rows[0]?.s) || 0;
+    const paidToday = parseFloat(paidDriverToday.rows[0]?.s) || 0;
+    const paidMonth = parseFloat(paidDriverMonth.rows[0]?.s) || 0;
+    const claimsCount = claimsCountRes.rows[0]?.c ?? 0;
 
     return res.json({
       platform_revenue: {
@@ -181,6 +202,7 @@ async function financeSummary(req, res) {
           month: parseFloat(insClaimMonth.rows[0]?.s) || 0,
           alltime: parseFloat(insClaimAll.rows[0]?.s) || 0,
         },
+        claims_count: claimsCount,
       },
       pending_driver_payouts: {
         total: pending,
@@ -189,6 +211,11 @@ async function financeSummary(req, res) {
         month: pending,
         alltime: pending,
         note: 'Current snapshot: sum of driver_amount where payout_status is pending',
+      },
+      driver_payouts: {
+        pending_total: pending,
+        paid_today: paidToday,
+        paid_this_month: paidMonth,
       },
     });
   } catch (err) {
@@ -317,7 +344,10 @@ async function listAdminDeliveries(req, res) {
          o.status,
          o.pickup_address,
          o.dropoff_address,
+         o.delivery_tier,
          o.total_price,
+         o.base_price,
+         o.insurance_fee,
          o.commission_amount,
          o.driver_earnings,
          o.created_at,
@@ -327,6 +357,7 @@ async function listAdminDeliveries(req, res) {
          o.delivery_photo_url,
          c.full_name AS customer_name,
          dr.full_name AS driver_name,
+         dr.phone AS driver_phone,
          p.amount AS payment_amount
        FROM orders o
        JOIN users c ON c.id = o.customer_id

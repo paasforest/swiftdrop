@@ -6,7 +6,7 @@ export function resetToRoleHome(navigation, user) {
   const type = user?.user_type;
   let name = 'Home';
   if (type === 'driver') name = 'DriverHome';
-  else if (type === 'admin') name = 'AdminOverview';
+  else if (type === 'admin') name = 'AdminTabs';
 
   navigation.dispatch(
     CommonActions.reset({
