@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,11 +9,12 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
-  Linking,
+  Share,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
@@ -51,14 +52,31 @@ function Stars({ rating }) {
   );
 }
 
+/** Values must match backend DISPUTE_TYPES / DB constraint */
 const DISPUTE_TYPES = [
-  { value: 'lost_item', label: 'Lost item' },
-  { value: 'damaged', label: 'Damaged' },
-  { value: 'not_delivered', label: 'Not delivered' },
-  { value: 'wrong_item', label: 'Wrong item' },
+  { value: 'damaged', label: 'Item was damaged' },
+  { value: 'lost_item', label: 'Item was lost' },
+  { value: 'wrong_item', label: 'Wrong item delivered' },
+  { value: 'not_delivered', label: 'Item not delivered' },
   { value: 'driver_behaviour', label: 'Driver behaviour' },
   { value: 'other', label: 'Other' },
 ];
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function deliveryReferenceMs(order) {
+  if (!order) return null;
+  const d = order.delivery_confirmed_at || order.updated_at || order.created_at;
+  if (!d) return null;
+  const t = new Date(d).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function isWithinDisputeWindow(order) {
+  const t = deliveryReferenceMs(order);
+  if (t == null) return true;
+  return Date.now() - t <= SEVEN_DAYS_MS;
+}
 
 const OrderDetail = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
@@ -118,35 +136,52 @@ const OrderDetail = ({ navigation, route }) => {
     };
   }, [orderId, navigation]);
 
-  const receiptText = useMemo(() => {
+  const insuranceNum = order ? Number(order.insurance_fee) : 0;
+  const showParcelProtection = Number.isFinite(insuranceNum) && insuranceNum > 0;
+
+  const buildReceiptMessage = useCallback(() => {
     if (!order) return '';
-    const when = formatDate(order.updated_at || order.created_at);
-    const lines = [
-      'SwiftDrop Receipt',
-      `Order: ${order.order_number || order.id}`,
-      `Date: ${when}`,
-      `From: ${order.pickup_address || '-'}`,
-      `To: ${order.dropoff_address || '-'}`,
-      `Driver: ${order.driver_name || '-'}`,
-      `Pickup Photo: ${order.pickup_photo_url ? 'Yes' : 'No'}`,
-      `Delivery Photo: ${order.delivery_photo_url ? 'Yes' : 'No'}`,
-      `Base price: ${formatMoney(order.base_price)}`,
-      `Insurance: ${formatMoney(order.insurance_fee)}`,
-      `Commission: ${formatMoney(order.commission_amount)}`,
-      `Total paid: ${formatMoney(order.total_price)}`,
-    ];
+    const when = formatDate(order.created_at);
+    const base = Number(order.base_price);
+    const ins = Number(order.insurance_fee);
+    const total = Number(order.total_price);
+    const insLine =
+      Number.isFinite(ins) && ins > 0
+        ? `Parcel protection: ${formatMoney(ins)}\n`
+        : '';
+    return `
+SWIFTDROP DELIVERY RECEIPT
+==========================
+Order: #${order.order_number || order.id}
+Date: ${when}
 
-    if (rating?.rating) {
-      lines.push(`Customer rating: ${rating.rating}/5`);
-      if (rating.comment) lines.push(`Comment: ${rating.comment}`);
+FROM: ${order.pickup_address || '-'}
+TO: ${order.dropoff_address || '-'}
+
+Parcel: ${order.parcel_type || '—'} — ${order.parcel_size || '—'}
+Driver: ${order.driver_name || '-'}
+
+PAYMENT SUMMARY
+Delivery fee: ${formatMoney(base)}
+${insLine}─────────────────
+TOTAL PAID: ${formatMoney(total)}
+
+Status: Delivered ✓
+Thank you for using SwiftDrop!
+`.trim();
+  }, [order]);
+
+  const handleDownloadReceipt = async () => {
+    if (!order) return;
+    try {
+      const message = buildReceiptMessage();
+      await Share.share({
+        message,
+        title: 'SwiftDrop Receipt',
+      });
+    } catch (e) {
+      Alert.alert('Share failed', e?.message || 'Could not open share sheet.');
     }
-
-    return lines.join('\n');
-  }, [order, rating]);
-
-  const handleDownloadReceipt = () => {
-    const url = `data:text/plain;charset=utf-8,${encodeURIComponent(receiptText)}`;
-    Linking.openURL(url);
   };
 
   const hasOpenDisputeForOrder = useMemo(() => {
@@ -160,7 +195,8 @@ const OrderDetail = ({ navigation, route }) => {
   const canRaiseDispute =
     order &&
     ['delivered', 'completed'].includes(String(order.status)) &&
-    !hasOpenDisputeForOrder;
+    !hasOpenDisputeForOrder &&
+    isWithinDisputeWindow(order);
 
   const openDisputeModal = () => {
     setDisputeFormError(null);
@@ -191,14 +227,16 @@ const OrderDetail = ({ navigation, route }) => {
       await postJson(
         '/api/disputes',
         {
-          order_id: order.id,
+          order_id: Number(order.id),
           dispute_type: disputeType,
           description: desc,
         },
         { token: auth.token }
       );
       setDisputeModalVisible(false);
-      setDisputeSuccess('Dispute raised — we will resolve within 24 hours.');
+      setDisputeSuccess(
+        'Dispute raised successfully.\nWe will resolve this within 24 hours.'
+      );
       const d = await getJson('/api/disputes/my', { token: auth.token });
       setMyDisputes(Array.isArray(d.disputes) ? d.disputes : []);
     } catch (e) {
@@ -247,8 +285,17 @@ const OrderDetail = ({ navigation, route }) => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.orderNumber}>{order.order_number || `Order ${order.id}`}</Text>
-          <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+          <View style={styles.orderTitleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.orderNumber}>{order.order_number || `Order ${order.id}`}</Text>
+              <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+            </View>
+            {hasOpenDisputeForOrder ? (
+              <View style={styles.disputeBadge}>
+                <Text style={styles.disputeBadgeText}>Dispute open</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -309,22 +356,22 @@ const OrderDetail = ({ navigation, route }) => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Price Breakdown</Text>
+          <Text style={styles.sectionTitle}>Price breakdown</Text>
           <View style={styles.priceRow}>
-            <Text style={styles.label}>Delivery fee</Text>
+            <Text style={styles.labelWide}>Delivery fee</Text>
             <Text style={styles.value}>{formatMoney(order.base_price)}</Text>
           </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.label}>Insurance</Text>
-            <Text style={styles.value}>{formatMoney(order.insurance_fee)}</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.label}>Commission</Text>
-            <Text style={styles.value}>{formatMoney(order.commission_amount)}</Text>
-          </View>
+          {showParcelProtection ? (
+            <View style={styles.priceRow}>
+              <Text style={styles.labelWide}>Parcel protection</Text>
+              <Text style={styles.value}>{formatMoney(order.insurance_fee)}</Text>
+            </View>
+          ) : null}
           <View style={[styles.priceRow, styles.totalRow]}>
-            <Text style={[styles.label, { color: colors.textPrimary, fontWeight: '700' }]}>Total</Text>
-            <Text style={[styles.value, { color: colors.textPrimary, fontWeight: '800' }]}>{formatMoney(order.total_price)}</Text>
+            <Text style={[styles.labelWide, { color: colors.textPrimary, fontWeight: '700' }]}>Total</Text>
+            <Text style={[styles.value, { color: colors.textPrimary, fontWeight: '800' }]}>
+              {formatMoney(order.total_price)}
+            </Text>
           </View>
         </View>
 
@@ -357,8 +404,8 @@ const OrderDetail = ({ navigation, route }) => {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Raise a dispute</Text>
-            <Text style={styles.modalHint}>Choose a type and describe what happened (min. 20 characters).</Text>
+            <Text style={styles.modalTitle}>Raise a Dispute</Text>
+            <Text style={styles.modalHint}>What went wrong with this delivery?</Text>
 
             <Text style={styles.modalLabel}>Dispute type</Text>
             <ScrollView style={styles.typeList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
@@ -380,11 +427,14 @@ const OrderDetail = ({ navigation, route }) => {
               style={styles.modalInput}
               multiline
               numberOfLines={5}
-              placeholder="Describe the issue in detail…"
+              placeholder="Describe what happened (minimum 20 characters)"
               value={disputeDescription}
               onChangeText={setDisputeDescription}
               textAlignVertical="top"
             />
+            <Text style={styles.charCounter}>
+              {disputeDescription.trim().length}/20 minimum
+            </Text>
 
             {disputeFormError ? <Text style={styles.modalError}>{disputeFormError}</Text> : null}
 
@@ -497,6 +547,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
   },
+  orderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  disputeBadge: {
+    backgroundColor: colors.warningLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  disputeBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.warning,
+  },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
@@ -514,6 +583,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
     width: 70,
+  },
+  labelWide: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    flex: 1,
+    marginRight: 12,
   },
   value: {
     fontSize: 13,
@@ -690,7 +766,12 @@ const styles = StyleSheet.create({
     minHeight: 100,
     fontSize: 15,
     color: colors.textPrimary,
-    marginBottom: 10,
+    marginBottom: 4,
+  },
+  charCounter: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 8,
   },
   modalError: {
     color: colors.danger,

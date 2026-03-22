@@ -2,7 +2,8 @@ const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const { sendPushNotification } = require('./notificationService');
 
-const OFFER_TIMEOUT_MS = 15000;
+/** Driver job-offer window (production). Do not raise for testing — use a branch or env if needed. */
+const OFFER_TIMEOUT_MS = 15000; // 15 seconds
 const ROUTE_RADIUS_KM = 15;
 /** Wider radii — 10/30km was too tight for sparse or misaligned GPS vs pickup. */
 const NEARBY_RADIUS_KM = 25;
