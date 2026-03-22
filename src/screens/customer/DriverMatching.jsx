@@ -21,7 +21,6 @@ import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
 const { width, height } = Dimensions.get('window');
 
 const RADAR_BLUE = '#1A73E8';
-const MATCH_TIMEOUT_MS = 3 * 60 * 1000;
 const POLL_MS = 3000;
 const FOUND_NAV_DELAY_MS = 1500;
 
@@ -40,12 +39,23 @@ function isDriverMatchedStatus(status) {
   ].includes(s);
 }
 
-const ROTATING_MESSAGES = [
+const STATUS_MESSAGES = [
   'Finding your driver...',
   'Checking nearby drivers...',
   'Looking for route matches...',
+  'Expanding search area...',
+  'Still searching — please wait...',
   'Almost there...',
 ];
+
+/** Secondary reassurance line under rotating title (by elapsed search time). */
+function reassuranceSubtitle(elapsedSec) {
+  if (elapsedSec >= 120) return 'Almost there — checking all drivers...';
+  if (elapsedSec >= 90) return 'Expanding search area...';
+  if (elapsedSec >= 60) return 'Searching for 1 minute...';
+  if (elapsedSec >= 30) return 'Searching for 30 seconds...';
+  return '';
+}
 
 function formatMoney(n) {
   const x = Number(n);
@@ -130,6 +140,7 @@ const DriverMatching = ({ navigation, route }) => {
 
   const messageOpacity = useRef(new Animated.Value(1)).current;
   const [messageIndex, setMessageIndex] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   const stopAnimations = useCallback(() => {
     cancelledRef.current = true;
@@ -173,6 +184,7 @@ const DriverMatching = ({ navigation, route }) => {
   }, [scale0, scale1, scale2, opacity0, opacity1, opacity2, dot0, dot1, dot2]);
 
   const isSearching = !noDriverFound && !driverFound;
+  const reassuranceText = reassuranceSubtitle(elapsedSec);
 
   useEffect(() => {
     if (!isSearching) {
@@ -187,12 +199,12 @@ const DriverMatching = ({ navigation, route }) => {
 
   useEffect(() => {
     if (!isSearching) return undefined;
-    timeoutRef.current = setTimeout(() => {
-      setNoDriverFound(true);
-    }, MATCH_TIMEOUT_MS);
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+    const started = Date.now();
+    setElapsedSec(0);
+    const tick = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
   }, [isSearching]);
 
   useEffect(() => {
@@ -203,7 +215,7 @@ const DriverMatching = ({ navigation, route }) => {
         duration: 220,
         useNativeDriver: true,
       }).start(() => {
-        setMessageIndex((i) => (i + 1) % ROTATING_MESSAGES.length);
+        setMessageIndex((i) => (i + 1) % STATUS_MESSAGES.length);
         Animated.timing(messageOpacity, {
           toValue: 1,
           duration: 220,
@@ -228,13 +240,11 @@ const DriverMatching = ({ navigation, route }) => {
         const st = data?.status;
 
         if (st === 'unmatched') {
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
           setNoDriverFound(true);
           return;
         }
 
         if (isDriverMatchedStatus(st)) {
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
           setDriverFound(true);
         }
       } catch {
@@ -312,8 +322,6 @@ const DriverMatching = ({ navigation, route }) => {
     if (!orderId) {
       setNoDriverFound(false);
       setDriverFound(false);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setNoDriverFound(true), MATCH_TIMEOUT_MS);
       return;
     }
     setRetrying(true);
@@ -326,8 +334,6 @@ const DriverMatching = ({ navigation, route }) => {
       await postJson(`/api/orders/${orderId}/retry-matching`, {}, { token: auth.token });
       setNoDriverFound(false);
       setDriverFound(false);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setNoDriverFound(true), MATCH_TIMEOUT_MS);
     } catch (e) {
       Alert.alert('Retry failed', e.message || 'Could not retry matching.');
     } finally {
@@ -428,14 +434,17 @@ const DriverMatching = ({ navigation, route }) => {
           ) : noDriverFound ? (
             <>
               <Text style={styles.mainTitle}>No drivers available right now</Text>
-              <Text style={styles.subtitle}>Please try again in a few minutes.</Text>
+              <Text style={styles.subtitle}>
+                All nearby drivers are busy. Try again in a few minutes or choose a different delivery
+                time.
+              </Text>
             </>
           ) : (
             <>
               <Animated.Text style={[styles.mainTitle, { opacity: messageOpacity }]}>
-                {ROTATING_MESSAGES[messageIndex]}
+                {STATUS_MESSAGES[messageIndex]}
               </Animated.Text>
-              <Text style={styles.subtitle}>Matching with drivers near you</Text>
+              {reassuranceText ? <Text style={styles.reassuranceLine}>{reassuranceText}</Text> : null}
               <View style={styles.dotsRow}>
                 <Animated.View style={[styles.loadingDot, { opacity: dot0 }]} />
                 <Animated.View style={[styles.loadingDot, { opacity: dot1 }]} />
@@ -601,6 +610,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     lineHeight: 22,
     marginBottom: 12,
+  },
+  reassuranceLine: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    lineHeight: 20,
+    marginBottom: 8,
+    fontWeight: '600',
   },
   dotsRow: {
     flexDirection: 'row',
