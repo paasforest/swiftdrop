@@ -198,8 +198,45 @@ async function setUserWallet(req, res) {
   }
 }
 
+/**
+ * POST /api/admin/user/verify
+ * Body: { email: string }
+ * Admin only. Sets is_verified = true for the user with the given email.
+ */
+async function verifyUser(req, res) {
+  try {
+    requireAdmin(req.user);
+
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || email.trim() === '') {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    const r = await db.query(
+      `UPDATE users
+       SET is_verified = true, updated_at = NOW()
+       WHERE email = $1
+       RETURNING id, full_name, email, is_verified`,
+      [email.trim()]
+    );
+
+    if (!r.rows[0]) {
+      return res.status(404).json({ error: 'User not found for this email' });
+    }
+
+    return res.json({
+      message: 'User verified',
+      user: r.rows[0],
+    });
+  } catch (err) {
+    const code = err.statusCode || 500;
+    return res.status(code).json({ error: err.message || 'Failed to verify user' });
+  }
+}
+
 module.exports = {
   dashboardStats,
   listAdminDeliveries,
   setUserWallet,
+  verifyUser,
 };
