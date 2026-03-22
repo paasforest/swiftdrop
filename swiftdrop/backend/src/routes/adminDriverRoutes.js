@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get('/dashboard-stats', auth, adminController.dashboardStats);
 router.get('/deliveries', auth, adminController.listAdminDeliveries);
+router.post('/wallet/set', auth, adminController.setUserWallet);
 
 router.get('/drivers', auth, adminDriverController.listDriverApplications);
 router.get('/drivers/:id', auth, adminDriverController.getDriverApplicationDetail);

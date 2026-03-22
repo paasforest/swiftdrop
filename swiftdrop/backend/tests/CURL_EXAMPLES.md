@@ -118,3 +118,28 @@ curl -X POST http://localhost:4000/api/auth/register-driver \
     "password": "SecurePass123"
   }'
 ```
+
+---
+
+## 9. Admin — set user wallet (admin JWT only)
+
+Replaces `wallet_balance` for the user with matching phone (SA E.164 normalized).
+
+```bash
+curl -X POST "https://swiftdrop-production.up.railway.app/api/admin/wallet/set" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone": "+27784956500",
+    "wallet_balance": 2000
+  }'
+```
+
+Local:
+
+```bash
+curl -X POST "http://localhost:4000/api/admin/wallet/set" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "+27821234567", "wallet_balance": 500}'
+```

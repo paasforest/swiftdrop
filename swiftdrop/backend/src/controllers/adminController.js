@@ -1,4 +1,5 @@
 const db = require('../database/connection');
+const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
 
 function requireAdmin(user) {
   if (!user || user.user_type !== 'admin') {
@@ -148,7 +149,57 @@ async function listAdminDeliveries(req, res) {
   }
 }
 
+/**
+ * POST /api/admin/wallet/set
+ * Body: { phone: string (E.164 or SA local), wallet_balance: number }
+ * Admin only. Sets user's wallet_balance to the given amount (replace, not increment).
+ */
+async function setUserWallet(req, res) {
+  try {
+    requireAdmin(req.user);
+
+    const { phone, wallet_balance } = req.body || {};
+    if (phone == null || String(phone).trim() === '') {
+      return res.status(400).json({ error: 'phone is required' });
+    }
+
+    const bal = parseFloat(wallet_balance);
+    if (!Number.isFinite(bal) || bal < 0) {
+      return res.status(400).json({ error: 'wallet_balance must be a non-negative number' });
+    }
+
+    const phoneNorm = normalizeSouthAfricaToE164(String(phone).trim());
+    if (!phoneNorm) {
+      return res.status(400).json({
+        error: 'Invalid phone number. Use a South African mobile (e.g. +2782… or 082…).',
+      });
+    }
+
+    const amountStr = bal.toFixed(2);
+    const r = await db.query(
+      `UPDATE users
+       SET wallet_balance = $1::numeric, updated_at = NOW()
+       WHERE phone = $2
+       RETURNING id, full_name, phone, email, user_type, wallet_balance`,
+      [amountStr, phoneNorm]
+    );
+
+    if (!r.rows[0]) {
+      return res.status(404).json({ error: 'User not found for this phone' });
+    }
+
+    return res.json({
+      message: 'Wallet updated',
+      user: r.rows[0],
+    });
+  } catch (err) {
+    const code = err.statusCode || 500;
+    return res.status(code).json({ error: err.message || 'Failed to set wallet' });
+  }
+}
+
 module.exports = {
   dashboardStats,
   listAdminDeliveries,
+  setUserWallet,
 };
