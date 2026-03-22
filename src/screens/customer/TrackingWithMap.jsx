@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
+import { driverTrustSubtitle } from '../../utils/driverTrustDisplay';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
@@ -156,6 +157,7 @@ const TrackingWithMap = ({ navigation, route }) => {
               driverName: data.driver_name,
               driverRating: data.driver_rating,
               driverPhoto: data.driver_photo ?? null,
+              driverDeliveriesCompleted: data.driver_deliveries_completed,
               deliveryPhoto: data.delivery_photo_url ?? null,
               fromAddress: data.pickup_address,
               toAddress: data.dropoff_address,
@@ -257,6 +259,7 @@ const TrackingWithMap = ({ navigation, route }) => {
             driverName: data.driver_name,
             driverRating: data.driver_rating,
             driverPhoto: data.driver_photo ?? null,
+            driverDeliveriesCompleted: data.driver_deliveries_completed,
             deliveryPhoto: data.delivery_photo_url ?? null,
             fromAddress: data.pickup_address,
             toAddress: data.dropoff_address,
@@ -531,16 +534,18 @@ const TrackingWithMap = ({ navigation, route }) => {
         {/* Driver Info */}
         {order.driver_name && (
           <View style={styles.driverInfo}>
-            <DriverAvatar uri={order.driver_photo} name={order.driver_name} size={56} />
+            <DriverAvatar
+              uri={order.driver_photo}
+              name={order.driver_name}
+              size={56}
+              deliveriesCompleted={order.driver_deliveries_completed}
+            />
             <View style={styles.driverDetails}>
               <Text style={styles.driverName}>{order.driver_name}</Text>
               {driverVehicleLine ? (
                 <Text style={styles.vehicleLineText}>{driverVehicleLine}</Text>
               ) : null}
-              <View style={styles.driverRating}>
-                <Ionicons name="star" size={16} color={colors.accent} style={{ marginRight: 4 }} />
-                <Text style={styles.ratingText}>{order.driver_rating || '4.8'}</Text>
-              </View>
+              <Text style={styles.driverTrustSubline}>{driverTrustLine}</Text>
             </View>
             {order.driver_phone && (
               <TouchableOpacity style={styles.callButton} onPress={handleCall} accessibilityLabel="Call driver">
@@ -769,13 +774,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     lineHeight: 18,
   },
-  driverRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingText: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  driverTrustSubline: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
   },
   callButton: {
     backgroundColor: colors.primary,

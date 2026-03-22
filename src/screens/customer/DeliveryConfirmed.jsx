@@ -17,6 +17,7 @@ import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
+import { driverTrustSubtitle, normalizeDriverDeliveriesCompleted } from '../../utils/driverTrustDisplay';
 
 function normalizeDeliveryPhotoUrl(url) {
   if (url == null) return null;
@@ -39,6 +40,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const driverName = params.driverName || 'your driver';
   const driverRating = params.driverRating;
   const driverPhotoParam = params.driverPhoto;
+  const driverDeliveriesParam = params.driverDeliveriesCompleted;
   const deliveryPhoto = params.deliveryPhoto;
   const fromAddress = params.fromAddress;
   const toAddress = params.toAddress;
@@ -143,6 +145,13 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const displayDriverPhoto =
     orderDetails?.driver_photo ?? driverPhotoParam ?? null;
   const displayVehicleLine = formatDriverVehicleLine(orderDetails);
+  const displayDriverDeliveries = normalizeDriverDeliveriesCompleted(
+    orderDetails?.driver_deliveries_completed ?? driverDeliveriesParam
+  );
+  const displayDriverTrustLine = driverTrustSubtitle(
+    orderDetails?.driver_rating ?? driverRating,
+    displayDriverDeliveries
+  );
   const displayDeliveryPhoto = normalizeDeliveryPhotoUrl(
     orderDetails?.delivery_photo_url ??
       orderDetails?.deliveryPhotoUrl ??
@@ -315,7 +324,12 @@ const DeliveryConfirmed = ({ navigation, route }) => {
           {!submitted ? (
             <View style={styles.ratingSection}>
               <View style={styles.ratingDriverHeader}>
-                <DriverAvatar uri={displayDriverPhoto} name={displayDriverName} size={56} />
+                <DriverAvatar
+                  uri={displayDriverPhoto}
+                  name={displayDriverName}
+                  size={56}
+                  deliveriesCompleted={displayDriverDeliveries}
+                />
                 <View style={styles.ratingDriverTextCol}>
                   <Text style={styles.ratingTitle}>
                     How was your experience with {displayDriverName}?
@@ -323,6 +337,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
                   {displayVehicleLine ? (
                     <Text style={styles.ratingVehicleLine}>{displayVehicleLine}</Text>
                   ) : null}
+                  <Text style={styles.ratingTrustSubline}>{displayDriverTrustLine}</Text>
                 </View>
               </View>
 
@@ -535,6 +550,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  ratingTrustSubline: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 6,
   },
   starsContainer: {
     flexDirection: 'row',

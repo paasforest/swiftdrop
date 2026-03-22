@@ -410,7 +410,8 @@ async function getOrderById(req, res) {
         dp.vehicle_color,
         dp.vehicle_year,
         dp.vehicle_plate,
-        dt.current_rating AS driver_rating
+        COALESCE(dt.deliveries_completed, 0) AS driver_deliveries_completed,
+        COALESCE(dt.current_rating, 0) AS driver_rating
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id

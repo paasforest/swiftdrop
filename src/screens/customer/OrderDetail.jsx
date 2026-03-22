@@ -22,6 +22,7 @@ import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
+import { driverTrustSubtitle, normalizeDriverDeliveriesCompleted } from '../../utils/driverTrustDisplay';
 
 const { width, height } = Dimensions.get('window');
 
@@ -276,6 +277,8 @@ Thank you for using SwiftDrop!
   }
 
   const driverVehicleLine = formatDriverVehicleLine(order);
+  const driverDeliveriesCount = normalizeDriverDeliveriesCompleted(order?.driver_deliveries_completed);
+  const driverTrustLine = driverTrustSubtitle(order?.driver_rating, order?.driver_deliveries_completed);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -355,12 +358,14 @@ Thank you for using SwiftDrop!
               uri={order.driver_photo}
               name={order.driver_name || 'Driver'}
               size={56}
+              deliveriesCompleted={driverDeliveriesCount}
             />
             <View style={styles.driverCol}>
               <Text style={styles.driverNameLarge}>{order.driver_name || '-'}</Text>
               {driverVehicleLine ? (
                 <Text style={styles.driverVehicleSubline}>{driverVehicleLine}</Text>
               ) : null}
+              <Text style={styles.driverTrustSubline}>{driverTrustLine}</Text>
               <View style={{ marginTop: 6 }}>
                 <Stars rating={rating?.rating ?? order.driver_rating} />
               </View>
@@ -622,6 +627,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 18,
+    marginBottom: 4,
+  },
+  driverTrustSubline: {
+    fontSize: 12,
+    color: '#6B7280',
     marginBottom: 4,
   },
   value: {
