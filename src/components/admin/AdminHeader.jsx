@@ -49,7 +49,12 @@ export default function AdminHeader({
 
   return (
     <View style={[styles.bar, { paddingTop: Math.max(insets.top, 12) }]}>
-      <AppText style={[adminType.title, styles.white]}>{title}</AppText>
+      <View style={styles.row}>
+        <AppText style={[adminType.title, styles.white, right ? styles.titleFlex : null]} numberOfLines={1}>
+          {title}
+        </AppText>
+        {right}
+      </View>
     </View>
   );
 }
@@ -74,5 +79,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+  },
+  titleFlex: {
+    flex: 1,
+    marginRight: 8,
   },
 });

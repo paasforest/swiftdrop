@@ -11,11 +11,12 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AdminHeader from '../../components/admin/AdminHeader';
+import AdminLogoutIconButton from '../../components/admin/AdminLogoutIconButton';
 import FullImageModal from '../../components/admin/FullImageModal';
 import { getAuth } from '../../authStore';
 import { getJson, patchJson } from '../../apiClient';
@@ -46,6 +47,7 @@ function formatHours(h) {
 }
 
 const DisputeResolution = () => {
+  const navigation = useNavigation();
   const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -150,7 +152,7 @@ const DisputeResolution = () => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
-        <AdminHeader mode="simple" title="Disputes" />
+        <AdminHeader mode="simple" title="Disputes" right={<AdminLogoutIconButton navigation={navigation} />} />
 
         {toast ? (
           <View style={styles.toast}>

@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AppText from '../../components/ui/AppText';
 import AppButton from '../../components/ui/AppButton';
 import AdminHeader from '../../components/admin/AdminHeader';
+import AdminLogoutIconButton from '../../components/admin/AdminLogoutIconButton';
 import FullImageModal from '../../components/admin/FullImageModal';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
@@ -179,7 +180,7 @@ const DriverReview = () => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
-        <AdminHeader mode="simple" title="Driver applications" />
+        <AdminHeader mode="simple" title="Driver applications" right={<AdminLogoutIconButton navigation={navigation} />} />
 
         {toast ? (
           <View style={styles.toast}>

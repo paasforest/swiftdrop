@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import AppText from '../../components/ui/AppText';
 import AdminHeader from '../../components/admin/AdminHeader';
-import AdminAvatar from '../../components/admin/AdminAvatar';
+import AdminAccountMenuButton from '../../components/admin/AdminAccountMenuButton';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
@@ -110,7 +110,7 @@ const AdminOverview = () => {
         <AdminHeader
           mode="overview"
           subtitle={new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
-          right={<AdminAvatar name={adminName} size={28} />}
+          right={<AdminAccountMenuButton navigation={navigation} />}
         />
 
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

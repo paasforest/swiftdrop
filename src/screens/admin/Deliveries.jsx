@@ -10,9 +10,11 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AppText from '../../components/ui/AppText';
 import AdminHeader from '../../components/admin/AdminHeader';
+import AdminLogoutIconButton from '../../components/admin/AdminLogoutIconButton';
 import FullImageModal from '../../components/admin/FullImageModal';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
@@ -55,6 +57,7 @@ function statusBadgeStyle(status) {
 }
 
 const Deliveries = () => {
+  const navigation = useNavigation();
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -142,7 +145,7 @@ const Deliveries = () => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
-        <AdminHeader mode="simple" title="Deliveries" />
+        <AdminHeader mode="simple" title="Deliveries" right={<AdminLogoutIconButton navigation={navigation} />} />
 
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={18} color={colors.textLight} style={{ marginRight: spacing.sm }} />

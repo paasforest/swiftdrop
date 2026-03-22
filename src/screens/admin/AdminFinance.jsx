@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AppText from '../../components/ui/AppText';
 import AdminHeader from '../../components/admin/AdminHeader';
+import AdminLogoutIconButton from '../../components/admin/AdminLogoutIconButton';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { colors, spacing, radius, shadows, adminType } from '../../theme/theme';
@@ -52,7 +53,7 @@ const AdminFinance = () => {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.root}>
-        <AdminHeader mode="simple" title="Finance" />
+        <AdminHeader mode="simple" title="Finance" right={<AdminLogoutIconButton navigation={navigation} />} />
 
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
