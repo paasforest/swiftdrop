@@ -20,6 +20,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import DriverAvatar from '../../components/customer/DriverAvatar';
+import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 
 const { width, height } = Dimensions.get('window');
 
@@ -273,6 +275,8 @@ Thank you for using SwiftDrop!
     );
   }
 
+  const driverVehicleLine = formatDriverVehicleLine(order);
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -346,12 +350,21 @@ Thank you for using SwiftDrop!
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Driver</Text>
-          <View style={styles.row}>
-            <Text style={styles.label}>Name</Text>
-            <Text style={[styles.value, { flex: 0 }]}>{order.driver_name || '-'}</Text>
-          </View>
-          <View style={{ marginTop: 8 }}>
-            <Stars rating={rating?.rating ?? order.driver_rating} />
+          <View style={styles.driverRow}>
+            <DriverAvatar
+              uri={order.driver_photo}
+              name={order.driver_name || 'Driver'}
+              size={56}
+            />
+            <View style={styles.driverCol}>
+              <Text style={styles.driverNameLarge}>{order.driver_name || '-'}</Text>
+              {driverVehicleLine ? (
+                <Text style={styles.driverVehicleSubline}>{driverVehicleLine}</Text>
+              ) : null}
+              <View style={{ marginTop: 6 }}>
+                <Stars rating={rating?.rating ?? order.driver_rating} />
+              </View>
+            </View>
           </View>
         </View>
 
@@ -590,6 +603,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flex: 1,
     marginRight: 12,
+  },
+  driverRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  driverCol: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  driverNameLarge: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  driverVehicleSubline: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: 4,
   },
   value: {
     fontSize: 13,

@@ -157,6 +157,13 @@ async function submitDriverApplication(req, res) {
       ]
     );
 
+    // Customer app / auth expose `users.profile_photo_url` as the public driver face.
+    // Selfie was only on driver_profiles.selfie_url before — keep both in sync.
+    await db.query(
+      `UPDATE users SET profile_photo_url = $1, updated_at = NOW() WHERE id = $2`,
+      [selfieUrl, userId]
+    );
+
     return res.json({ message: 'Application submitted', verification_status: 'pending' });
   } catch (err) {
     console.error('submitDriverApplication:', err);

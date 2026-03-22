@@ -401,8 +401,16 @@ async function getOrderById(req, res) {
   try {
     const { id } = req.params;
     const orderRes = await db.query(
-      `SELECT o.*, u.full_name as driver_name, u.phone as driver_phone, u.profile_photo_url as driver_photo,
-        dp.vehicle_make, dp.vehicle_model, dp.vehicle_plate, dt.current_rating as driver_rating
+      `SELECT o.*,
+        u.full_name AS driver_name,
+        u.phone AS driver_phone,
+        COALESCE(u.profile_photo_url, dp.selfie_url) AS driver_photo,
+        dp.vehicle_make,
+        dp.vehicle_model,
+        dp.vehicle_color,
+        dp.vehicle_year,
+        dp.vehicle_plate,
+        dt.current_rating AS driver_rating
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id

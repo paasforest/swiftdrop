@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import DriverAvatar from '../../components/customer/DriverAvatar';
+import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
@@ -153,6 +155,7 @@ const TrackingWithMap = ({ navigation, route }) => {
               orderId: data.id,
               driverName: data.driver_name,
               driverRating: data.driver_rating,
+              driverPhoto: data.driver_photo ?? null,
               deliveryPhoto: data.delivery_photo_url ?? null,
               fromAddress: data.pickup_address,
               toAddress: data.dropoff_address,
@@ -253,6 +256,7 @@ const TrackingWithMap = ({ navigation, route }) => {
             orderId: data.id,
             driverName: data.driver_name,
             driverRating: data.driver_rating,
+            driverPhoto: data.driver_photo ?? null,
             deliveryPhoto: data.delivery_photo_url ?? null,
             fromAddress: data.pickup_address,
             toAddress: data.dropoff_address,
@@ -436,6 +440,8 @@ const TrackingWithMap = ({ navigation, route }) => {
           longitudeDelta: 0.5,
         };
 
+  const driverVehicleLine = formatDriverVehicleLine(order);
+
   return (
     <SafeAreaView style={styles.container}>
       <MapView
@@ -525,19 +531,15 @@ const TrackingWithMap = ({ navigation, route }) => {
         {/* Driver Info */}
         {order.driver_name && (
           <View style={styles.driverInfo}>
-            <View style={styles.driverAvatar}>
-              <Text style={styles.driverAvatarText}>
-                {order.driver_name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
+            <DriverAvatar uri={order.driver_photo} name={order.driver_name} size={56} />
             <View style={styles.driverDetails}>
               <Text style={styles.driverName}>{order.driver_name}</Text>
+              {driverVehicleLine ? (
+                <Text style={styles.vehicleLineText}>{driverVehicleLine}</Text>
+              ) : null}
               <View style={styles.driverRating}>
                 <Ionicons name="star" size={16} color={colors.accent} style={{ marginRight: 4 }} />
                 <Text style={styles.ratingText}>{order.driver_rating || '4.8'}</Text>
-                {order.driver_vehicle && (
-                  <Text style={styles.vehicleText}> • {order.driver_vehicle}</Text>
-                )}
               </View>
             </View>
             {order.driver_phone && (
@@ -751,22 +753,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     marginBottom: 16,
   },
-  driverAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  driverAvatarText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.textWhite,
-  },
   driverDetails: {
     flex: 1,
+    marginLeft: 12,
   },
   driverName: {
     fontSize: 16,
@@ -774,15 +763,17 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 4,
   },
+  vehicleLineText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
   driverRating: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   ratingText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  vehicleText: {
     fontSize: 14,
     color: colors.textSecondary,
   },

@@ -15,6 +15,8 @@ import {
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
+import DriverAvatar from '../../components/customer/DriverAvatar';
+import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 
 function normalizeDeliveryPhotoUrl(url) {
   if (url == null) return null;
@@ -36,6 +38,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const orderId = params.orderId;
   const driverName = params.driverName || 'your driver';
   const driverRating = params.driverRating;
+  const driverPhotoParam = params.driverPhoto;
   const deliveryPhoto = params.deliveryPhoto;
   const fromAddress = params.fromAddress;
   const toAddress = params.toAddress;
@@ -46,6 +49,10 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const commissionAmount = params.commissionAmount;
 
   const [orderDetails, setOrderDetails] = useState(null);
+  const [orderLoading, setOrderLoading] = useState(Boolean(orderId));
+  const [orderFetchError, setOrderFetchError] = useState(null);
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [imageRetryKey, setImageRetryKey] = useState(0);
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -133,6 +140,9 @@ const DeliveryConfirmed = ({ navigation, route }) => {
 
   const displayDriverName = orderDetails?.driver_name || driverName;
   const displayDriverRating = orderDetails?.driver_rating ?? driverRating;
+  const displayDriverPhoto =
+    orderDetails?.driver_photo ?? driverPhotoParam ?? null;
+  const displayVehicleLine = formatDriverVehicleLine(orderDetails);
   const displayDeliveryPhoto = normalizeDeliveryPhotoUrl(
     orderDetails?.delivery_photo_url ??
       orderDetails?.deliveryPhotoUrl ??
@@ -304,7 +314,17 @@ const DeliveryConfirmed = ({ navigation, route }) => {
 
           {!submitted ? (
             <View style={styles.ratingSection}>
-              <Text style={styles.ratingTitle}>How was your experience with {displayDriverName}?</Text>
+              <View style={styles.ratingDriverHeader}>
+                <DriverAvatar uri={displayDriverPhoto} name={displayDriverName} size={56} />
+                <View style={styles.ratingDriverTextCol}>
+                  <Text style={styles.ratingTitle}>
+                    How was your experience with {displayDriverName}?
+                  </Text>
+                  {displayVehicleLine ? (
+                    <Text style={styles.ratingVehicleLine}>{displayVehicleLine}</Text>
+                  ) : null}
+                </View>
+              </View>
 
               <View style={styles.starsContainer}>
                 {renderRatingStars(true)}
@@ -492,12 +512,29 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 32,
   },
+  ratingDriverHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+    width: '100%',
+  },
+  ratingDriverTextCol: {
+    flex: 1,
+    marginLeft: 14,
+    justifyContent: 'center',
+    minHeight: 56,
+  },
   ratingTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 20,
+    textAlign: 'left',
+    marginBottom: 6,
+  },
+  ratingVehicleLine: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   starsContainer: {
     flexDirection: 'row',
@@ -605,6 +642,19 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingTop: 10,
     marginBottom: 0,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 15,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
 });
 
