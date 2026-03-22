@@ -229,6 +229,10 @@ const PostRoute = ({ navigation }) => {
     if (departureAt.getTime() <= Date.now()) {
       return 'Departure time must be in the future.';
     }
+    const minDeparture = Date.now() + 30 * 60 * 1000;
+    if (departureAt.getTime() < minDeparture) {
+      return 'Departure time must be at least 30 minutes from now';
+    }
     if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) {
       return 'Max parcels must be between 1 and 5.';
     }

@@ -65,7 +65,9 @@ async function findRouteRiders(order) {
      JOIN driver_profiles dp ON dp.user_id = dr.driver_id AND dp.verification_status = 'approved'
      LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
      JOIN users u ON u.id = dr.driver_id AND u.is_active = true
-     WHERE dr.status = 'active' AND dr.departure_time <= $1
+     WHERE dr.status = 'active'
+       AND dr.departure_time >= NOW()
+       AND dr.departure_time <= $1
        AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
     [threeHoursFromNow, MIN_DRIVER_RATING]
   );
@@ -109,13 +111,14 @@ async function findNearbyDrivers(order, radiusKm) {
   return withDist.map((d) => d.driver_id);
 }
 
-async function createJobOffers(orderId, driverIds) {
+async function createJobOffers(orderId, driverIds, { matchedVia = null } = {}) {
   const expiresAt = new Date(Date.now() + OFFER_TIMEOUT_MS);
   for (const driverId of driverIds) {
     console.log('[Matching] Offering job to driver:', driverId);
     await db.query(
-      `INSERT INTO job_offers (order_id, driver_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
-      [orderId, driverId, expiresAt]
+      `INSERT INTO job_offers (order_id, driver_id, status, expires_at, matched_via)
+       VALUES ($1, $2, 'pending', $3, $4)`,
+      [orderId, driverId, expiresAt, matchedVia]
     );
   }
 }
@@ -165,7 +168,7 @@ async function runMatchingAttempt(orderId) {
   const riderIds = await findRouteRiders(order);
   console.log('[Matching] Route riders found:', riderIds.length);
   if (riderIds.length > 0) {
-    await createJobOffers(orderId, riderIds);
+    await createJobOffers(orderId, riderIds, { matchedVia: 'route' });
     await notifyDriversNewOffer(riderIds, order);
     if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
     await expireJobOffers(orderId);
@@ -233,6 +236,8 @@ async function tryStep4(orderId) {
 }
 
 async function runMatchingWithRetry(orderId) {
+  await expireStaleRoutes();
+
   for (let attempt = 1; attempt <= MAX_MATCHING_ATTEMPTS; attempt++) {
     let order = await getOrder(orderId);
     if (!order || order.status !== 'matching') return;
@@ -253,6 +258,15 @@ async function runMatchingWithRetry(orderId) {
   }
 
   await tryStep4(orderId);
+}
+
+async function expireStaleRoutes() {
+  await db.query(`
+    UPDATE driver_routes
+    SET status = 'completed'
+    WHERE status = 'active'
+    AND departure_time < NOW() - INTERVAL '2 hours'
+  `);
 }
 
 function runMatching(orderId) {
@@ -326,8 +340,8 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
 
   const expiresAt = new Date(Date.now() + RETURN_LOAD_OFFER_TIMEOUT_MS);
   await db.query(
-    `INSERT INTO job_offers (order_id, driver_id, status, expires_at)
-     VALUES ($1, $2, 'pending', $3)`,
+    `INSERT INTO job_offers (order_id, driver_id, status, expires_at, matched_via)
+     VALUES ($1, $2, 'pending', $3, NULL)`,
     [best.id, driverId, expiresAt]
   );
 

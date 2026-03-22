@@ -15,7 +15,7 @@ import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
-import { getJson, patchJson } from '../../apiClient';
+import { getJson, patchJson, deleteJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
@@ -41,6 +41,33 @@ function tierLabel(tier) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+/** First segment of address for compact "city" line. */
+function routeCityLine(addr) {
+  if (!addr) return '—';
+  const s = String(addr).split(',')[0].trim();
+  return s || addr;
+}
+
+function formatRouteDeparture(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const isToday = d.toDateString() === now.toDateString();
+  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+  const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (isToday) return `Today ${timeStr}`;
+  if (isTomorrow) return `Tomorrow ${timeStr}`;
+  return d.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 const STATUS_ERR = 'Could not update status. Check connection.';
 
 const DriverHome = ({ navigation }) => {
@@ -49,6 +76,9 @@ const DriverHome = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [myRoutes, setMyRoutes] = useState([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routeMatchBanner, setRouteMatchBanner] = useState(null);
 
   const locationIntervalRef = useRef(null);
 
@@ -134,15 +164,53 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  const loadMyRoutes = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setMyRoutes([]);
+      return;
+    }
+    setRoutesLoading(true);
+    try {
+      const data = await getJson('/api/driver-routes/my', { token: auth.token });
+      setMyRoutes(Array.isArray(data.routes) ? data.routes : []);
+    } catch {
+      setMyRoutes([]);
+    } finally {
+      setRoutesLoading(false);
+    }
+  }, []);
+
+  const loadRouteMatchBanner = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setRouteMatchBanner(null);
+      return;
+    }
+    try {
+      const data = await getJson('/api/orders/pending-offer', { token: auth.token });
+      const o = data?.offer;
+      if (o && o.matched_via === 'route' && o.dropoff_address) {
+        setRouteMatchBanner({ destination: o.dropoff_address });
+      } else {
+        setRouteMatchBanner(null);
+      }
+    } catch {
+      setRouteMatchBanner(null);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
+      loadMyRoutes();
+      loadRouteMatchBanner();
       syncOnlineStatusFromServer();
       const auth = getAuth();
       if (auth?.token) {
         registerForPushNotificationsAsync().catch(() => {});
       }
-    }, [loadDashboard, syncOnlineStatusFromServer])
+    }, [loadDashboard, loadMyRoutes, loadRouteMatchBanner, syncOnlineStatusFromServer])
   );
 
   useEffect(() => {
@@ -202,6 +270,30 @@ const DriverHome = ({ navigation }) => {
     } finally {
       setStatusBusy(false);
     }
+  };
+
+  const handleCancelPostedRoute = (route) => {
+    Alert.alert(
+      'Cancel this route?',
+      'You will no longer receive parcel offers for this trip.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, cancel route',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const auth = getAuth();
+              if (!auth?.token) return;
+              await deleteJson(`/api/driver-routes/${route.id}`, { token: auth.token });
+              setMyRoutes((prev) => prev.filter((r) => Number(r.id) !== Number(route.id)));
+            } catch (e) {
+              Alert.alert('Could not cancel', e.message || 'Try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -267,6 +359,71 @@ const DriverHome = ({ navigation }) => {
                 ? 'You are live — waiting for jobs'
                 : 'Go online to start earning'}
           </Text>
+        </View>
+
+        {routeMatchBanner ? (
+          <TouchableOpacity
+            style={styles.routeMatchBanner}
+            activeOpacity={0.88}
+            onPress={() => navigation.navigate('JobOffer')}
+          >
+            <Ionicons name="navigate-circle" size={22} color={colors.primary} style={{ marginRight: 10 }} />
+            <Text style={styles.routeMatchBannerText}>
+              A parcel matches your route to{' '}
+              <Text style={styles.routeMatchBannerBold}>
+                {routeMatchBanner.destination.length > 48
+                  ? `${routeMatchBanner.destination.slice(0, 45)}…`
+                  : routeMatchBanner.destination}
+              </Text>
+              ! Check job offers.
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+
+        <View style={styles.myRoutesSection}>
+          <Text style={styles.myRoutesTitle}>My Posted Routes</Text>
+          {routesLoading ? (
+            <ActivityIndicator style={{ marginVertical: 12 }} color={colors.primary} />
+          ) : myRoutes.length === 0 ? (
+            <View style={styles.myRoutesEmpty}>
+              <Text style={styles.myRoutesEmptyTitle}>No active routes posted</Text>
+              <Text style={styles.myRoutesEmptySub}>
+                Post a route to earn on your upcoming trips
+              </Text>
+              <TouchableOpacity
+                style={styles.myRoutesEmptyBtn}
+                onPress={() => navigation.navigate('PostRoute')}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.myRoutesEmptyBtnText}>Post a Route</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.myRoutesList}>
+              {myRoutes.map((r) => (
+                <View key={String(r.id)} style={styles.routeCard}>
+                  <View style={styles.routeCardBody}>
+                    <Text style={styles.routeCardLine} numberOfLines={2}>
+                      {routeCityLine(r.from_address)} → {routeCityLine(r.to_address)}
+                    </Text>
+                    <Text style={styles.routeCardTime}>{formatRouteDeparture(r.departure_time)}</Text>
+                    <View style={styles.routeCardBadge}>
+                      <Text style={styles.routeCardBadgeText}>Max {r.max_parcels ?? 1} parcels</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.routeCardCancel}
+                    onPress={() => handleCancelPostedRoute(r)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Cancel route"
+                  >
+                    <Ionicons name="close-circle" size={28} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.earningsCard}>
@@ -477,6 +634,111 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     lineHeight: 24,
+  },
+  routeMatchBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: '#E8F4FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  routeMatchBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  routeMatchBannerBold: {
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  myRoutesSection: {
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  myRoutesTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  myRoutesEmpty: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    ...shadows.card,
+  },
+  myRoutesEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  myRoutesEmptySub: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+    lineHeight: 20,
+  },
+  myRoutesEmptyBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: radius.md,
+  },
+  myRoutesEmptyBtnText: {
+    color: colors.textWhite,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  myRoutesList: {},
+  routeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  routeCardBody: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  routeCardLine: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  routeCardTime: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  routeCardBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  routeCardBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  routeCardCancel: {
+    paddingTop: 2,
   },
   earningsCard: {
     backgroundColor: colors.surface,

@@ -303,7 +303,9 @@ async function calculatePrice(req, res) {
          JOIN driver_profiles dp ON dp.user_id = dr.driver_id AND dp.verification_status = 'approved'
          LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
          JOIN users u ON u.id = dr.driver_id AND u.is_active = true
-         WHERE dr.status = 'active' AND dr.departure_time <= $1
+         WHERE dr.status = 'active'
+           AND dr.departure_time >= NOW()
+           AND dr.departure_time <= $1
            AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
         [threeHoursFromNow, MIN_DRIVER_RATING_FOR_MATCHING]
       );
@@ -578,7 +580,7 @@ async function getPendingOffer(req, res) {
     }
     const driverId = req.user.id;
     const r = await db.query(
-      `SELECT jo.expires_at,
+      `SELECT jo.expires_at, jo.matched_via,
               o.id AS order_id, o.pickup_address, o.dropoff_address, o.pickup_lat, o.pickup_lng,
               o.dropoff_lat, o.dropoff_lng, o.parcel_type, o.parcel_size, o.special_handling,
               o.driver_earnings, o.delivery_tier, o.status
@@ -619,6 +621,7 @@ async function getPendingOffer(req, res) {
       time_estimate: `${timeEstimateMinutes} min`,
       special_handling: row.special_handling || null,
       offer_expires_at: offerExpiresIso,
+      matched_via: row.matched_via || null,
     };
 
     return res.json({ offer });

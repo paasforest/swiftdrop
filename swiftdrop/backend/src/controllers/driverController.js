@@ -160,6 +160,10 @@ async function createDriverRoute(req, res) {
     if (dep.getTime() <= Date.now()) {
       return res.status(400).json({ error: 'Departure time must be in the future' });
     }
+    const minFuture = Date.now() + 30 * 60 * 1000;
+    if (dep.getTime() < minFuture) {
+      return res.status(400).json({ error: 'Departure time must be at least 30 minutes from now' });
+    }
 
     const driverId = req.user.id;
     const result = await db.query(
@@ -189,9 +193,77 @@ async function createDriverRoute(req, res) {
   }
 }
 
+/**
+ * GET /api/driver-routes/my — active routes for this driver (departure ascending).
+ */
+async function listMyDriverRoutes(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const driverId = req.user.id;
+    const r = await db.query(
+      `SELECT id, from_address, to_address, from_lat, from_lng, to_lat, to_lng,
+              departure_time, max_parcels, boot_space, status, created_at
+       FROM driver_routes
+       WHERE driver_id = $1 AND status = 'active'
+       ORDER BY departure_time ASC`,
+      [driverId]
+    );
+    return res.json({ routes: r.rows });
+  } catch (err) {
+    console.error('listMyDriverRoutes:', err);
+    return res.status(500).json({ error: 'Failed to list routes' });
+  }
+}
+
+/**
+ * DELETE /api/driver-routes/:id — cancel a route (future departure only).
+ */
+async function cancelDriverRoute(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const routeId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(routeId)) {
+      return res.status(400).json({ error: 'Invalid route id' });
+    }
+    const driverId = req.user.id;
+    const r = await db.query(
+      `SELECT id, driver_id, departure_time, status FROM driver_routes WHERE id = $1`,
+      [routeId]
+    );
+    if (r.rows.length === 0) {
+      return res.status(404).json({ error: 'Route not found' });
+    }
+    const row = r.rows[0];
+    if (Number(row.driver_id) !== driverId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (String(row.status) !== 'active') {
+      return res.status(400).json({ error: 'Route is not active' });
+    }
+    const dep = new Date(row.departure_time);
+    if (dep.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'Cannot cancel a route that has already departed' });
+    }
+    await db.query(
+      `UPDATE driver_routes SET status = 'cancelled' WHERE id = $1 AND driver_id = $2`,
+      [routeId, driverId]
+    );
+    return res.json({ message: 'Route cancelled' });
+  } catch (err) {
+    console.error('cancelDriverRoute:', err);
+    return res.status(500).json({ error: 'Failed to cancel route' });
+  }
+}
+
 module.exports = {
   getStatus,
   patchStatus,
   patchLocation,
   createDriverRoute,
+  listMyDriverRoutes,
+  cancelDriverRoute,
 };
