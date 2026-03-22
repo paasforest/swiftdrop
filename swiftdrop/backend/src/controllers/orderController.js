@@ -7,6 +7,9 @@ const { sendPushNotification } = require('../services/notificationService');
 const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 
+// Align with matchingService: drivers below this average rating are excluded (NULL = allowed).
+const MIN_DRIVER_RATING_FOR_MATCHING = 3.0;
+
 // Pricing model (April 2026 fuel-cost basis)
 const FUEL_COST_PER_KM = 1.88; // given (8L/100km, petrol 95 = R23.50/L)
 
@@ -173,13 +176,31 @@ async function createOrder(req, res) {
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
+
+      if (payment_method === 'wallet') {
+        const balRes = await client.query(
+          `SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE`,
+          [customerId]
+        );
+        const row = balRes.rows[0];
+        if (!row) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'User not found' });
+        }
+        const balance = parseFloat(row.wallet_balance) || 0;
+        if (balance < totalPrice) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Insufficient wallet balance' });
+        }
+      }
+
       const orderRes = await client.query(
         `INSERT INTO orders (
           order_number, customer_id, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type, parcel_size, parcel_value,
           special_handling, delivery_tier, status, base_price, insurance_fee, total_price,
           commission_amount, driver_earnings, pickup_otp, delivery_otp
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending',$14,$15,$16,$17,$18,$19,$20)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20)
         RETURNING *`,
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
@@ -196,29 +217,20 @@ async function createOrder(req, res) {
         [order.id, totalPrice, payment_method]
       );
 
-      await client.query('COMMIT');
-
       if (payment_method === 'wallet') {
-        const balRes = await db.query(`SELECT wallet_balance FROM users WHERE id = $1`, [customerId]);
-        const balance = parseFloat(balRes.rows[0].wallet_balance) || 0;
-        if (balance < totalPrice) {
-          return res.status(400).json({ error: 'Insufficient wallet balance' });
-        }
-        await db.query(
-          `UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2`,
+        await client.query(
+          `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
           [totalPrice, customerId]
         );
-        await db.query(
+        await client.query(
           `INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
            VALUES ($1, 'debit', $2, $3, 'Order payment')`,
           [customerId, totalPrice, orderNumber]
         );
-        await db.query(`UPDATE orders SET status = 'matching', updated_at = NOW() WHERE id = $1`, [order.id]);
       }
 
-      // Start driver matching regardless of payment method.
-      // This ensures tracking works the same way in production-like testing.
-      await db.query(`UPDATE orders SET status = 'matching', updated_at = NOW() WHERE id = $1`, [order.id]);
+      await client.query('COMMIT');
+
       runMatching(order.id);
 
       const out = {
@@ -284,8 +296,8 @@ async function calculatePrice(req, res) {
          LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
          JOIN users u ON u.id = dr.driver_id AND u.is_active = true
          WHERE dr.status = 'active' AND dr.departure_time <= $1
-           AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)`,
-        [threeHoursFromNow]
+           AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
+        [threeHoursFromNow, MIN_DRIVER_RATING_FOR_MATCHING]
       );
 
       const rows = routesRes.rows || [];
@@ -312,12 +324,12 @@ async function calculatePrice(req, res) {
          LEFT JOIN driver_tiers dt ON dt.driver_id = dl.driver_id
          JOIN users u ON u.id = dl.driver_id AND u.is_active = true
          WHERE dl.is_online = true AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
-           AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)
+           AND (dt.current_rating IS NULL OR dt.current_rating >= $2)
            AND NOT EXISTS (
              SELECT 1 FROM orders o
                WHERE o.driver_id = dl.driver_id AND o.status = ANY($1)
            )`,
-        [activeOrderStatuses]
+        [activeOrderStatuses, MIN_DRIVER_RATING_FOR_MATCHING]
       );
 
       const rows = driversRes.rows || [];
@@ -331,8 +343,8 @@ async function calculatePrice(req, res) {
     // with your expected pricing-model response, default to `true`.
     await Promise.all([
       checkStandardAvailability().catch(() => false),
-      checkExpressAvailability(10).catch(() => false),
-      checkExpressAvailability(30).catch(() => false),
+      checkExpressAvailability(25).catch(() => false),
+      checkExpressAvailability(60).catch(() => false),
     ]);
 
     function roundToInt(n) {

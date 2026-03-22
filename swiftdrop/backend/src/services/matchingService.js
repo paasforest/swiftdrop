@@ -4,9 +4,12 @@ const { sendPushNotification } = require('./notificationService');
 
 const OFFER_TIMEOUT_MS = 15000;
 const ROUTE_RADIUS_KM = 15;
-const NEARBY_RADIUS_KM = 10;
-const INTERCITY_RADIUS_KM = 30;
+/** Wider radii — 10/30km was too tight for sparse or misaligned GPS vs pickup. */
+const NEARBY_RADIUS_KM = 25;
+const INTERCITY_RADIUS_KM = 60;
 const MAX_NEARBY_DRIVERS = 5;
+/** New / low-volume drivers: allow 3.0+ (still exclude very poor if rated). */
+const MIN_DRIVER_RATING = 3.0;
 const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 function zoneForDistance(distanceKm) {
@@ -38,8 +41,8 @@ async function findRouteRiders(order) {
      LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
      JOIN users u ON u.id = dr.driver_id AND u.is_active = true
      WHERE dr.status = 'active' AND dr.departure_time <= $1
-       AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)`,
-    [threeHoursFromNow]
+       AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
+    [threeHoursFromNow, MIN_DRIVER_RATING]
   );
 
   const matching = routes.rows.filter((r) => {
@@ -62,11 +65,12 @@ async function findNearbyDrivers(order, radiusKm) {
      LEFT JOIN driver_tiers dt ON dt.driver_id = dl.driver_id
      JOIN users u ON u.id = dl.driver_id AND u.is_active = true
      WHERE dl.is_online = true AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
-       AND (dt.current_rating IS NULL OR dt.current_rating >= 4.0)
+       AND (dt.current_rating IS NULL OR dt.current_rating >= $1)
        AND NOT EXISTS (
          SELECT 1 FROM orders o WHERE o.driver_id = dl.driver_id
            AND o.status IN ('matching','accepted','pickup_en_route','pickup_arrived','collected','delivery_en_route','delivery_arrived')
-       )`
+       )`,
+    [MIN_DRIVER_RATING]
   );
 
   const withDist = drivers.rows

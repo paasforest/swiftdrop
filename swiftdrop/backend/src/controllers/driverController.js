@@ -84,6 +84,7 @@ async function patchLocation(req, res) {
        ON CONFLICT (driver_id) DO UPDATE SET
          lat = EXCLUDED.lat,
          lng = EXCLUDED.lng,
+         is_online = TRUE,
          updated_at = NOW()`,
       [driverId, latN, lngN]
     );
