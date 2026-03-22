@@ -201,7 +201,7 @@ const Payment = ({ navigation, route }) => {
   const handlePay = async () => {
     try {
       if (!auth?.token) {
-        navigation.navigate('Login');
+        navigation.navigate('Welcome');
         return;
       }
 

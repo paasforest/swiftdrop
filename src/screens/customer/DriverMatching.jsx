@@ -264,7 +264,7 @@ const DriverMatching = ({ navigation, route }) => {
     }
     const auth = getAuth();
     if (!auth?.token) {
-      navigation.navigate('Login');
+      navigation.navigate('Welcome');
       return;
     }
     setCancelling(true);
@@ -319,7 +319,7 @@ const DriverMatching = ({ navigation, route }) => {
     try {
       const auth = getAuth();
       if (!auth?.token) {
-        navigation.navigate('Login');
+        navigation.navigate('Welcome');
         return;
       }
       await postJson(`/api/orders/${orderId}/retry-matching`, {}, { token: auth.token });

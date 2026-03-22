@@ -99,7 +99,7 @@ const DriverOTPScreen = ({ navigation, route }) => {
         <AppButton
           label="Confirm OTP"
           onPress={handleVerify}
-          variant="primary"
+          variant="accent"
           loading={isVerifying}
           disabled={isVerifying || timeRemaining <= 0}
         />
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   infoBox: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.accentLight,
     borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: 40,
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   },
   infoText: {
     ...typography.body,
-    color: colors.primary,
+    color: colors.accent,
     textAlign: 'center',
     fontWeight: '500',
   },

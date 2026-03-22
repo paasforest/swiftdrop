@@ -325,7 +325,7 @@ const TrackingWithMap = ({ navigation, route }) => {
     if (!orderId) return;
     const auth = getAuth();
     if (!auth?.token) {
-      navigation.navigate('Login');
+      navigation.navigate('Welcome');
       return;
     }
 
@@ -349,7 +349,7 @@ const TrackingWithMap = ({ navigation, route }) => {
     if (!orderId) return;
     const auth = getAuth();
     if (!auth?.token) {
-      navigation.navigate('Login');
+      navigation.navigate('Welcome');
       return;
     }
 

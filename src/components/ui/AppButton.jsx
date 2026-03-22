@@ -23,6 +23,7 @@ export default function AppButton({
     variant === 'primary' && styles.primary,
     variant === 'accent' && styles.accent,
     variant === 'outline' && styles.outline,
+    variant === 'outlineAccent' && styles.outlineAccent,
     variant === 'danger' && styles.danger,
     isDisabled && styles.disabled,
     style,
@@ -31,6 +32,7 @@ export default function AppButton({
   const labelStyle = [
     styles.label,
     variant === 'outline' && styles.labelOutline,
+    variant === 'outlineAccent' && styles.labelOutlineAccent,
     textStyle,
   ];
 
@@ -44,7 +46,11 @@ export default function AppButton({
       {loading ? (
         <ActivityIndicator
           color={
-            variant === 'outline' ? colors.primary : colors.textWhite
+            variant === 'outline'
+              ? colors.primary
+              : variant === 'outlineAccent'
+                ? colors.accent
+                : colors.textWhite
           }
         />
       ) : (
@@ -73,6 +79,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
   },
+  outlineAccent: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
   danger: {
     backgroundColor: colors.danger,
   },
@@ -86,5 +97,8 @@ const styles = StyleSheet.create({
   },
   labelOutline: {
     color: colors.primary,
+  },
+  labelOutlineAccent: {
+    color: colors.accent,
   },
 });

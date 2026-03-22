@@ -1,19 +1,23 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
-  TextInput,
+  Text,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
   Dimensions,
   ScrollView,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppText, AppButton } from '../../components/ui';
+import { AppText, AppButton, AppInput } from '../../components/ui';
+import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
 
 const { width, height } = Dimensions.get('window');
 
@@ -23,46 +27,66 @@ function cleanLoginInput(value) {
     .trim();
 }
 
+function normalizePhoneForApi(phoneInput) {
+  let v = String(phoneInput ?? '').trim();
+  v = v.replace(/\s+/g, '');
+  if (v.startsWith('+')) v = v.slice(1);
+  if (v.startsWith('0')) v = `27${v.slice(1)}`;
+  if (v.startsWith('27')) return `+${v}`;
+  if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
+  return '';
+}
+
+function passwordStrengthLabel(pwd) {
+  if (!pwd) return { level: 0, label: '', color: colors.border };
+  let score = 0;
+  if (pwd.length >= 8) score += 1;
+  if (pwd.length >= 12) score += 1;
+  if (/[A-Z]/.test(pwd)) score += 1;
+  if (/[a-z]/.test(pwd)) score += 1;
+  if (/[0-9]/.test(pwd)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+  if (score <= 2) return { level: 1, label: 'Weak', color: colors.danger };
+  if (score <= 4) return { level: 2, label: 'Medium', color: colors.warning };
+  return { level: 3, label: 'Strong', color: colors.success };
+}
+
 const Login = ({ navigation }) => {
-  const [activeTab, setActiveTab] = useState('login');
+  const [activeTab, setActiveTab] = useState('signin');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [signInPhone, setSignInPhone] = useState('');
+  const [signInPassword, setSignInPassword] = useState('');
 
   const [registerName, setRegisterName] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
   const [registerPhone, setRegisterPhone] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [errorMessage, setErrorMessage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const normalizePhoneForApi = (phoneInput) => {
-    let v = String(phoneInput ?? '').trim();
-    v = v.replace(/\s+/g, '');
-    if (v.startsWith('+')) v = v.slice(1);
-    if (v.startsWith('0')) v = `27${v.slice(1)}`;
-    if (v.startsWith('27')) return `+${v}`;
-    if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
-    return '';
-  };
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotPhone, setForgotPhone] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+
+  const strength = useMemo(() => passwordStrengthLabel(registerPassword), [registerPassword]);
 
   const handleLogin = async () => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const email = cleanLoginInput(loginEmail).toLowerCase();
-      const password = cleanLoginInput(loginPassword);
-      if (!email || !password) {
-        setErrorMessage('Email and password are required.');
+      const phone = normalizePhoneForApi(signInPhone);
+      const password = cleanLoginInput(signInPassword);
+      if (!phone || !password) {
+        setErrorMessage('Phone number and password are required.');
         return;
       }
 
       const data = await postJson('/api/auth/login', {
-        email,
+        phone,
         password,
       });
 
@@ -80,12 +104,32 @@ const Login = ({ navigation }) => {
     }
   };
 
+  const handleForgotSubmit = async () => {
+    const phone = normalizePhoneForApi(forgotPhone);
+    if (!phone) {
+      setErrorMessage('Enter a valid South African phone number.');
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      await postJson('/api/auth/forgot-password', { phone });
+      setForgotModalVisible(false);
+      setForgotPhone('');
+      setErrorMessage(null);
+      alert('OTP sent to your phone');
+    } catch (e) {
+      alert(e.message || 'Request failed');
+    } finally {
+      setForgotBusy(false);
+    }
+  };
+
   const handleRegister = async () => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      if (!registerName || !registerEmail || !registerPassword || !confirmPassword) {
-        setErrorMessage('Please fill in all registration fields.');
+      if (!registerName || !registerPhone || !registerPassword || !confirmPassword) {
+        setErrorMessage('Please fill in all required fields.');
         return;
       }
       if (registerPassword.length < 8) {
@@ -103,12 +147,16 @@ const Login = ({ navigation }) => {
         return;
       }
 
-      const data = await postJson('/api/auth/register-customer', {
+      const body = {
         full_name: registerName,
-        email: registerEmail.trim(),
         phone,
         password: registerPassword,
-      });
+      };
+      if (registerEmail.trim()) {
+        body.email = registerEmail.trim();
+      }
+
+      const data = await postJson('/api/auth/register-customer', body);
 
       if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
         setAuth({
@@ -128,30 +176,42 @@ const Login = ({ navigation }) => {
     }
   };
 
-  const handleGoogleSignIn = () => {};
-
-  const handleForgotPassword = () => {};
+  const phonePrefix = (
+    <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 15 }}>+27</Text>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Welcome')}
+          hitSlop={12}
+          accessibilityLabel="Back to welcome"
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <View style={styles.logoContainer}>
-          <AppText variant="h1" color="primary" style={styles.logo}>
+        <View style={styles.logoRow}>
+          <View style={styles.logoMark}>
+            <ParcelLogoIcon size={24} color={colors.primary} />
+          </View>
+          <AppText variant="h2" color="primary" style={styles.logoText}>
             SwiftDrop
           </AppText>
         </View>
 
         <View style={styles.tabContainer}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'login' && styles.activeTab]}
-            onPress={() => setActiveTab('login')}
+            style={[styles.tab, activeTab === 'signin' && styles.activeTab]}
+            onPress={() => setActiveTab('signin')}
           >
             <AppText
               variant="h4"
-              color={activeTab === 'login' ? 'primary' : 'textSecondary'}
-              style={{ fontWeight: activeTab === 'login' ? '600' : '500' }}
+              color={activeTab === 'signin' ? 'primary' : 'textSecondary'}
+              style={{ fontWeight: activeTab === 'signin' ? '600' : '500' }}
             >
-              Login
+              Sign in
             </AppText>
           </TouchableOpacity>
           <TouchableOpacity
@@ -163,44 +223,46 @@ const Login = ({ navigation }) => {
               color={activeTab === 'register' ? 'primary' : 'textSecondary'}
               style={{ fontWeight: activeTab === 'register' ? '600' : '500' }}
             >
-              Register
+              Create account
             </AppText>
           </TouchableOpacity>
         </View>
 
-        {activeTab === 'login' && (
+        {activeTab === 'signin' && (
           <View style={styles.formContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Email or phone"
-              placeholderTextColor={colors.textLight}
-              value={loginEmail}
-              onChangeText={setLoginEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
+            <AppInput
+              label="Phone number"
+              value={signInPhone}
+              onChangeText={setSignInPhone}
+              placeholder="82 123 4567"
+              keyboardType="phone-pad"
+              prefix={phonePrefix}
             />
 
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={styles.passwordInputInner}
-                placeholder="Password"
-                placeholderTextColor={colors.textLight}
-                value={loginPassword}
-                onChangeText={setLoginPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
+            <AppInput
+              label="Password"
+              value={signInPassword}
+              onChangeText={setSignInPassword}
+              placeholder="Password"
+              secureTextEntry={!showPassword}
+              rightAccessory={
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              }
+            />
 
-            <TouchableOpacity onPress={handleForgotPassword}>
+            <TouchableOpacity
+              style={styles.forgotWrap}
+              onPress={() => {
+                setForgotPhone('');
+                setForgotModalVisible(true);
+              }}
+            >
               <AppText variant="small" color="primary" style={styles.forgot}>
                 Forgot password?
               </AppText>
@@ -213,117 +275,110 @@ const Login = ({ navigation }) => {
             ) : null}
 
             <AppButton
-              label={isSubmitting ? 'Logging in…' : 'Login'}
+              label={isSubmitting ? 'Signing in…' : 'Sign in'}
               variant="primary"
               onPress={handleLogin}
               loading={isSubmitting}
               disabled={isSubmitting}
             />
 
-            <AppButton
-              label="Register as driver"
-              variant="outline"
-              onPress={() => navigation.navigate('DriverRegister')}
-              disabled={isSubmitting}
-              style={{ marginTop: spacing.sm }}
-            />
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+            </View>
 
             <TouchableOpacity
               onPress={() => setActiveTab('register')}
               disabled={isSubmitting}
               style={styles.linkWrap}
             >
-              <AppText variant="small" color="primary" style={styles.link}>
-                Register as customer
-              </AppText>
-            </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <AppText variant="small" color="textSecondary" style={styles.dividerText}>
-                or
-              </AppText>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn} activeOpacity={0.85}>
-              <Ionicons name="logo-google" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-              <AppText variant="h4" style={{ color: colors.textSecondary, fontWeight: '500' }}>
-                Sign in with Google
-              </AppText>
+              <Text style={styles.footerPrompt}>
+                New to SwiftDrop?{' '}
+                <Text style={styles.footerLink}>Create account</Text>
+              </Text>
             </TouchableOpacity>
           </View>
         )}
 
         {activeTab === 'register' && (
           <View style={styles.formContainer}>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Full name"
-              placeholderTextColor={colors.textLight}
+            <AppInput
+              label="Full name"
               value={registerName}
               onChangeText={setRegisterName}
+              placeholder="Your name"
             />
 
-            <TextInput
-              style={styles.textInput}
-              placeholder="Email"
-              placeholderTextColor={colors.textLight}
+            <AppInput
+              label="Phone number"
+              value={registerPhone}
+              onChangeText={setRegisterPhone}
+              placeholder="82 123 4567"
+              keyboardType="phone-pad"
+              prefix={phonePrefix}
+            />
+
+            <AppInput
+              label="Email (optional)"
               value={registerEmail}
               onChangeText={setRegisterEmail}
+              placeholder="you@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
             />
 
-            <View style={styles.phoneContainer}>
-              <AppText variant="body" color="textSecondary" style={styles.phonePrefix}>
-                +27
-              </AppText>
-              <TextInput
-                style={styles.phoneInputInner}
-                placeholder="Phone number"
-                placeholderTextColor={colors.textLight}
-                value={registerPhone}
-                onChangeText={setRegisterPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={styles.passwordInputInner}
-                placeholder="Password"
-                placeholderTextColor={colors.textLight}
+            <View>
+              <AppInput
+                label="Password"
                 value={registerPassword}
                 onChangeText={setRegisterPassword}
+                placeholder="Password"
                 secureTextEntry={!showPassword}
+                rightAccessory={
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={22}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                }
               />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
+              {registerPassword ? (
+                <View style={styles.strengthRow}>
+                  <View style={styles.strengthTrack}>
+                    <View
+                      style={[
+                        styles.strengthFill,
+                        {
+                          width: `${(strength.level / 3) * 100}%`,
+                          backgroundColor: strength.color,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={[styles.strengthLabel, { color: strength.color }]}>
+                    {strength.label}
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
-            <View style={styles.passwordRow}>
-              <TextInput
-                style={styles.passwordInputInner}
-                placeholder="Confirm password"
-                placeholderTextColor={colors.textLight}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showConfirmPassword}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
-                <Ionicons
-                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={22}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            </View>
+            <AppInput
+              label="Confirm password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm password"
+              secureTextEntry={!showConfirmPassword}
+              rightAccessory={
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              }
+            />
 
             {errorMessage ? (
               <AppText variant="small" color="danger" style={styles.errorText}>
@@ -332,15 +387,69 @@ const Login = ({ navigation }) => {
             ) : null}
 
             <AppButton
-              label={isSubmitting ? 'Registering…' : 'Create account'}
+              label={isSubmitting ? 'Creating account…' : 'Create account'}
               variant="primary"
               onPress={handleRegister}
               loading={isSubmitting}
               disabled={isSubmitting}
             />
+
+            <TouchableOpacity
+              onPress={() => setActiveTab('signin')}
+              disabled={isSubmitting}
+              style={styles.linkWrap}
+            >
+              <Text style={styles.footerPrompt}>
+                Already have an account?{' '}
+                <Text style={styles.footerLink}>Sign in</Text>
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </ScrollView>
+
+      <Modal visible={forgotModalVisible} transparent animationType="fade">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.modalCard}>
+            <AppText variant="h4" color="textPrimary">
+              Reset password
+            </AppText>
+            <AppText variant="small" color="textSecondary" style={{ marginBottom: spacing.md }}>
+              Enter your phone number. We&apos;ll send an OTP to reset your password.
+            </AppText>
+            <AppInput
+              label="Phone number"
+              value={forgotPhone}
+              onChangeText={setForgotPhone}
+              placeholder="82 123 4567"
+              keyboardType="phone-pad"
+              prefix={phonePrefix}
+            />
+            <View style={styles.modalActions}>
+              <AppButton
+                label="Cancel"
+                variant="outline"
+                fullWidth={false}
+                onPress={() => setForgotModalVisible(false)}
+                disabled={forgotBusy}
+                style={styles.modalBtn}
+              />
+              <AppButton
+                label={forgotBusy ? 'Sending…' : 'Send OTP'}
+                variant="primary"
+                fullWidth={false}
+                onPress={handleForgotSubmit}
+                loading={forgotBusy}
+                disabled={forgotBusy}
+                style={styles.modalBtn}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -352,13 +461,29 @@ const styles = StyleSheet.create({
     width,
     minHeight: height,
   },
-  logoContainer: {
-    alignItems: 'center',
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+  topBar: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: 0,
   },
-  logo: {
-    fontSize: 32,
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  logoMark: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoText: {
+    fontSize: 24,
   },
   tabContainer: {
     flexDirection: 'row',
@@ -382,94 +507,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.xxl,
   },
-  textInput: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    fontSize: 15,
-    color: colors.textPrimary,
+  forgotWrap: {
+    alignSelf: 'flex-end',
     marginBottom: spacing.md,
-  },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    marginBottom: spacing.md,
-    paddingRight: spacing.sm,
-  },
-  passwordInputInner: {
-    flex: 1,
-    padding: spacing.md,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  eyeBtn: {
-    padding: spacing.sm,
-  },
-  phoneContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginBottom: spacing.md,
-  },
-  phonePrefix: {
-    paddingHorizontal: spacing.md,
-    borderRightWidth: 1,
-    borderRightColor: colors.border,
-  },
-  phoneInputInner: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    fontSize: 15,
-    color: colors.textPrimary,
+    marginTop: -spacing.sm,
   },
   forgot: {
-    textAlign: 'right',
-    marginBottom: spacing.md,
+    fontWeight: '600',
   },
   errorText: {
     marginBottom: spacing.md,
     textAlign: 'center',
   },
-  linkWrap: {
-    alignItems: 'center',
-    marginTop: spacing.sm,
-  },
-  link: {
-    textDecorationLine: 'underline',
-    fontWeight: '600',
-  },
   divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginVertical: spacing.lg,
   },
   dividerLine: {
-    flex: 1,
     height: 1,
     backgroundColor: colors.border,
   },
-  dividerText: {
-    marginHorizontal: spacing.md,
-  },
-  googleButton: {
-    flexDirection: 'row',
+  linkWrap: {
     alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  footerPrompt: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  footerLink: {
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  strengthRow: {
+    marginTop: -spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  strengthTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  strengthFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+  strengthLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    marginTop: spacing.md,
+    alignItems: 'center',
   },
 });
 

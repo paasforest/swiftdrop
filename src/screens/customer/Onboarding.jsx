@@ -34,11 +34,11 @@ const Onboarding = ({ navigation }) => {
   };
 
   const skipOnboarding = () => {
-    navigation.navigate('Login');
+    navigation.navigate('Welcome');
   };
 
   const getStarted = () => {
-    navigation.navigate('Login');
+    navigation.navigate('Welcome');
   };
 
   return (

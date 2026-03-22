@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,11 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  TextInput,
+  Image,
   ActivityIndicator,
   Alert,
+  Linking,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -17,9 +19,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { postJson } from '../../apiClient';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth, setAuth } from '../../authStore';
-import { colors, spacing, radius, typography } from '../../theme/theme';
-
-const TERMS_ERROR = 'Please agree to the SwiftDrop terms to continue.';
+import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import { AppButton, AppInput } from '../../components/ui';
+import { TERMS_PRIVACY_URL } from '../../config/legal';
 
 function normalizeAssetType(type) {
   if (type && typeof type === 'string' && type.startsWith('image/')) return type;
@@ -33,47 +35,77 @@ function fileNameFromUri(uri, fallback) {
   return fallback;
 }
 
-function UnderReviewBody({ applicationPath }) {
-  const isUber = applicationPath === 'uber_bolt';
+function normalizePhoneForApi(phoneInput) {
+  let v = String(phoneInput ?? '').trim();
+  v = v.replace(/\s+/g, '');
+  if (v.startsWith('+')) v = v.slice(1);
+  if (v.startsWith('0')) v = `27${v.slice(1)}`;
+  if (v.startsWith('27')) return `+${v}`;
+  if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
+  return '';
+}
+
+function ProgressHeader({ step, title }) {
+  const pct = (step / 4) * 100;
   return (
-    <View style={styles.underReviewCard}>
-      <Text style={styles.underReviewTitle}>Under Review</Text>
-      <Text style={styles.underReviewText}>
-        {isUber
-          ? 'We are verifying your Uber/Bolt profile. Approval usually takes 2-4 hours.'
-          : 'We are reviewing your application. This usually takes 24-48 hours.'}
-      </Text>
-      <Text style={styles.underReviewSub}>
-        After approval, you can log in and start accepting deliveries.
-      </Text>
+    <View style={styles.progressWrap}>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${pct}%` }]} />
+      </View>
+      <Text style={styles.progressLabel}>{title}</Text>
     </View>
   );
 }
 
-const DriverRegister = ({ navigation }) => {
-  const [applicationPath, setApplicationPath] = useState(null); // 'uber_bolt' | 'new_driver'
+function UploadCard({ title, subtitle, uploaded, asset, onPress, emptyIcon = 'document-text-outline' }) {
+  const has = Boolean(uploaded && asset?.uri);
+  return (
+    <TouchableOpacity
+      style={[styles.uploadCard, has ? styles.uploadCardDone : styles.uploadCardEmpty]}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      {has ? (
+        <View style={styles.uploadLeftDone}>
+          <Ionicons name="checkmark" size={16} color={colors.textWhite} />
+        </View>
+      ) : (
+        <View style={styles.uploadLeftEmpty}>
+          <Ionicons name={emptyIcon} size={20} color={colors.textSecondary} />
+        </View>
+      )}
+      <View style={styles.uploadMid}>
+        <Text style={[styles.uploadTitle, has && { color: colors.success }]}>{title}</Text>
+        <Text style={[styles.uploadSub, has && { color: colors.success }]}>
+          {has ? 'Uploaded ✓' : subtitle}
+        </Text>
+      </View>
+      {has && asset?.uri ? (
+        <Image source={{ uri: asset.uri }} style={styles.uploadThumb} />
+      ) : (
+        <Ionicons name="add-circle-outline" size={26} color={colors.primary} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+export default function DriverRegister({ navigation }) {
+  const [step, setStep] = useState(1);
+  const [applicationPath, setApplicationPath] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
-  // Account details (backend requirement)
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Profile photo (required for both)
   const [profilePhoto, setProfilePhoto] = useState(null);
-
-  // PATH 1 — existing Uber/Bolt driver
   const [uberProfileScreenshot, setUberProfileScreenshot] = useState(null);
-  const [vehicleMake, setVehicleMake] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [vehicleYear, setVehicleYear] = useState('');
-  const [vehicleColor, setVehicleColor] = useState('');
-  const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehiclePhotoExisting, setVehiclePhotoExisting] = useState(null);
 
-  // PATH 2 — new driver
   const [nationalId, setNationalId] = useState(null);
   const [driversLicense, setDriversLicense] = useState(null);
   const [vehicleRegistration, setVehicleRegistration] = useState(null);
@@ -83,15 +115,23 @@ const DriverRegister = ({ navigation }) => {
   const [vehiclePhotoBack, setVehiclePhotoBack] = useState(null);
   const [vehiclePhotoSide, setVehiclePhotoSide] = useState(null);
 
+  const [vehicleMake, setVehicleMake] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // OTP & submit flow
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [successPath, setSuccessPath] = useState(null);
+  const [checkScale] = useState(() => new Animated.Value(0.3));
 
-  const [underReview, setUnderReview] = useState(false);
-  const [underReviewPath, setUnderReviewPath] = useState(null);
+  const phonePrefixEl = (
+    <Text style={{ color: colors.accent, fontWeight: '700', fontSize: 15 }}>+27</Text>
+  );
 
   const requestPickImage = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -123,93 +163,57 @@ const DriverRegister = ({ navigation }) => {
     [requestPickImage]
   );
 
-  const validateCommon = () => {
-    if (!termsAccepted) return TERMS_ERROR;
+  const validateStep1 = () => applicationPath != null;
+
+  const validateStep2 = () => {
     if (!fullName.trim()) return 'Full name is required.';
     if (!email.trim()) return 'Email is required.';
-    if (!phone.trim()) return 'Phone number is required.';
-    if (!password) return 'Password is required.';
-    if (password.length < 8) return 'Password must be at least 8 characters.';
+    if (!normalizePhoneForApi(phone)) return 'Enter a valid South African phone number.';
+    if (!password || password.length < 8) return 'Password must be at least 8 characters.';
     if (password !== confirmPassword) return 'Passwords do not match.';
-    if (!profilePhoto) return 'Profile photo is required.';
     return null;
   };
 
-  const validateUber = () => {
-    if (!uberProfileScreenshot) return 'Uber/Bolt profile screenshot is required.';
-    if (!vehiclePhotoExisting) return 'Vehicle photo is required.';
-    if (!vehicleMake.trim()) return 'Vehicle make is required.';
-    if (!vehicleModel.trim()) return 'Vehicle model is required.';
-    if (!vehicleYear.trim()) return 'Vehicle year is required.';
-    if (!vehicleColor.trim()) return 'Vehicle colour is required.';
-    if (!vehiclePlate.trim()) return 'Vehicle plate number is required.';
+  const validateStep3Uber = () =>
+    profilePhoto && uberProfileScreenshot && vehiclePhotoExisting ? null : 'Upload all required documents.';
+
+  const validateStep3New = () =>
+    profilePhoto &&
+    nationalId &&
+    driversLicense &&
+    vehicleRegistration &&
+    licenseDisc &&
+    vehiclePhotoFront &&
+    vehiclePhotoBack &&
+    vehiclePhotoSide
+      ? null
+      : 'Upload all required documents.';
+
+  const validateStep4 = () => {
+    if (!termsAccepted) return 'Please agree to the SwiftDrop terms to continue.';
+    if (!vehicleMake.trim() || !vehicleModel.trim() || !vehicleYear.trim() || !vehicleColor.trim() || !vehiclePlate.trim()) {
+      return 'Please complete all vehicle fields.';
+    }
     return null;
   };
 
-  const validateNewDriver = () => {
-    if (!nationalId) return 'National ID is required.';
-    if (!driversLicense) return "Driver's license is required.";
-    if (!vehicleRegistration) return 'Vehicle registration is required.';
-    if (!licenseDisc) return 'License disc is required.';
-    if (!vehiclePhotoFront) return 'Vehicle front photo is required.';
-    if (!vehiclePhotoBack) return 'Vehicle back photo is required.';
-    if (!vehiclePhotoSide) return 'Vehicle side photo is required.';
-    // sapsClearance optional
-    return null;
-  };
-
-  const handleSendOtpOrRegister = async () => {
-    setErrorMessage(null);
-    const commonErr = validateCommon();
-    if (commonErr) {
-      setErrorMessage(commonErr);
-      return;
-    }
-    if (applicationPath === 'uber_bolt') {
-      const uberErr = validateUber();
-      if (uberErr) {
-        setErrorMessage(uberErr);
-        return;
-      }
-    }
-    if (applicationPath === 'new_driver') {
-      const newErr = validateNewDriver();
-      if (newErr) {
-        setErrorMessage(newErr);
-        return;
-      }
-    }
-
-    setBusy(true);
-    try {
-      const data = await postJson('/api/auth/register-driver', {
-        full_name: fullName.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
-        password,
-      });
-
-      // If phone verification is skipped (testing mode), submit immediately.
-      if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
-        setAuth({
-          token: data.token,
-          refreshToken: data.refreshToken,
-          user: data.user,
-        });
-
-        await submitApplication(); // eslint-disable-line no-use-before-define
-        return;
-      }
-
-      // Otherwise, OTP is required. Submit after OTP verifies.
-      setPendingSubmit(true);
-      navigation.navigate('DriverOTPScreen', { phone: phone.trim() });
-    } catch (e) {
-      setErrorMessage(e.message || 'Driver registration failed');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const step3Ready = useMemo(() => {
+    if (!applicationPath) return false;
+    if (applicationPath === 'uber_bolt') return !validateStep3Uber();
+    return !validateStep3New();
+  }, [
+    applicationPath,
+    profilePhoto,
+    uberProfileScreenshot,
+    vehiclePhotoExisting,
+    nationalId,
+    driversLicense,
+    vehicleRegistration,
+    licenseDisc,
+    vehiclePhotoFront,
+    vehiclePhotoBack,
+    vehiclePhotoSide,
+  ]);
 
   const appendImageFile = (formData, key, asset) => {
     if (!asset) return;
@@ -220,24 +224,18 @@ const DriverRegister = ({ navigation }) => {
     });
   };
 
-  const submitApplication = async () => {
+  const submitApplication = useCallback(async () => {
     if (hasSubmitted) return;
-
     const auth = getAuth();
-    if (!auth?.token) {
-      throw new Error('Not signed in. Please verify OTP again.');
-    }
+    if (!auth?.token) throw new Error('Not signed in. Please verify OTP again.');
     if (!applicationPath) throw new Error('Missing application path.');
 
     setBusy(true);
     try {
       const formData = new FormData();
       formData.append('application_path', applicationPath);
-
-      // Common
       appendImageFile(formData, 'selfie', profilePhoto);
 
-      // PATH 1
       if (applicationPath === 'uber_bolt') {
         appendImageFile(formData, 'uber_profile_screenshot', uberProfileScreenshot);
         appendImageFile(formData, 'vehicle_photo', vehiclePhotoExisting);
@@ -245,10 +243,9 @@ const DriverRegister = ({ navigation }) => {
         formData.append('vehicle_model', vehicleModel.trim());
         formData.append('vehicle_year', vehicleYear.trim());
         formData.append('vehicle_color', vehicleColor.trim());
-        formData.append('vehicle_plate', vehiclePlate.trim());
+        formData.append('vehicle_plate', vehiclePlate.trim().toUpperCase());
       }
 
-      // PATH 2
       if (applicationPath === 'new_driver') {
         appendImageFile(formData, 'national_id', nationalId);
         appendImageFile(formData, 'drivers_license', driversLicense);
@@ -258,13 +255,17 @@ const DriverRegister = ({ navigation }) => {
         appendImageFile(formData, 'vehicle_photo_front', vehiclePhotoFront);
         appendImageFile(formData, 'vehicle_photo_back', vehiclePhotoBack);
         appendImageFile(formData, 'vehicle_photo_side', vehiclePhotoSide);
+        formData.append('vehicle_make', vehicleMake.trim());
+        formData.append('vehicle_model', vehicleModel.trim());
+        formData.append('vehicle_year', vehicleYear.trim());
+        formData.append('vehicle_color', vehicleColor.trim());
+        formData.append('vehicle_plate', vehiclePlate.trim().toUpperCase());
       }
 
       const res = await fetch(`${API_BASE_URL}/api/auth/driver/submit-application`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${auth.token}`,
-          // 'Content-Type' is set automatically for FormData
         },
         body: formData,
       });
@@ -283,213 +284,16 @@ const DriverRegister = ({ navigation }) => {
 
       setHasSubmitted(true);
       setPendingSubmit(false);
-      setUnderReview(true);
-      setUnderReviewPath(applicationPath);
+      setSuccessPath(applicationPath);
+      Animated.spring(checkScale, { toValue: 1, friction: 6, useNativeDriver: true }).start();
     } finally {
       setBusy(false);
     }
-  };
-
-  // When returning from OTP verification, submit the application.
-  useFocusEffect(
-    useCallback(() => {
-      if (!pendingSubmit || hasSubmitted) return;
-      const auth = getAuth();
-      if (auth?.token) {
-        submitApplication().catch((e) => setErrorMessage(e.message || 'Submit failed'));
-      }
-    }, [pendingSubmit, hasSubmitted]) // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  useEffect(() => {
-    // Reset internal flags when switching paths.
-    setPendingSubmit(false);
-    setHasSubmitted(false);
-    setUnderReview(false);
-    setUnderReviewPath(null);
-    setErrorMessage(null);
-  }, [applicationPath]);
-
-  const renderPathPicker = () => (
-    <View style={styles.formSection}>
-      <Text style={styles.sectionTitle}>Choose Registration Path</Text>
-
-      <TouchableOpacity
-        style={[styles.pathCard, applicationPath === 'uber_bolt' && styles.pathCardSelected]}
-        onPress={() => setApplicationPath('uber_bolt')}
-      >
-        <Text style={styles.pathTitle}>I already drive for Uber or Bolt</Text>
-        <Text style={styles.pathSub}>Upload profile screenshot + vehicle details</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.pathCard, applicationPath === 'new_driver' && styles.pathCardSelected]}
-        onPress={() => setApplicationPath('new_driver')}
-      >
-        <Text style={styles.pathTitle}>I am a new driver</Text>
-        <Text style={styles.pathSub}>Upload full documents + vehicle photos</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderAccountDetails = () => (
-    <View style={styles.formSection}>
-      <Text style={styles.sectionTitle}>Account Details</Text>
-
-      <TextInput style={styles.input} placeholder="Full Name" value={fullName} onChangeText={setFullName} />
-      <TextInput
-        style={styles.input}
-        placeholder="Email Address"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-
-      <View style={styles.row}>
-        <TextInput style={[styles.input, styles.flex1]} placeholder="Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-      </View>
-
-      <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
-      <TextInput
-        style={styles.input}
-        placeholder="Confirm Password"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-      />
-
-      <View style={styles.checkboxRow}>
-        <TouchableOpacity
-          onPress={() => setTermsAccepted((v) => !v)}
-          style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}
-        />
-        <Text style={styles.checkboxLabel}>I agree to the SwiftDrop terms</Text>
-      </View>
-    </View>
-  );
-
-  const renderProfilePhoto = () => (
-    <View style={styles.formSection}>
-      <Text style={styles.sectionTitle}>Profile Photo (Required)</Text>
-      <TouchableOpacity
-        style={styles.uploadButton}
-        onPress={() => pickSingleImage(setProfilePhoto)}
-      >
-        <Text style={styles.uploadButtonText}>
-          {profilePhoto ? 'Change Profile Photo' : 'Upload Profile Photo'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderUberPath = () => (
-    <>
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Uber/Bolt Profile Screenshot (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setUberProfileScreenshot)}>
-          <Text style={styles.uploadButtonText}>
-            {uberProfileScreenshot ? 'Change Screenshot' : 'Upload Screenshot'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Vehicle Details</Text>
-        <TextInput style={styles.input} placeholder="Make" value={vehicleMake} onChangeText={setVehicleMake} />
-        <TextInput style={styles.input} placeholder="Model" value={vehicleModel} onChangeText={setVehicleModel} />
-        <TextInput style={styles.input} placeholder="Year" value={vehicleYear} onChangeText={setVehicleYear} keyboardType="numeric" />
-        <TextInput style={styles.input} placeholder="Colour" value={vehicleColor} onChangeText={setVehicleColor} />
-        <TextInput style={styles.input} placeholder="Plate Number" value={vehiclePlate} onChangeText={setVehiclePlate} />
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Vehicle Photo (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setVehiclePhotoExisting)}>
-          <Text style={styles.uploadButtonText}>
-            {vehiclePhotoExisting ? 'Change Vehicle Photo' : 'Upload Vehicle Photo'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-
-  const renderNewDriverPath = () => (
-    <>
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>National ID (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setNationalId)}>
-          <Text style={styles.uploadButtonText}>{nationalId ? 'Change National ID' : 'Upload National ID'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Drivers License (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setDriversLicense)}>
-          <Text style={styles.uploadButtonText}>{driversLicense ? 'Change License' : 'Upload License'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Vehicle Registration (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setVehicleRegistration)}>
-          <Text style={styles.uploadButtonText}>
-            {vehicleRegistration ? 'Change Registration' : 'Upload Registration'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>License Disc (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setLicenseDisc)}>
-          <Text style={styles.uploadButtonText}>{licenseDisc ? 'Change License Disc' : 'Upload Disc'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>SAPS Clearance (Optional but Recommended)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setSapsClearance)}>
-          <Text style={styles.uploadButtonText}>{sapsClearance ? 'Change SAPS Clearance' : 'Upload SAPS Clearance'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.formSection}>
-        <Text style={styles.sectionTitle}>Vehicle Photos (Front/Back/Side) (Required)</Text>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setVehiclePhotoFront)}>
-          <Text style={styles.uploadButtonText}>{vehiclePhotoFront ? 'Change Front Photo' : 'Upload Front Photo'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setVehiclePhotoBack)}>
-          <Text style={styles.uploadButtonText}>{vehiclePhotoBack ? 'Change Back Photo' : 'Upload Back Photo'}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.uploadButton} onPress={() => pickSingleImage(setVehiclePhotoSide)}>
-          <Text style={styles.uploadButtonText}>{vehiclePhotoSide ? 'Change Side Photo' : 'Upload Side Photo'}</Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-
-  const canSubmit = useMemo(() => {
-    if (!applicationPath) return false;
-    const commonErr = validateCommon();
-    if (commonErr) return false;
-    if (applicationPath === 'uber_bolt') return !validateUber();
-    if (applicationPath === 'new_driver') return !validateNewDriver();
-    return false;
   }, [
+    hasSubmitted,
     applicationPath,
-    termsAccepted,
-    fullName,
-    email,
-    phone,
-    password,
-    confirmPassword,
     profilePhoto,
     uberProfileScreenshot,
-    vehicleMake,
-    vehicleModel,
-    vehicleYear,
-    vehicleColor,
-    vehiclePlate,
     vehiclePhotoExisting,
     nationalId,
     driversLicense,
@@ -499,19 +303,141 @@ const DriverRegister = ({ navigation }) => {
     vehiclePhotoFront,
     vehiclePhotoBack,
     vehiclePhotoSide,
+    vehicleMake,
+    vehicleModel,
+    vehicleYear,
+    vehicleColor,
+    vehiclePlate,
+    checkScale,
   ]);
 
-  if (underReview) {
+  const handleRegisterAndOtp = async () => {
+    const err = validateStep4();
+    if (err) {
+      setErrorMessage(err);
+      return;
+    }
+    setErrorMessage(null);
+    setBusy(true);
+    try {
+      const phoneNorm = normalizePhoneForApi(phone);
+      const data = await postJson('/api/auth/register-driver', {
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phoneNorm,
+        password,
+      });
+
+      if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
+        setAuth({
+          token: data.token,
+          refreshToken: data.refreshToken,
+          user: data.user,
+        });
+        await submitApplication();
+        return;
+      }
+
+      setPendingSubmit(true);
+      navigation.navigate('DriverOTPScreen', { phone: phoneNorm });
+    } catch (e) {
+      setErrorMessage(e.message || 'Driver registration failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!pendingSubmit || hasSubmitted) return;
+      const auth = getAuth();
+      if (auth?.token) {
+        submitApplication().catch((e) => {
+          setErrorMessage(e.message || 'Submit failed');
+          setPendingSubmit(false);
+        });
+      }
+    }, [pendingSubmit, hasSubmitted, submitApplication])
+  );
+
+  useEffect(() => {
+    if (applicationPath) {
+      setPendingSubmit(false);
+      setHasSubmitted(false);
+      setSuccessPath(null);
+    }
+  }, [applicationPath]);
+
+  const goNext = () => {
+    setErrorMessage(null);
+    if (step === 1) {
+      if (!validateStep1()) {
+        setErrorMessage('Choose a registration path.');
+        return;
+      }
+      setStep(2);
+      return;
+    }
+    if (step === 2) {
+      const e = validateStep2();
+      if (e) {
+        setErrorMessage(e);
+        return;
+      }
+      setStep(3);
+      return;
+    }
+    if (step === 3) {
+      if (applicationPath === 'uber_bolt') {
+        const e = validateStep3Uber();
+        if (e) {
+          setErrorMessage(e);
+          return;
+        }
+      } else {
+        const e = validateStep3New();
+        if (e) {
+          setErrorMessage(e);
+          return;
+        }
+      }
+      setStep(4);
+    }
+  };
+
+  const goBack = () => {
+    setErrorMessage(null);
+    if (step > 1) setStep((s) => s - 1);
+    else navigation.goBack();
+  };
+
+  const openTerms = () => Linking.openURL(TERMS_PRIVACY_URL).catch(() => {});
+
+  if (successPath) {
+    const isUber = successPath === 'uber_bolt';
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={{ padding: 20 }}>
-          <UnderReviewBody applicationPath={underReviewPath} />
-          <TouchableOpacity
-            style={styles.doneButton}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.doneButtonText}>Back to Login</Text>
-          </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.successScroll}>
+          <Animated.View style={[styles.successCircle, { transform: [{ scale: checkScale }] }]}>
+            <Ionicons name="checkmark" size={48} color={colors.textWhite} />
+          </Animated.View>
+          <Text style={styles.successTitle}>Application Submitted!</Text>
+          <Text style={styles.successBody}>
+            We will review your application and notify you via SMS.
+          </Text>
+          <Text style={styles.successHint}>
+            {isUber ? 'Usually within 2 hours' : 'Usually within 24-48 hours'}
+          </Text>
+          <AppButton
+            label="Back to Home"
+            variant="primary"
+            onPress={() =>
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Welcome' }],
+              })
+            }
+          />
         </ScrollView>
       </SafeAreaView>
     );
@@ -519,44 +445,334 @@ const DriverRegister = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Go back">
-            <Ionicons name="chevron-back" size={28} color={colors.primary} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Become a Driver</Text>
-          <View style={styles.placeholder} />
-        </View>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={goBack} hitSlop={12}>
+          <Ionicons name="chevron-back" size={26} color={colors.accent} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Become a Driver</Text>
+        <View style={{ width: 26 }} />
+      </View>
 
-        {renderPathPicker()}
-
-        {applicationPath ? (
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {step === 1 && (
           <>
-            {renderAccountDetails()}
-            {renderProfilePhoto()}
-            {applicationPath === 'uber_bolt' ? renderUberPath() : renderNewDriverPath()}
+            <ProgressHeader step={1} title="Step 1 of 4 — Choose your path" />
+            <TouchableOpacity
+              style={[styles.pathCard, applicationPath === 'uber_bolt' && styles.pathUberSel]}
+              onPress={() => setApplicationPath('uber_bolt')}
+              activeOpacity={0.9}
+            >
+              <View style={[styles.pathIconCircle, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name="document-text" size={22} color={colors.primary} />
+              </View>
+              <View style={styles.pathMid}>
+                <View style={styles.pathTitleRow}>
+                  <Text style={styles.pathTitle}>Uber / Bolt driver</Text>
+                  <View style={styles.badgeGreen}>
+                    <Text style={styles.badgeGreenText}>Fastest</Text>
+                  </View>
+                </View>
+                <Text style={styles.pathSub}>Approved in 2 hours</Text>
+              </View>
+              <View style={[styles.radio, applicationPath === 'uber_bolt' && styles.radioUberOn]}>
+                {applicationPath === 'uber_bolt' ? (
+                  <Ionicons name="checkmark" size={14} color={colors.textWhite} />
+                ) : null}
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.pathCard, applicationPath === 'new_driver' && styles.pathNewSel]}
+              onPress={() => setApplicationPath('new_driver')}
+              activeOpacity={0.9}
+            >
+              <View style={[styles.pathIconCircle, { backgroundColor: colors.background }]}>
+                <Ionicons name="id-card-outline" size={22} color={colors.textSecondary} />
+              </View>
+              <View style={styles.pathMid}>
+                <View style={styles.pathTitleRow}>
+                  <Text style={styles.pathTitle}>New driver</Text>
+                  <View style={styles.badgeOrange}>
+                    <Text style={styles.badgeOrangeText}>24-48 hrs</Text>
+                  </View>
+                </View>
+                <Text style={styles.pathSub}>Full document verification</Text>
+              </View>
+              <View style={[styles.radio, applicationPath === 'new_driver' && styles.radioNewOn]}>
+                {applicationPath === 'new_driver' ? (
+                  <Ionicons name="checkmark" size={14} color={colors.textWhite} />
+                ) : null}
+              </View>
+            </TouchableOpacity>
           </>
-        ) : null}
+        )}
+
+        {step === 2 && (
+          <>
+            <ProgressHeader step={2} title="Step 2 of 4 — Personal details" />
+            <AppInput
+              accent="accent"
+              label="Full name"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Your full name"
+            />
+            <AppInput
+              accent="accent"
+              label="Phone number"
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="82 123 4567"
+              keyboardType="phone-pad"
+              prefix={phonePrefixEl}
+            />
+            <AppInput
+              accent="accent"
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <AppInput
+              accent="accent"
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              secureTextEntry={!showPassword}
+              rightAccessory={
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              }
+            />
+            <AppInput
+              accent="accent"
+              label="Confirm password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm password"
+              secureTextEntry={!showConfirmPassword}
+              rightAccessory={
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              }
+            />
+          </>
+        )}
+
+        {step === 3 && applicationPath === 'uber_bolt' && (
+          <>
+            <ProgressHeader step={3} title="Step 3 of 4 — Documents" />
+            <UploadCard
+              title="Profile photo"
+              subtitle="Tap to upload"
+              uploaded={!!profilePhoto}
+              asset={profilePhoto}
+              onPress={() => pickSingleImage(setProfilePhoto)}
+              emptyIcon="person-outline"
+            />
+            <UploadCard
+              title="Uber / Bolt profile screenshot"
+              subtitle="Tap to upload"
+              uploaded={!!uberProfileScreenshot}
+              asset={uberProfileScreenshot}
+              onPress={() => pickSingleImage(setUberProfileScreenshot)}
+            />
+            <UploadCard
+              title="Vehicle photo"
+              subtitle="Tap to upload"
+              uploaded={!!vehiclePhotoExisting}
+              asset={vehiclePhotoExisting}
+              onPress={() => pickSingleImage(setVehiclePhotoExisting)}
+              emptyIcon="car-outline"
+            />
+            {!step3Ready ? (
+              <Text style={styles.hintDisabled}>Upload all documents to continue</Text>
+            ) : null}
+          </>
+        )}
+
+        {step === 3 && applicationPath === 'new_driver' && (
+          <>
+            <ProgressHeader step={3} title="Step 3 of 4 — Documents" />
+            <UploadCard
+              title="Profile photo"
+              subtitle="Tap to upload"
+              uploaded={!!profilePhoto}
+              asset={profilePhoto}
+              onPress={() => pickSingleImage(setProfilePhoto)}
+              emptyIcon="person-outline"
+            />
+            <UploadCard
+              title="National ID"
+              subtitle="Tap to upload"
+              uploaded={!!nationalId}
+              asset={nationalId}
+              onPress={() => pickSingleImage(setNationalId)}
+            />
+            <UploadCard
+              title="Driver's license"
+              subtitle="Tap to upload"
+              uploaded={!!driversLicense}
+              asset={driversLicense}
+              onPress={() => pickSingleImage(setDriversLicense)}
+            />
+            <UploadCard
+              title="Vehicle registration"
+              subtitle="Tap to upload"
+              uploaded={!!vehicleRegistration}
+              asset={vehicleRegistration}
+              onPress={() => pickSingleImage(setVehicleRegistration)}
+            />
+            <UploadCard
+              title="License disc"
+              subtitle="Tap to upload"
+              uploaded={!!licenseDisc}
+              asset={licenseDisc}
+              onPress={() => pickSingleImage(setLicenseDisc)}
+            />
+            <Text style={styles.sectionMini}>Vehicle photos</Text>
+            <UploadCard
+              title="Front"
+              subtitle="Tap to upload"
+              uploaded={!!vehiclePhotoFront}
+              asset={vehiclePhotoFront}
+              onPress={() => pickSingleImage(setVehiclePhotoFront)}
+              emptyIcon="image-outline"
+            />
+            <UploadCard
+              title="Back"
+              subtitle="Tap to upload"
+              uploaded={!!vehiclePhotoBack}
+              asset={vehiclePhotoBack}
+              onPress={() => pickSingleImage(setVehiclePhotoBack)}
+              emptyIcon="image-outline"
+            />
+            <UploadCard
+              title="Side"
+              subtitle="Tap to upload"
+              uploaded={!!vehiclePhotoSide}
+              asset={vehiclePhotoSide}
+              onPress={() => pickSingleImage(setVehiclePhotoSide)}
+              emptyIcon="image-outline"
+            />
+            <TouchableOpacity style={styles.sapsRow} onPress={() => pickSingleImage(setSapsClearance)}>
+              <Text style={styles.sapsText}>
+                {sapsClearance ? 'SAPS clearance uploaded ✓' : 'Optional: SAPS clearance — tap to upload'}
+              </Text>
+            </TouchableOpacity>
+            {!step3Ready ? (
+              <Text style={styles.hintDisabled}>Upload all documents to continue</Text>
+            ) : null}
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <ProgressHeader step={4} title="Step 4 of 4 — Vehicle details" />
+            <AppInput
+              accent="accent"
+              label="Vehicle make"
+              value={vehicleMake}
+              onChangeText={setVehicleMake}
+              placeholder="e.g. Toyota"
+            />
+            <AppInput
+              accent="accent"
+              label="Vehicle model"
+              value={vehicleModel}
+              onChangeText={setVehicleModel}
+              placeholder="e.g. Corolla"
+            />
+            <AppInput
+              accent="accent"
+              label="Year"
+              value={vehicleYear}
+              onChangeText={setVehicleYear}
+              placeholder="e.g. 2019"
+              keyboardType="numeric"
+            />
+            <AppInput
+              accent="accent"
+              label="Colour"
+              value={vehicleColor}
+              onChangeText={setVehicleColor}
+              placeholder="e.g. White"
+            />
+            <AppInput
+              accent="accent"
+              label="Number plate"
+              value={vehiclePlate}
+              onChangeText={(t) => setVehiclePlate(t.toUpperCase())}
+              placeholder="CA 123-456"
+              autoCapitalize="characters"
+            />
+
+            <TouchableOpacity
+              style={styles.termsRow}
+              onPress={() => setTermsAccepted((v) => !v)}
+              activeOpacity={0.85}
+            >
+              <View style={[styles.checkbox, termsAccepted && styles.checkboxOn]}>
+                {termsAccepted ? <Ionicons name="checkmark" size={14} color={colors.textWhite} /> : null}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to the{' '}
+                <Text style={styles.termsLink} onPress={openTerms}>
+                  SwiftDrop Terms & Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
       </ScrollView>
 
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={[styles.continueButton, (!canSubmit || busy) && styles.continueButtonDisabled]}
-          onPress={handleSendOtpOrRegister}
-          disabled={!canSubmit || busy}
-        >
-          {busy ? (
-            <ActivityIndicator color={colors.textWhite} />
-          ) : (
-            <Text style={styles.continueButtonText}>Continue & Verify Phone (OTP)</Text>
-          )}
-        </TouchableOpacity>
+      <View style={styles.bottomBar}>
+        {step < 4 ? (
+          <View style={styles.btnRow}>
+            <AppButton
+              label="Back"
+              variant="outlineAccent"
+              fullWidth={false}
+              onPress={goBack}
+              style={styles.btnHalf}
+            />
+            <AppButton
+              label={step === 3 ? 'Next' : 'Continue'}
+              variant="accent"
+              fullWidth={false}
+              onPress={goNext}
+              disabled={step === 3 && !step3Ready}
+              style={styles.btnHalf}
+            />
+          </View>
+        ) : (
+          <AppButton
+            label={busy ? 'Submitting…' : 'Submit Application'}
+            variant="accent"
+            onPress={handleRegisterAndOtp}
+            loading={busy}
+            disabled={busy}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -567,161 +783,244 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  title: {
+  headerTitle: {
     ...typography.h3,
     color: colors.textPrimary,
   },
-  placeholder: { width: 28 },
-  formSection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 10,
-  },
-  sectionTitle: {
-    ...typography.h4,
-    color: colors.textPrimary,
-    marginBottom: 10,
-  },
-  input: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+  scrollContent: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: colors.textPrimary,
-    marginBottom: 12,
+    paddingBottom: spacing.xxl,
   },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  flex1: { flex: 1 },
-  checkboxRow: {
+  progressWrap: {
+    marginBottom: spacing.lg,
+  },
+  progressTrack: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
+  },
+  progressFill: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  progressLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  pathCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadows.card,
+  },
+  pathUberSel: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  pathNewSel: {
+    borderColor: colors.accent,
+    backgroundColor: '#FFF7ED',
+  },
+  pathIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pathMid: { flex: 1, marginLeft: spacing.md },
+  pathTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  pathTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  pathSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  badgeGreen: {
+    backgroundColor: colors.successLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  badgeGreenText: { fontSize: 10, fontWeight: '800', color: colors.success },
+  badgeOrange: {
+    backgroundColor: colors.accentLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  badgeOrangeText: { fontSize: 10, fontWeight: '800', color: colors.accent },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioUberOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  radioNewOn: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
+  },
+  uploadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 56,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  uploadCardEmpty: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.primary,
+  },
+  uploadCardDone: {
+    borderWidth: 2,
+    borderColor: colors.success,
+  },
+  uploadLeftEmpty: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadLeftDone: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadMid: { flex: 1, marginHorizontal: spacing.sm },
+  uploadTitle: { fontSize: 11, fontWeight: '700', color: colors.textPrimary },
+  uploadSub: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  uploadThumb: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sectionMini: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  sapsRow: { paddingVertical: spacing.sm },
+  sapsText: { fontSize: 12, color: colors.textSecondary },
+  hintDisabled: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
   },
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: colors.primary,
-  },
-  checkboxLabel: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  pathCard: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    padding: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: 12,
-  },
-  pathCardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  pathTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  pathSub: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  uploadButton: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    marginRight: spacing.sm,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
-  uploadButtonText: {
+  checkboxOn: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  termsLink: {
     color: colors.primary,
-    fontSize: 14,
     fontWeight: '700',
   },
   errorText: {
     color: colors.danger,
     fontSize: 14,
     fontWeight: '600',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
+    marginTop: spacing.sm,
+    textAlign: 'center',
   },
-  bottomContainer: {
+  bottomBar: {
     padding: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  continueButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: 16,
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  btnHalf: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  successScroll: {
+    padding: spacing.xl,
     alignItems: 'center',
+    paddingTop: 60,
   },
-  continueButtonDisabled: {
-    opacity: 0.5,
+  successCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
-  continueButtonText: {
-    color: colors.textWhite,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  underReviewCard: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 16,
-  },
-  underReviewTitle: {
-    fontSize: 22,
+  successTitle: {
+    fontSize: 20,
     fontWeight: '800',
-    color: colors.primary,
-    marginBottom: 10,
-  },
-  underReviewText: {
-    fontSize: 15,
-    fontWeight: '600',
     color: colors.textPrimary,
-    lineHeight: 22,
+    marginBottom: spacing.md,
+    textAlign: 'center',
   },
-  underReviewSub: {
-    marginTop: 12,
+  successBody: {
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.sm,
   },
-  doneButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  doneButtonText: {
-    color: colors.textWhite,
-    fontSize: 16,
-    fontWeight: '700',
+  successHint: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+    fontWeight: '600',
   },
 });
-
-export default DriverRegister;
-

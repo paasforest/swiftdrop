@@ -9,6 +9,9 @@ import * as Notifications from 'expo-notifications';
 import { navigationRef, navigateFromNotificationData } from './src/navigationRef';
 import { alertForegroundNotification } from './src/services/pushNotificationService';
 
+// Shared
+import WelcomeScreen from './src/screens/shared/WelcomeScreen';
+
 // Customer Screens
 import Onboarding from './src/screens/customer/Onboarding';
 import Login from './src/screens/customer/Login';
@@ -26,6 +29,7 @@ import OrderHistory from './src/screens/customer/OrderHistory';
 import Profile from './src/screens/customer/Profile';
 
 // Driver Screens
+import DriverLogin from './src/screens/driver/DriverLogin';
 import DriverRegister from './src/screens/driver/DriverRegister';
 import DriverHome from './src/screens/driver/DriverHome';
 import PostRoute from './src/screens/driver/PostRoute';
@@ -96,11 +100,12 @@ export default function App() {
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="auto" />
       <Stack.Navigator
-        initialRouteName="Onboarding"
+        initialRouteName="Welcome"
         screenOptions={{
           headerShown: false,
         }}
       >
+        <Stack.Screen name="Welcome" component={WelcomeScreen} />
         {/* Customer Flow */}
         <Stack.Screen name="Onboarding" component={Onboarding} />
         <Stack.Screen name="Login" component={Login} />
@@ -118,6 +123,7 @@ export default function App() {
         <Stack.Screen name="Profile" component={Profile} />
 
         {/* Driver Flow */}
+        <Stack.Screen name="DriverLogin" component={DriverLogin} />
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
         <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
         <Stack.Screen name="DriverHome" component={DriverHome} />

@@ -44,24 +44,29 @@ function sanitizeUser(user) {
 async function registerCustomer(req, res) {
   try {
     const { full_name, email, phone, password } = req.body;
-    if (!full_name || !email || !phone || !password) {
-      return res.status(400).json({ error: 'full_name, email, phone and password are required' });
+    if (!full_name || !phone || !password) {
+      return res.status(400).json({ error: 'full_name, phone and password are required' });
     }
     if (password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    const emailNorm = normalizeEmailForDb(email);
     const phoneNorm = normalizeSouthAfricaToE164(phone);
-    if (!emailNorm) {
-      return res.status(400).json({ error: 'Invalid email address' });
-    }
     if (!phoneNorm) {
       return res.status(400).json({
         error: 'Invalid phone number. Use a South African mobile (e.g. 082… or 82… after +27).',
       });
     }
 
+    let emailNorm;
+    if (email != null && String(email).trim() !== '') {
+      emailNorm = normalizeEmailForDb(email);
+      if (!emailNorm) {
+        return res.status(400).json({ error: 'Invalid email address' });
+      }
+    } else {
+      emailNorm = `phone_${phoneNorm.replace(/\D/g, '')}@customer.swiftdrop.app`;
+    }
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await db.query(
       `INSERT INTO users (full_name, email, phone, password_hash, user_type)
@@ -328,17 +333,31 @@ async function login(req, res) {
 
 async function forgotPassword(req, res) {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: 'email is required' });
+    const { email, phone } = req.body;
+
+    let user = null;
+
+    if (phone) {
+      const phoneNorm = normalizeSouthAfricaToE164(phone);
+      if (!phoneNorm) {
+        return res.status(400).json({ error: 'Invalid phone number' });
+      }
+      const userResult = await db.query(
+        `SELECT id, phone FROM users WHERE phone = $1 AND is_active = true`,
+        [phoneNorm]
+      );
+      user = userResult.rows[0];
+    } else if (email) {
+      const emailNorm = normalizeEmailForDb(email);
+      const userResult = await db.query(
+        `SELECT id, phone FROM users WHERE LOWER(TRIM(email)) = $1 AND is_active = true`,
+        [emailNorm]
+      );
+      user = userResult.rows[0];
+    } else {
+      return res.status(400).json({ error: 'email or phone is required' });
     }
 
-    const emailNorm = normalizeEmailForDb(email);
-    const userResult = await db.query(
-      `SELECT id, phone FROM users WHERE LOWER(TRIM(email)) = $1 AND is_active = true`,
-      [emailNorm]
-    );
-    const user = userResult.rows[0];
     if (!user) {
       return res.json({ message: 'If an account exists, a reset code has been sent.' });
     }

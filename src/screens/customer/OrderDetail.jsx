@@ -110,7 +110,7 @@ const OrderDetail = ({ navigation, route }) => {
 
       const auth = getAuth();
       if (!auth?.token) {
-        navigation.navigate('Login');
+        navigation.navigate('Welcome');
         return;
       }
 
