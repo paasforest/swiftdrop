@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,17 @@ import {
   TextInput,
   Image,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+
+function normalizeDeliveryPhotoUrl(url) {
+  if (url == null) return null;
+  const s = String(url).trim();
+  return s.length > 0 ? s : null;
+}
 
 const { width, height } = Dimensions.get('window');
 
@@ -56,37 +62,82 @@ const DeliveryConfirmed = ({ navigation, route }) => {
     }).start();
   }, [checkScale]);
 
+  const fetchOrder = useCallback(async () => {
+    if (!orderId) {
+      setOrderLoading(false);
+      return;
+    }
+    const auth = getAuth();
+    if (!auth?.token) {
+      setOrderLoading(false);
+      setOrderFetchError('Not signed in');
+      return;
+    }
+    setOrderFetchError(null);
+    setOrderLoading(true);
+    try {
+      const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+      setOrderDetails(data);
+      setImageLoadError(false);
+    } catch (e) {
+      setOrderFetchError(e.message || 'Failed to load order');
+    } finally {
+      setOrderLoading(false);
+    }
+  }, [orderId]);
+
   useEffect(() => {
-    if (!orderId) return;
+    fetchOrder();
+  }, [fetchOrder]);
+
+  /** Poll for delivery_photo_url while order is delivered/completed but photo not yet in DB. */
+  useEffect(() => {
+    if (!orderId || !orderDetails) return;
+    const photo = normalizeDeliveryPhotoUrl(
+      orderDetails.delivery_photo_url ?? orderDetails.deliveryPhotoUrl
+    );
+    if (photo) return;
+    const st = orderDetails.status;
+    if (st !== 'delivered' && st !== 'completed') return;
+
+    let cancelled = false;
+    let n = 0;
+    const maxPolls = 24;
     const auth = getAuth();
     if (!auth?.token) return;
 
-    let cancelled = false;
-    let attempts = 0;
-
-    async function fetchOnce() {
-      attempts += 1;
+    const id = setInterval(async () => {
+      if (cancelled) return;
+      n += 1;
+      if (n > maxPolls) {
+        clearInterval(id);
+        return;
+      }
       try {
         const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
         if (cancelled) return;
         setOrderDetails(data);
-
-        if (data?.delivery_photo_url) return;
-        if (attempts < 10) setTimeout(fetchOnce, 3000);
+        if (normalizeDeliveryPhotoUrl(data?.delivery_photo_url ?? data?.deliveryPhotoUrl)) {
+          clearInterval(id);
+        }
       } catch {
-        // If fetching fails, keep showing the best data we already have.
+        /* keep polling */
       }
-    }
+    }, 3000);
 
-    fetchOnce();
     return () => {
       cancelled = true;
+      clearInterval(id);
     };
-  }, [orderId]);
+  }, [orderId, orderDetails?.status, orderDetails?.delivery_photo_url, orderDetails?.deliveryPhotoUrl]);
 
   const displayDriverName = orderDetails?.driver_name || driverName;
   const displayDriverRating = orderDetails?.driver_rating ?? driverRating;
-  const displayDeliveryPhoto = orderDetails?.delivery_photo_url || deliveryPhoto;
+  const displayDeliveryPhoto = normalizeDeliveryPhotoUrl(
+    orderDetails?.delivery_photo_url ??
+      orderDetails?.deliveryPhotoUrl ??
+      deliveryPhoto
+  );
   const displayFromAddress = orderDetails?.pickup_address || fromAddress;
   const displayToAddress = orderDetails?.dropoff_address || toAddress;
   const displayTotalPrice = orderDetails?.total_price ?? totalPrice;
@@ -151,10 +202,39 @@ const DeliveryConfirmed = ({ navigation, route }) => {
     ));
   };
 
+  const photoUrl = displayDeliveryPhoto;
+  const showImage = Boolean(photoUrl) && !imageLoadError;
+  const imageUri = photoUrl
+    ? imageRetryKey > 0
+      ? `${photoUrl}${photoUrl.includes('?') ? '&' : '?'}_r=${imageRetryKey}`
+      : photoUrl
+    : null;
+
+  const showProcessingPlaceholder =
+    !orderLoading &&
+    !orderFetchError &&
+    !photoUrl &&
+    (orderDetails?.status === 'delivered' || orderDetails?.status === 'completed');
+
   return (
     <SafeAreaView style={styles.container}>
+      {orderLoading ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading order…</Text>
+        </View>
+      ) : null}
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
+          {orderFetchError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{orderFetchError}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={fetchOrder}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={styles.successContainer}>
             <Animated.View style={[styles.successCircle, { transform: [{ scale: checkScale }] }]}>
               <Text style={styles.checkmark}>✓</Text>
@@ -190,18 +270,36 @@ const DeliveryConfirmed = ({ navigation, route }) => {
             </View>
           </View>
 
-          <View style={styles.photoContainer}>
-            <View style={styles.photoThumbnail}>
-              <Ionicons name="camera-outline" size={28} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.photoText}>Proof of Delivery</Text>
-              {displayDeliveryPhoto ? (
-                <Image source={{ uri: displayDeliveryPhoto }} style={styles.deliveryImage} />
-              ) : (
-                <Text style={styles.photoMissing}>Loading delivery photo…</Text>
-              )}
-            </View>
+          <View style={styles.photoSection}>
+            <Text style={styles.proofLabel}>Proof of Delivery</Text>
+            {!orderLoading && showImage && imageUri ? (
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.deliveryImage}
+                resizeMode="cover"
+                onLoadStart={() => setImageLoadError(false)}
+                onError={() => setImageLoadError(true)}
+              />
+            ) : null}
+            {!orderLoading && photoUrl && imageLoadError ? (
+              <View style={styles.imageErrorBox}>
+                <Text style={styles.imageErrorText}>Photo unavailable</Text>
+                <TouchableOpacity
+                  style={styles.retryBtn}
+                  onPress={() => {
+                    setImageLoadError(false);
+                    setImageRetryKey((k) => k + 1);
+                  }}
+                >
+                  <Text style={styles.retryBtnText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            {!orderLoading && showProcessingPlaceholder ? (
+              <View style={styles.photoPlaceholder}>
+                <Text style={styles.photoPlaceholderText}>Photo being processed…</Text>
+              </View>
+            ) : null}
           </View>
 
           {!submitted ? (
@@ -347,34 +445,48 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontWeight: '500',
   },
-  photoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    padding: 16,
+  photoSection: {
     width: '100%',
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: colors.border,
+    marginBottom: spacing.lg,
   },
-  photoThumbnail: {
-    width: 50,
-    height: 50,
-    borderRadius: 8,
+  proofLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  photoPlaceholder: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
     backgroundColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    padding: spacing.md,
   },
-  photoIcon: {
-    fontSize: 24,
-  },
-  photoText: {
-    flex: 1,
+  photoPlaceholderText: {
     fontSize: 14,
-    color: colors.primary,
-    fontWeight: '500',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  imageErrorBox: {
+    width: '100%',
+    minHeight: 120,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.md,
+    marginTop: spacing.xs,
+  },
+  imageErrorText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+    fontWeight: '600',
   },
   ratingSection: {
     width: '100%',
@@ -453,15 +565,9 @@ const styles = StyleSheet.create({
   },
   deliveryImage: {
     width: '100%',
-    height: 120,
+    height: 200,
     borderRadius: 12,
-    marginTop: 10,
     backgroundColor: colors.border,
-  },
-  photoMissing: {
-    fontSize: 13,
-    color: colors.textLight,
-    marginTop: 10,
   },
   priceBreakdown: {
     width: '100%',

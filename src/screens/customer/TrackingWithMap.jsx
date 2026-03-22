@@ -142,15 +142,18 @@ const TrackingWithMap = ({ navigation, route }) => {
               setDeliveryOTPModalVisible(true);
             }
 
-          // If the order is already delivered when the user opens tracking, route them immediately.
-          if (data?.status === 'delivered' && !deliveredNavigatedRef.current) {
+          // Delivered or completed → confirmation (photo URL usually set after completed).
+          if (
+            (data?.status === 'delivered' || data?.status === 'completed') &&
+            !deliveredNavigatedRef.current
+          ) {
             deliveredNavigatedRef.current = true;
             setStopPolling(true);
             navigation.navigate('DeliveryConfirmed', {
               orderId: data.id,
               driverName: data.driver_name,
               driverRating: data.driver_rating,
-              deliveryPhoto: data.delivery_photo_url,
+              deliveryPhoto: data.delivery_photo_url ?? null,
               fromAddress: data.pickup_address,
               toAddress: data.dropoff_address,
               totalPrice: data.total_price,
@@ -238,15 +241,19 @@ const TrackingWithMap = ({ navigation, route }) => {
           return;
         }
 
-        // Gap 1: delivered -> DeliveryConfirmed
-        if (nextStatus === 'delivered' && prevStatus !== 'delivered' && !deliveredNavigatedRef.current) {
+        // delivered / completed → DeliveryConfirmed (screen refetches for delivery_photo_url)
+        const becameDeliveredOrCompleted =
+          (nextStatus === 'delivered' || nextStatus === 'completed') &&
+          prevStatus !== 'delivered' &&
+          prevStatus !== 'completed';
+        if (becameDeliveredOrCompleted && !deliveredNavigatedRef.current) {
           deliveredNavigatedRef.current = true;
           setStopPolling(true);
           navigation.navigate('DeliveryConfirmed', {
             orderId: data.id,
             driverName: data.driver_name,
             driverRating: data.driver_rating,
-            deliveryPhoto: data.delivery_photo_url,
+            deliveryPhoto: data.delivery_photo_url ?? null,
             fromAddress: data.pickup_address,
             toAddress: data.dropoff_address,
             totalPrice: data.total_price,
