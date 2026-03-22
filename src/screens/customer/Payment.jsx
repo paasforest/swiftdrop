@@ -27,6 +27,22 @@ function formatMoney(n) {
 
 const Payment = ({ navigation, route }) => {
   const params = route?.params || {};
+  const {
+    pickup_address,
+    dropoff_address,
+    delivery_tier,
+    parcel_value,
+    insurance_selected,
+    delivery_total,
+    delivery_base_price,
+    delivery_insurance_fee,
+  } = params;
+
+  const total = useMemo(() => {
+    if (delivery_total != null) return delivery_total;
+    return null;
+  }, [delivery_total]);
+
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('payfast');
   const auth = getAuth();
   const [payfastModalVisible, setPayfastModalVisible] = useState(false);
@@ -80,13 +96,26 @@ const Payment = ({ navigation, route }) => {
     payHandledRef.current = false;
   };
 
+  const navigateToDriverMatching = useCallback(
+    (orderId, totalPrice) => {
+      navigation.navigate('DriverMatching', {
+        orderId: orderId,
+        pickup_address,
+        dropoff_address,
+        delivery_tier,
+        total_price: totalPrice != null ? totalPrice : delivery_total,
+      });
+    },
+    [navigation, pickup_address, dropoff_address, delivery_tier, delivery_total]
+  );
+
   const handlePayfastSuccess = () => {
     if (payHandledRef.current) return;
     payHandledRef.current = true;
     setPayfastModalVisible(false);
     const orderId = pendingOrderId;
     setPendingOrderId(null);
-    if (orderId) navigation.navigate('Tracking', { orderId });
+    if (orderId) navigateToDriverMatching(orderId, total);
   };
 
   const handlePayfastNavStateChange = (navState) => {
@@ -103,17 +132,6 @@ const Payment = ({ navigation, route }) => {
       return;
     }
   };
-
-  const {
-    pickup_address,
-    dropoff_address,
-    delivery_tier,
-    parcel_value,
-    insurance_selected,
-    delivery_total,
-    delivery_base_price,
-    delivery_insurance_fee,
-  } = params;
 
   const paymentMethods = useMemo(
     () => [
@@ -236,14 +254,14 @@ const Payment = ({ navigation, route }) => {
         return;
       }
 
-      // Wallet payment: refresh balance then navigate.
+      // Wallet payment: refresh balance then driver matching screen.
       if (selectedPaymentMethod === 'wallet') {
         await fetchWalletBalance();
-        navigation.navigate('Tracking', { orderId });
+        navigateToDriverMatching(orderId, res?.total_price ?? total);
         return;
       }
 
-      navigation.navigate('Tracking', { orderId });
+      navigateToDriverMatching(orderId, res?.total_price ?? total);
     } catch (e) {
       console.error('Pay error:', e.message);
       alert(e.message || 'Payment failed');
@@ -253,11 +271,6 @@ const Payment = ({ navigation, route }) => {
   const handleBack = () => {
     navigation.goBack();
   };
-
-  const total = useMemo(() => {
-    if (delivery_total != null) return delivery_total;
-    return null;
-  }, [delivery_total]);
 
   const totalPriceText = total != null ? formatMoney(total) : '—';
 

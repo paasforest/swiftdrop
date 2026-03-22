@@ -1,186 +1,497 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, Animated } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  Animated,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { getAuth } from '../../authStore';
+import { API_BASE_URL } from '../../apiConfig';
+import { getJson, postJson } from '../../apiClient';
+import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
-const DriverMatching = () => {
-  const [animationValue] = useState(new Animated.Value(0));
-  const [dotsAnimation] = useState(new Animated.Value(0));
+const RADAR_BLUE = '#1A73E8';
+const MATCH_TIMEOUT_MS = 3 * 60 * 1000;
+const POLL_MS = 3000;
+const FOUND_NAV_DELAY_MS = 1500;
 
-  const orderDetails = {
-    pickup: '123 Main Street, Worcester',
-    dropoff: '456 Oak Avenue, Cape Town',
-    deliveryType: 'Express',
-    price: 'R200'
+/** Driver has accepted or job is already in progress (poll may skip `accepted`). */
+function isDriverMatchedStatus(status) {
+  const s = String(status || '');
+  return [
+    'accepted',
+    'pickup_en_route',
+    'pickup_arrived',
+    'collected',
+    'delivery_en_route',
+    'delivery_arrived',
+    'delivered',
+    'completed',
+  ].includes(s);
+}
+
+const ROTATING_MESSAGES = [
+  'Finding your driver...',
+  'Checking nearby drivers...',
+  'Looking for route matches...',
+  'Almost there...',
+];
+
+function formatMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return '—';
+  return `R${x.toFixed(2)}`;
+}
+
+function tierLabel(tier) {
+  if (!tier) return 'Standard';
+  const s = String(tier);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Staggered infinite pulse: first cycle waits `staggerMs`, then every 1800ms. */
+function startRadarRing(scale, opacity, staggerMs, isCancelled) {
+  let first = true;
+  const step = () => {
+    if (isCancelled()) return;
+    const delayMs = first ? staggerMs : 0;
+    first = false;
+    Animated.sequence([
+      Animated.delay(delayMs),
+      Animated.parallel([
+        Animated.timing(scale, {
+          toValue: 1.5,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(scale, { toValue: 0.3, duration: 0, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.6, duration: 0, useNativeDriver: true }),
+      ]),
+    ]).start(() => step());
   };
+  step();
+}
+
+const DriverMatching = ({ navigation, route }) => {
+  const params = route?.params || {};
+
+  const orderId = params.orderId;
+  const pickupAddress = params.pickup_address || params.pickup || 'Pickup address';
+  const dropoffAddress = params.dropoff_address || params.dropoff || 'Delivery address';
+  const deliveryTier = params.delivery_tier || params.deliveryTier;
+  const totalPrice = params.total_price ?? params.totalPrice;
+
+  const [noDriverFound, setNoDriverFound] = useState(false);
+  const [driverFound, setDriverFound] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  const cancelledRef = useRef(false);
+  const timeoutRef = useRef(null);
+
+  const scale0 = useRef(new Animated.Value(0.3)).current;
+  const opacity0 = useRef(new Animated.Value(0.6)).current;
+  const scale1 = useRef(new Animated.Value(0.3)).current;
+  const opacity1 = useRef(new Animated.Value(0.6)).current;
+  const scale2 = useRef(new Animated.Value(0.3)).current;
+  const opacity2 = useRef(new Animated.Value(0.6)).current;
+
+  const dot0 = useRef(new Animated.Value(0.35)).current;
+  const dot1 = useRef(new Animated.Value(0.35)).current;
+  const dot2 = useRef(new Animated.Value(0.35)).current;
+
+  const messageOpacity = useRef(new Animated.Value(1)).current;
+  const [messageIndex, setMessageIndex] = useState(0);
+
+  const stopAnimations = useCallback(() => {
+    cancelledRef.current = true;
+    scale0.stopAnimation();
+    scale1.stopAnimation();
+    scale2.stopAnimation();
+    opacity0.stopAnimation();
+    opacity1.stopAnimation();
+    opacity2.stopAnimation();
+    dot0.stopAnimation();
+    dot1.stopAnimation();
+    dot2.stopAnimation();
+  }, [scale0, scale1, scale2, opacity0, opacity1, opacity2, dot0, dot1, dot2]);
+
+  const startAnimations = useCallback(() => {
+    cancelledRef.current = false;
+    scale0.setValue(0.3);
+    opacity0.setValue(0.6);
+    scale1.setValue(0.3);
+    opacity1.setValue(0.6);
+    scale2.setValue(0.3);
+    opacity2.setValue(0.6);
+
+    const isCancelled = () => cancelledRef.current;
+    startRadarRing(scale0, opacity0, 0, isCancelled);
+    startRadarRing(scale1, opacity1, 600, isCancelled);
+    startRadarRing(scale2, opacity2, 1200, isCancelled);
+
+    const typingLoop = () => {
+      if (isCancelled()) return;
+      Animated.sequence([
+        Animated.timing(dot0, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot0, { toValue: 0.35, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot1, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot1, { toValue: 0.35, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot2, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(dot2, { toValue: 0.35, duration: 280, useNativeDriver: true }),
+      ]).start(() => typingLoop());
+    };
+    typingLoop();
+  }, [scale0, scale1, scale2, opacity0, opacity1, opacity2, dot0, dot1, dot2]);
+
+  const isSearching = !noDriverFound && !driverFound;
 
   useEffect(() => {
-    // Radar animation
-    const radarAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(animationValue, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(animationValue, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    radarAnimation.start();
-
-    // Loading dots animation
-    const dotsAnimationLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotsAnimation, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dotsAnimation, {
-          toValue: 0,
-          duration: 0,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    dotsAnimationLoop.start();
-
+    if (!isSearching) {
+      stopAnimations();
+      return undefined;
+    }
+    startAnimations();
     return () => {
-      radarAnimation.stop();
-      dotsAnimationLoop.stop();
+      stopAnimations();
     };
-  }, []);
+  }, [isSearching, startAnimations, stopAnimations]);
 
-  const handleCancel = () => {
-    console.log('Cancel order');
+  useEffect(() => {
+    if (!isSearching) return undefined;
+    timeoutRef.current = setTimeout(() => {
+      setNoDriverFound(true);
+    }, MATCH_TIMEOUT_MS);
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [isSearching]);
+
+  useEffect(() => {
+    if (!isSearching) return undefined;
+    const id = setInterval(() => {
+      Animated.timing(messageOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => {
+        setMessageIndex((i) => (i + 1) % ROTATING_MESSAGES.length);
+        Animated.timing(messageOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 3000);
+    return () => clearInterval(id);
+  }, [isSearching, messageOpacity]);
+
+  useEffect(() => {
+    if (!orderId || driverFound || noDriverFound) return undefined;
+    const auth = getAuth();
+    if (!auth?.token) return undefined;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+        const st = data?.status;
+
+        if (st === 'unmatched') {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setNoDriverFound(true);
+          return;
+        }
+
+        if (isDriverMatchedStatus(st)) {
+          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+          setDriverFound(true);
+        }
+      } catch {
+        /* keep polling */
+      }
+    };
+
+    tick();
+    const intervalId = setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [orderId, driverFound, noDriverFound]);
+
+  useEffect(() => {
+    if (!driverFound || !orderId) return undefined;
+    const t = setTimeout(() => {
+      navigation.replace('Tracking', { orderId });
+    }, FOUND_NAV_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [driverFound, orderId, navigation]);
+
+  const handleCancelOrder = async () => {
+    if (!orderId) {
+      Alert.alert('Cannot cancel', 'No order is linked. You can go back.');
+      return;
+    }
+    const auth = getAuth();
+    if (!auth?.token) {
+      navigation.navigate('Login');
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${auth.token}`,
+        },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || json?.message || 'Cancel failed');
+      const refund = json?.refund;
+      const refundMessage =
+        refund != null ? `Refund: ${formatMoney(refund)}` : json?.message || 'Order cancelled';
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home', params: { refundMessage } }],
+      });
+    } catch (e) {
+      Alert.alert('Cancel failed', e.message || 'Could not cancel the order.');
+    } finally {
+      setCancelling(false);
+    }
   };
 
-  const renderDots = () =>
-    [0, 1, 2].map((index) => {
-      const opacity = dotsAnimation.interpolate({
-        inputRange: [0, 0.33, 0.66, 1],
-        outputRange: [0.3, 1, 0.3, 0.3],
-        extrapolate: 'clamp',
-      });
-      return (
-        <Animated.View
-          key={index}
-          style={[
-            styles.loadingDot,
-            {
-              opacity: index === 0 ? opacity : index === 1 ? dotsAnimation : opacity,
-              transform: [
-                {
-                  translateX: dotsAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, index * 2],
-                  }),
-                },
-              ],
-            },
-          ]}
-        />
-      );
-    });
+  const onCancelPress = () => {
+    Alert.alert(
+      'Cancel order?',
+      'Are you sure? You will receive a full refund.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Cancel order',
+          style: 'destructive',
+          onPress: handleCancelOrder,
+        },
+      ]
+    );
+  };
+
+  const handleKeepSearching = async () => {
+    if (!orderId) {
+      setNoDriverFound(false);
+      setDriverFound(false);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setNoDriverFound(true), MATCH_TIMEOUT_MS);
+      return;
+    }
+    setRetrying(true);
+    try {
+      const auth = getAuth();
+      if (!auth?.token) {
+        navigation.navigate('Login');
+        return;
+      }
+      await postJson(`/api/orders/${orderId}/retry-matching`, {}, { token: auth.token });
+      setNoDriverFound(false);
+      setDriverFound(false);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setNoDriverFound(true), MATCH_TIMEOUT_MS);
+    } catch (e) {
+      Alert.alert('Retry failed', e.message || 'Could not retry matching.');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const handleCancelFromSadState = () => {
+    Alert.alert(
+      'Cancel for full refund?',
+      'Are you sure? You will receive a full refund.',
+      [
+        { text: 'Keep waiting', style: 'cancel' },
+        { text: 'Cancel for full refund', style: 'destructive', onPress: handleCancelOrder },
+      ]
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Animated Radar Background */}
-      <View style={styles.radarContainer}>
-        {[0, 1, 2].map((index) => (
-          <Animated.View
-            key={index}
-            style={[
-              styles.radarRing,
-              {
-                transform: [
-                  {
-                    scale: animationValue.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.5, 2 + index * 0.5],
-                    }),
-                  },
-                ],
-                opacity: animationValue.interpolate({
-                  inputRange: [0, 0.5, 1],
-                  outputRange: [0.8, 0.3, 0],
-                }),
-              },
-            ]}
-          />
-        ))}
-        
-        {/* Center Parcel Icon */}
-        <View style={styles.centerIcon}>
-          <Ionicons name="cube-outline" size={40} color={colors.textWhite} />
-        </View>
-      </View>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        {/* Radar + center */}
+        <View style={styles.radarSection}>
+          <View style={styles.radarStage}>
+            {isSearching ? (
+              <>
+                <Animated.View
+                  style={[
+                    styles.radarRing,
+                    { transform: [{ scale: scale0 }], opacity: opacity0 },
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    styles.radarRing,
+                    { transform: [{ scale: scale1 }], opacity: opacity1 },
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    styles.radarRing,
+                    { transform: [{ scale: scale2 }], opacity: opacity2 },
+                  ]}
+                />
+              </>
+            ) : null}
 
-      {/* Main Content */}
-      <View style={styles.content}>
-        <Text style={styles.mainText}>Finding your driver...</Text>
-        
-        {/* Animated Loading Dots */}
-        <View style={styles.dotsContainer}>
-          {renderDots()}
-        </View>
-        
-        <Text style={styles.subText}>Matching you with drivers nearby</Text>
-      </View>
+            <View style={styles.centerIconWrap} pointerEvents="none">
+              {driverFound ? (
+                <View style={styles.centerIconSuccess}>
+                  <Ionicons name="checkmark" size={38} color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={styles.centerIcon}>
+                  <Ionicons
+                    name={noDriverFound ? 'warning-outline' : 'cube-outline'}
+                    size={34}
+                    color={RADAR_BLUE}
+                  />
+                </View>
+              )}
+            </View>
+          </View>
 
-      {/* Order Summary Card */}
-      <View style={styles.orderSummary}>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>From:</Text>
-          <Text style={styles.summaryText} numberOfLines={1}>
-            {orderDetails.pickup}
-          </Text>
+          {driverFound ? (
+            <>
+              <Text style={styles.mainTitle}>Driver found!</Text>
+              <Text style={styles.subtitle}>Starting live tracking…</Text>
+            </>
+          ) : noDriverFound ? (
+            <>
+              <Text style={styles.mainTitle}>No drivers available right now</Text>
+              <Text style={styles.subtitle}>Please try again in a few minutes.</Text>
+            </>
+          ) : (
+            <>
+              <Animated.Text style={[styles.mainTitle, { opacity: messageOpacity }]}>
+                {ROTATING_MESSAGES[messageIndex]}
+              </Animated.Text>
+              <Text style={styles.subtitle}>Matching with drivers near you</Text>
+              <View style={styles.dotsRow}>
+                <Animated.View style={[styles.loadingDot, { opacity: dot0 }]} />
+                <Animated.View style={[styles.loadingDot, { opacity: dot1 }]} />
+                <Animated.View style={[styles.loadingDot, { opacity: dot2 }]} />
+              </View>
+            </>
+          )}
         </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>To:</Text>
-          <Text style={styles.summaryText} numberOfLines={1}>
-            {orderDetails.dropoff}
-          </Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Type:</Text>
-          <Text style={styles.summaryText}>{orderDetails.deliveryType}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Price:</Text>
-          <Text style={styles.summaryPrice}>{orderDetails.price}</Text>
-        </View>
-      </View>
 
-      {/* Cancel Button */}
-      <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
-        <Text style={styles.cancelText}>Cancel order</Text>
-      </TouchableOpacity>
+        {/* Order card */}
+        <View style={styles.card}>
+          <View style={styles.addrRow}>
+            <View style={[styles.dot, styles.dotGreen]} />
+            <Text style={styles.addrText} numberOfLines={2}>
+              {pickupAddress}
+            </Text>
+          </View>
+          <View style={styles.addrRow}>
+            <View style={[styles.dot, styles.dotRed]} />
+            <Text style={styles.addrText} numberOfLines={2}>
+              {dropoffAddress}
+            </Text>
+          </View>
+          <View style={styles.cardFooter}>
+            <View style={styles.tierBadge}>
+              <Text style={styles.tierBadgeText}>{tierLabel(deliveryTier)}</Text>
+            </View>
+            <Text style={styles.priceText}>{formatMoney(totalPrice)}</Text>
+          </View>
+        </View>
+
+        {driverFound ? null : noDriverFound ? (
+          <View style={styles.sadActions}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, retrying && styles.btnDisabled]}
+              onPress={handleKeepSearching}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <ActivityIndicator color={colors.textWhite} />
+              ) : (
+                <Text style={styles.primaryBtnText}>Keep Searching</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, cancelling && styles.btnDisabled, { marginTop: 4 }]}
+              onPress={handleCancelFromSadState}
+              disabled={cancelling}
+            >
+              <Text style={styles.secondaryBtnText}>Cancel for Full Refund</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.cancelLink}
+            onPress={onCancelPress}
+            disabled={cancelling}
+            hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
+          >
+            {cancelling ? (
+              <ActivityIndicator size="small" color="#6B7280" />
+            ) : (
+              <Text style={styles.cancelLinkText}>Cancel Order</Text>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width: width,
-    height: height,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width,
+    minHeight: height,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
   },
-  radarContainer: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
+  radarSection: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    minHeight: height * 0.38,
+    marginTop: spacing.md,
+  },
+  radarStage: {
+    width: 260,
+    height: 260,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   radarRing: {
     position: 'absolute',
@@ -188,92 +499,174 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: RADAR_BLUE,
     backgroundColor: 'transparent',
   },
-  centerIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary,
+  centerIconWrap: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    ...shadows.card,
+    zIndex: 10,
+  },
+  centerIcon: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: RADAR_BLUE,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  centerIconSuccess: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#22C55E',
+    borderWidth: 3,
+    borderColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
     elevation: 8,
   },
-  content: {
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  mainText: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 16,
+  mainTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
     textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    marginBottom: 8,
   },
-  dotsContainer: {
+  subtitle: {
+    fontSize: 15,
+    color: '#6B7280',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  dotsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginTop: 4,
   },
   loadingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: RADAR_BLUE,
+    marginHorizontal: 5,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  addrRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  dot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.primary,
-    marginHorizontal: 4,
+    marginTop: 5,
+    marginRight: 10,
   },
-  subText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
+  dotGreen: {
+    backgroundColor: '#22C55E',
   },
-  orderSummary: {
-    position: 'absolute',
-    bottom: 100,
-    left: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    ...shadows.card,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
+  dotRed: {
+    backgroundColor: '#EF4444',
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    width: 60,
-  },
-  summaryText: {
+  addrText: {
     flex: 1,
-    fontSize: 14,
-    color: colors.textPrimary,
-    textAlign: 'right',
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+    lineHeight: 22,
   },
-  summaryPrice: {
-    fontSize: 16,
-    color: colors.primary,
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
+  },
+  tierBadge: {
+    backgroundColor: '#E8F4FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  tierBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: RADAR_BLUE,
+  },
+  priceText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  cancelLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  cancelLinkText: {
+    fontSize: 15,
+    color: '#6B7280',
     fontWeight: '600',
   },
-  cancelButton: {
-    position: 'absolute',
-    bottom: 40,
-    alignSelf: 'center',
+  sadActions: {
+    marginBottom: spacing.sm,
   },
-  cancelText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textDecorationLine: 'underline',
+  primaryBtn: {
+    backgroundColor: RADAR_BLUE,
+    paddingVertical: 16,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  secondaryBtn: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryBtnText: {
+    color: '#6B7280',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.7,
   },
 });
 
