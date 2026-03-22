@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS driver_tiers (
   tier_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_driver_tiers_driver_id ON driver_tiers(driver_id);
+
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   order_number VARCHAR(50) UNIQUE NOT NULL,

@@ -411,7 +411,7 @@ async function getOrderById(req, res) {
         dp.vehicle_year,
         dp.vehicle_plate,
         COALESCE(dt.deliveries_completed, 0) AS driver_deliveries_completed,
-        COALESCE(dt.current_rating, 0) AS driver_rating
+        COALESCE(dt.current_rating, 0.0) AS driver_rating
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id
@@ -899,6 +899,17 @@ async function uploadDeliveryPhoto(req, res) {
       `UPDATE orders SET delivery_photo_url = $1, status = 'completed', updated_at = NOW() WHERE id = $2`,
       [url, id]
     );
+
+    if (order.driver_id) {
+      await db.query(
+        `INSERT INTO driver_tiers (driver_id, tier_name, deliveries_completed)
+         VALUES ($1, 'new', 1)
+         ON CONFLICT (driver_id) DO UPDATE SET
+           deliveries_completed = driver_tiers.deliveries_completed + 1,
+           tier_updated_at = NOW()`,
+        [order.driver_id]
+      );
+    }
 
     const driverAmount = Number(payout?.driverAmount);
     const amtStr = Number.isFinite(driverAmount) ? driverAmount.toFixed(2) : '0.00';

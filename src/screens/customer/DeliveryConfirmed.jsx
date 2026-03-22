@@ -17,7 +17,10 @@ import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
-import { driverTrustSubtitle, normalizeDriverDeliveriesCompleted } from '../../utils/driverTrustDisplay';
+import {
+  formatDriverRatingDeliveriesLine,
+  normalizeDriverDeliveriesCompleted,
+} from '../../utils/driverTrustDisplay';
 
 function normalizeDeliveryPhotoUrl(url) {
   if (url == null) return null;
@@ -148,10 +151,11 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const displayDriverDeliveries = normalizeDriverDeliveriesCompleted(
     orderDetails?.driver_deliveries_completed ?? driverDeliveriesParam
   );
-  const displayDriverTrustLine = driverTrustSubtitle(
-    orderDetails?.driver_rating ?? driverRating,
-    displayDriverDeliveries
-  );
+  const displayDriverTrustLine = formatDriverRatingDeliveriesLine({
+    driver_rating: orderDetails?.driver_rating ?? driverRating,
+    driver_deliveries_completed:
+      orderDetails?.driver_deliveries_completed ?? driverDeliveriesParam,
+  });
   const displayDeliveryPhoto = normalizeDeliveryPhotoUrl(
     orderDetails?.delivery_photo_url ??
       orderDetails?.deliveryPhotoUrl ??

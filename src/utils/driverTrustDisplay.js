@@ -20,3 +20,17 @@ export function driverTrustSubtitle(rating, deliveriesRaw) {
   const d = normalizeDriverDeliveriesCompleted(deliveriesRaw);
   return `⭐ ${r} · ${d} deliveries`;
 }
+
+/**
+ * Matches customer screens: rating > 0 shows fixed decimal, else "⭐ New".
+ * @param {{ driver_rating?: unknown, driver_deliveries_completed?: unknown }} orderLike
+ */
+export function formatDriverRatingDeliveriesLine(orderLike) {
+  const rating = Number(orderLike?.driver_rating);
+  const deliveries = normalizeDriverDeliveriesCompleted(
+    orderLike?.driver_deliveries_completed
+  );
+  const ratingPart =
+    Number.isFinite(rating) && rating > 0 ? `⭐ ${rating.toFixed(1)}` : '⭐ New';
+  return `${ratingPart} · ${deliveries} deliveries`;
+}

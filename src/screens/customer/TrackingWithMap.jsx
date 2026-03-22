@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
-import { driverTrustSubtitle } from '../../utils/driverTrustDisplay';
+import { formatDriverRatingDeliveriesLine } from '../../utils/driverTrustDisplay';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
@@ -545,7 +545,9 @@ const TrackingWithMap = ({ navigation, route }) => {
               {driverVehicleLine ? (
                 <Text style={styles.vehicleLineText}>{driverVehicleLine}</Text>
               ) : null}
-              <Text style={styles.driverTrustSubline}>{driverTrustLine}</Text>
+              <Text style={styles.driverTrustSubline}>
+                {formatDriverRatingDeliveriesLine(order)}
+              </Text>
             </View>
             {order.driver_phone && (
               <TouchableOpacity style={styles.callButton} onPress={handleCall} accessibilityLabel="Call driver">

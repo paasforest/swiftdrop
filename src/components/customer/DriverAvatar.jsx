@@ -1,12 +1,11 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/theme';
 import { normalizeDriverDeliveriesCompleted } from '../../utils/driverTrustDisplay';
 
 /**
  * Round driver photo or primary-colored initial fallback (customer trust UI).
- * Optional achievement badge: >100 deliveries = gold star, >500 = diamond (replaces star).
+ * Achievement badges (bottom-right): >= 100 deliveries gold ⭐, >= 500 blue 💎.
  */
 export default function DriverAvatar({ uri, name, size = 56, deliveriesCompleted = 0 }) {
   const trimmed = name != null ? String(name).trim() : '';
@@ -14,8 +13,8 @@ export default function DriverAvatar({ uri, name, size = 56, deliveriesCompleted
   const r = size / 2;
   const photo = uri != null ? String(uri).trim() : '';
   const dc = normalizeDriverDeliveriesCompleted(deliveriesCompleted);
-  const badge = dc > 500 ? 'diamond' : dc > 100 ? 'star' : null;
-  const badgeSize = Math.max(16, Math.round(size * 0.32));
+  const badge = dc >= 500 ? 'diamond' : dc >= 100 ? 'star' : null;
+  const badgeMin = Math.max(18, Math.round(size * 0.34));
 
   const face = photo ? (
     <Image
@@ -36,19 +35,16 @@ export default function DriverAvatar({ uri, name, size = 56, deliveriesCompleted
           style={[
             styles.badge,
             {
-              width: badgeSize,
-              height: badgeSize,
-              borderRadius: badgeSize / 2,
+              minWidth: badgeMin,
+              minHeight: badgeMin,
+              borderRadius: badgeMin / 2,
+              paddingHorizontal: badge === 'diamond' ? 3 : 2,
             },
             badge === 'diamond' ? styles.badgeDiamond : styles.badgeGold,
           ]}
           accessibilityLabel={badge === 'diamond' ? 'Top driver' : 'Experienced driver'}
         >
-          {badge === 'diamond' ? (
-            <Ionicons name="diamond-outline" size={Math.round(badgeSize * 0.55)} color="#5B21B6" />
-          ) : (
-            <Ionicons name="star" size={Math.round(badgeSize * 0.55)} color="#B45309" />
-          )}
+          <Text style={styles.badgeEmoji}>{badge === 'diamond' ? '💎' : '⭐'}</Text>
         </View>
       ) : null}
     </View>
@@ -85,6 +81,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDE68A',
   },
   badgeDiamond: {
-    backgroundColor: '#E9D5FF',
+    backgroundColor: '#BFDBFE',
+  },
+  badgeEmoji: {
+    fontSize: 11,
+    lineHeight: 14,
   },
 });
