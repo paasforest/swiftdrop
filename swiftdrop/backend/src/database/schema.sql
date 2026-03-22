@@ -168,13 +168,28 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS platform_revenue (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER REFERENCES orders(id),
+  order_number VARCHAR(50),
+  commission_amount NUMERIC(10,2),
+  revenue_date DATE DEFAULT CURRENT_DATE,
+  status VARCHAR(20) DEFAULT 'earned',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_revenue_order_id ON platform_revenue(order_id);
+
 CREATE TABLE IF NOT EXISTS insurance_pool (
   id SERIAL PRIMARY KEY,
   order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  order_number VARCHAR(50),
   amount_collected NUMERIC(12,2) NOT NULL,
-  claim_amount NUMERIC(12,2),
+  collected_at TIMESTAMPTZ DEFAULT NOW(),
+  claim_amount NUMERIC(12,2) DEFAULT 0,
   claim_status VARCHAR(20) NOT NULL DEFAULT 'none'
     CHECK (claim_status IN ('none','claimed','paid')),
+  claimed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -228,5 +243,5 @@ CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_ratings_order_id ON ratings(order_id);
 CREATE INDEX IF NOT EXISTS idx_disputes_order_id ON disputes(order_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_insurance_pool_order_id ON insurance_pool(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_insurance_pool_order_id ON insurance_pool(order_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_id ON wallet_transactions(user_id);

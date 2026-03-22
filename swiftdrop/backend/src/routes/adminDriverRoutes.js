@@ -6,6 +6,9 @@ const adminController = require('../controllers/adminController');
 const router = express.Router();
 
 router.get('/dashboard-stats', auth, adminController.dashboardStats);
+router.get('/finance/summary', auth, adminController.financeSummary);
+router.get('/finance/revenue', auth, adminController.financeRevenueDaily);
+router.get('/finance/insurance', auth, adminController.financeInsurancePool);
 router.get('/deliveries', auth, adminController.listAdminDeliveries);
 router.post('/wallet/set', auth, adminController.setUserWallet);
 router.post('/user/verify', auth, adminController.verifyUserByEmail);

@@ -217,6 +217,14 @@ async function createOrder(req, res) {
         [order.id, totalPrice, payment_method]
       );
 
+      if (insuranceFee > 0) {
+        await client.query(
+          `INSERT INTO insurance_pool (order_id, order_number, amount_collected)
+           VALUES ($1, $2, $3)`,
+          [order.id, order.order_number, insuranceFee]
+        );
+      }
+
       if (payment_method === 'wallet') {
         await client.query(
           `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
@@ -899,6 +907,16 @@ async function uploadDeliveryPhoto(req, res) {
       `UPDATE orders SET delivery_photo_url = $1, status = 'completed', updated_at = NOW() WHERE id = $2`,
       [url, id]
     );
+
+    const commissionAmt = parseFloat(order.commission_amount);
+    if (Number.isFinite(commissionAmt) && commissionAmt > 0) {
+      await db.query(
+        `INSERT INTO platform_revenue (order_id, order_number, commission_amount, revenue_date)
+         VALUES ($1, $2, $3, (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::date)
+         ON CONFLICT (order_id) DO NOTHING`,
+        [order.id, order.order_number, commissionAmt]
+      );
+    }
 
     if (order.driver_id) {
       await db.query(

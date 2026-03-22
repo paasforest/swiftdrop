@@ -313,6 +313,17 @@ async function resolveDispute(req, res) {
       await releaseHeldDriverPayout(orderId, client);
     }
 
+    if (resolution === 'refund_customer' || resolution === 'partial_refund') {
+      await client.query(
+        `UPDATE insurance_pool
+         SET claim_amount = $1,
+             claim_status = 'claimed',
+             claimed_at = NOW()
+         WHERE order_id = $2`,
+        [storedRefundAmount, orderId]
+      );
+    }
+
     const upd = await client.query(
       `UPDATE disputes SET
         status = 'resolved',
