@@ -334,7 +334,7 @@ const Payment = ({ navigation, route }) => {
             <Text style={styles.priceValue}>{delivery_base_price != null ? formatMoney(delivery_base_price) : '—'}</Text>
           </View>
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Insurance</Text>
+            <Text style={styles.priceLabel}>Parcel protection</Text>
             <Text style={styles.priceValue}>
               {delivery_insurance_fee != null ? formatMoney(delivery_insurance_fee) : '—'}
             </Text>

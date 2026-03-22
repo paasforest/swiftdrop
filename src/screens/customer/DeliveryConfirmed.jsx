@@ -44,7 +44,10 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const driverRating = params.driverRating;
   const driverPhotoParam = params.driverPhoto;
   const driverDeliveriesParam = params.driverDeliveriesCompleted;
-  const deliveryPhoto = params.deliveryPhoto;
+  /** Immediate URL from TrackingWithMap; also accept delivery_photo_url for parity */
+  const deliveryPhoto = normalizeDeliveryPhotoUrl(
+    params.deliveryPhoto ?? params.delivery_photo_url
+  );
   const fromAddress = params.fromAddress;
   const toAddress = params.toAddress;
   const totalPrice = params.totalPrice;
@@ -58,6 +61,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const [orderFetchError, setOrderFetchError] = useState(null);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [imageRetryKey, setImageRetryKey] = useState(0);
+  const [photoPollExhausted, setPhotoPollExhausted] = useState(false);
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
@@ -102,19 +106,26 @@ const DeliveryConfirmed = ({ navigation, route }) => {
     fetchOrder();
   }, [fetchOrder]);
 
-  /** Poll for delivery_photo_url while order is delivered/completed but photo not yet in DB. */
+  useEffect(() => {
+    setPhotoPollExhausted(false);
+  }, [orderId]);
+
+  /** Poll GET /api/orders/:id every 3s, max 10 tries (30s), until delivery_photo_url is set. */
   useEffect(() => {
     if (!orderId || !orderDetails) return;
-    const photo = normalizeDeliveryPhotoUrl(
+    const photoFromOrder = normalizeDeliveryPhotoUrl(
       orderDetails.delivery_photo_url ?? orderDetails.deliveryPhotoUrl
     );
-    if (photo) return;
+    if (photoFromOrder || deliveryPhoto) {
+      setPhotoPollExhausted(false);
+      return;
+    }
     const st = orderDetails.status;
     if (st !== 'delivered' && st !== 'completed') return;
 
     let cancelled = false;
     let n = 0;
-    const maxPolls = 24;
+    const maxPolls = 10;
     const auth = getAuth();
     if (!auth?.token) return;
 
@@ -123,6 +134,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
       n += 1;
       if (n > maxPolls) {
         clearInterval(id);
+        if (!cancelled) setPhotoPollExhausted(true);
         return;
       }
       try {
@@ -131,6 +143,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
         setOrderDetails(data);
         if (normalizeDeliveryPhotoUrl(data?.delivery_photo_url ?? data?.deliveryPhotoUrl)) {
           clearInterval(id);
+          setPhotoPollExhausted(false);
         }
       } catch {
         /* keep polling */
@@ -141,7 +154,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [orderId, orderDetails?.status, orderDetails?.delivery_photo_url, orderDetails?.deliveryPhotoUrl]);
+  }, [orderId, orderDetails?.status, orderDetails?.delivery_photo_url, orderDetails?.deliveryPhotoUrl, deliveryPhoto]);
 
   const displayDriverName = orderDetails?.driver_name || driverName;
   const displayDriverRating = orderDetails?.driver_rating ?? driverRating;
@@ -233,11 +246,20 @@ const DeliveryConfirmed = ({ navigation, route }) => {
       : photoUrl
     : null;
 
+  const deliveredOrCompleted =
+    orderDetails?.status === 'delivered' || orderDetails?.status === 'completed';
   const showProcessingPlaceholder =
     !orderLoading &&
     !orderFetchError &&
     !photoUrl &&
-    (orderDetails?.status === 'delivered' || orderDetails?.status === 'completed');
+    !photoPollExhausted &&
+    deliveredOrCompleted;
+  const showPhotoUnavailablePlaceholder =
+    !orderLoading &&
+    !orderFetchError &&
+    !photoUrl &&
+    photoPollExhausted &&
+    deliveredOrCompleted;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -323,6 +345,11 @@ const DeliveryConfirmed = ({ navigation, route }) => {
                 <Text style={styles.photoPlaceholderText}>Photo being processed…</Text>
               </View>
             ) : null}
+            {!orderLoading && showPhotoUnavailablePlaceholder ? (
+              <View style={styles.photoPlaceholder}>
+                <Text style={styles.photoUnavailableText}>Photo unavailable</Text>
+              </View>
+            ) : null}
           </View>
 
           {!submitted ? (
@@ -382,7 +409,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
               <Text style={styles.priceValue}>{formatMoney(displayBasePrice)}</Text>
             </View>
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Insurance</Text>
+              <Text style={styles.priceLabel}>Parcel protection</Text>
               <Text style={styles.priceValue}>{formatMoney(displayInsuranceFee)}</Text>
             </View>
             <View style={[styles.priceRow, styles.priceTotalRow]}>
@@ -504,6 +531,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   photoPlaceholderText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  photoUnavailableText: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
