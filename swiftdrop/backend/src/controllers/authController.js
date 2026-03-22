@@ -404,6 +404,26 @@ async function resetPassword(req, res) {
   }
 }
 
+/** GET /api/auth/me — validate access token and return current user */
+async function getMe(req, res) {
+  try {
+    const u = req.user;
+    return res.json({
+      id: u.id,
+      email: u.email,
+      phone: u.phone,
+      full_name: u.full_name,
+      user_type: u.user_type,
+      profile_photo_url: u.profile_photo_url,
+      wallet_balance: u.wallet_balance != null ? Number(u.wallet_balance) : null,
+      is_verified: u.is_verified,
+    });
+  } catch (err) {
+    console.error('getMe:', err);
+    return res.status(500).json({ error: 'Failed to load user' });
+  }
+}
+
 async function refreshToken(req, res) {
   try {
     const { refreshToken: token } = req.body;
@@ -454,4 +474,5 @@ module.exports = {
   forgotPassword,
   resetPassword,
   refreshToken,
+  getMe,
 };

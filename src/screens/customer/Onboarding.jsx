@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/theme';
 import { AppText, AppButton } from '../../components/ui';
 import { OnboardingSlideArt } from '../../components/onboarding/OnboardingArt';
@@ -33,12 +35,26 @@ const Onboarding = ({ navigation }) => {
     }
   };
 
+  const goToWelcome = async () => {
+    try {
+      await AsyncStorage.setItem('onboarding_complete', 'true');
+    } catch {
+      /* ignore */
+    }
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      })
+    );
+  };
+
   const skipOnboarding = () => {
-    navigation.navigate('Welcome');
+    goToWelcome();
   };
 
   const getStarted = () => {
-    navigation.navigate('Welcome');
+    goToWelcome();
   };
 
   return (

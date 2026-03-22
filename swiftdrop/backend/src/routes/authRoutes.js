@@ -5,6 +5,7 @@ const driverApplicationController = require('../controllers/driverApplicationCon
 const { auth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
+router.get('/me', auth, authController.getMe);
 router.post('/register-customer', authController.registerCustomer);
 router.post('/register-driver', authController.registerDriver);
 router.post('/verify-phone', authController.verifyPhone);

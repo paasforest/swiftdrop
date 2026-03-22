@@ -11,6 +11,7 @@ import { alertForegroundNotification } from './src/services/pushNotificationServ
 
 // Shared
 import WelcomeScreen from './src/screens/shared/WelcomeScreen';
+import LoadingScreen from './src/screens/shared/LoadingScreen';
 
 // Customer Screens
 import Onboarding from './src/screens/customer/Onboarding';
@@ -96,11 +97,12 @@ export default function App() {
     <NavigationContainer ref={navigationRef}>
       <StatusBar style="auto" />
       <Stack.Navigator
-        initialRouteName="Welcome"
+        initialRouteName="Loading"
         screenOptions={{
           headerShown: false,
         }}
       >
+        <Stack.Screen name="Loading" component={LoadingScreen} />
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
         {/* Customer Flow */}
         <Stack.Screen name="Onboarding" component={Onboarding} />
