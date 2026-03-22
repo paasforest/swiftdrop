@@ -83,6 +83,7 @@ async function findNearbyDrivers(order, radiusKm) {
 async function createJobOffers(orderId, driverIds) {
   const expiresAt = new Date(Date.now() + OFFER_TIMEOUT_MS);
   for (const driverId of driverIds) {
+    console.log('[Matching] Offering job to driver:', driverId);
     await db.query(
       `INSERT INTO job_offers (order_id, driver_id, status, expires_at) VALUES ($1, $2, 'pending', $3)`,
       [orderId, driverId, expiresAt]
@@ -92,7 +93,8 @@ async function createJobOffers(orderId, driverIds) {
 
 async function expireJobOffers(orderId) {
   await db.query(
-    `UPDATE job_offers SET status = 'expired' WHERE order_id = $1 AND status = 'pending'`
+    `UPDATE job_offers SET status = 'expired' WHERE order_id = $1 AND status = 'pending'`,
+    [orderId]
   );
 }
 
@@ -124,12 +126,14 @@ async function tryStep1(orderId) {
   if (!order || order.driver_id || order.status !== 'matching') return;
 
   const riderIds = await findRouteRiders(order);
+  console.log('[Matching] Route riders found:', riderIds.length);
   if (riderIds.length > 0) {
     await createJobOffers(orderId, riderIds);
     await notifyDriversNewOffer(riderIds, order);
     setTimeout(() => checkAndContinue(orderId, 1), OFFER_TIMEOUT_MS);
     return;
   }
+  console.log('[Matching] No drivers available (route match); trying nearby…');
   setTimeout(() => tryStep2(orderId), 0);
 }
 
@@ -139,9 +143,11 @@ async function tryStep2(orderId) {
 
   await expireJobOffers(orderId);
   const driverIds = await findNearbyDrivers(order, NEARBY_RADIUS_KM);
+  console.log('[Matching] Drivers found (nearby 10km):', driverIds.length);
   const toOffer = driverIds.slice(0, MAX_NEARBY_DRIVERS);
 
   if (toOffer.length === 0) {
+    console.log('[Matching] No drivers available (nearby); widening search…');
     setTimeout(() => tryStep3(orderId), 0);
     return;
   }
@@ -173,9 +179,11 @@ async function tryStep3(orderId) {
 
   await expireJobOffers(orderId);
   const driverIds = await findNearbyDrivers(order, INTERCITY_RADIUS_KM);
+  console.log('[Matching] Drivers found (intercity 30km):', driverIds.length);
   const toOffer = driverIds.slice(0, MAX_NEARBY_DRIVERS);
 
   if (toOffer.length === 0) {
+    console.log('[Matching] No drivers available (intercity); marking unmatched');
     tryStep4(orderId);
     return;
   }
@@ -203,6 +211,7 @@ async function checkAndContinue(orderId, step) {
 }
 
 function runMatching(orderId) {
+  console.log('[Matching] Starting for order:', orderId);
   tryStep1(orderId).catch((err) => console.error('Matching error:', err));
 }
 
