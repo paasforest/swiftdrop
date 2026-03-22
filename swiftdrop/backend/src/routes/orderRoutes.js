@@ -15,8 +15,6 @@ router.get('/driver', auth, order.getDriverOrders);
 
 router.get('/pending-offer', auth, order.getPendingOffer);
 
-router.post('/validate-promo', auth, order.validatePromo);
-
 router.post('/', auth, order.createOrder);
 
 router.get('/:id/tracking', auth, order.getOrderTracking);

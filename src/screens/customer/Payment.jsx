@@ -2,7 +2,6 @@ import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
@@ -56,18 +55,11 @@ const Payment = ({ navigation, route }) => {
   const [paymentMessage, setPaymentMessage] = useState(null);
   const [payfastLoading, setPayfastLoading] = useState(true);
   const payHandledRef = useRef(false);
-  const payfastOrderTotalRef = useRef(null);
 
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletFormatted, setWalletFormatted] = useState('R0.00');
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(true);
   const [walletBalanceError, setWalletBalanceError] = useState(null);
-
-  const [promoInput, setPromoInput] = useState('');
-  const [appliedCode, setAppliedCode] = useState('');
-  const [appliedPromo, setAppliedPromo] = useState(null);
-  const [promoError, setPromoError] = useState(null);
-  const [promoApplying, setPromoApplying] = useState(false);
 
   const fetchWalletBalance = useCallback(async () => {
     if (!auth?.token) {
@@ -103,7 +95,6 @@ const Payment = ({ navigation, route }) => {
     setPayfastReturnUrl(null);
     setPayfastCancelUrl(null);
     setPendingOrderId(null);
-    payfastOrderTotalRef.current = null;
     payHandledRef.current = false;
   };
 
@@ -136,13 +127,7 @@ const Payment = ({ navigation, route }) => {
     setPayfastModalVisible(false);
     const orderId = pendingOrderId;
     setPendingOrderId(null);
-    if (orderId) {
-      navigateToDriverMatching(
-        orderId,
-        payfastOrderTotalRef.current != null ? payfastOrderTotalRef.current : total
-      );
-    }
-    payfastOrderTotalRef.current = null;
+    if (orderId) navigateToDriverMatching(orderId, total);
   };
 
   const handlePayfastNavStateChange = (navState) => {
@@ -197,19 +182,8 @@ const Payment = ({ navigation, route }) => {
     return Number.isFinite(t) ? t : null;
   }, [delivery_total]);
 
-  const effectiveTotalNumeric = useMemo(() => {
-    if (orderTotalNumeric == null) return null;
-    if (appliedPromo?.valid && appliedPromo.final_total != null) {
-      const ft = Number(appliedPromo.final_total);
-      return Number.isFinite(ft) ? ft : orderTotalNumeric;
-    }
-    return orderTotalNumeric;
-  }, [orderTotalNumeric, appliedPromo]);
-
   const walletHasEnough =
-    orderTotalNumeric != null &&
-    effectiveTotalNumeric != null &&
-    (effectiveTotalNumeric <= 0 || walletBalance >= effectiveTotalNumeric);
+    orderTotalNumeric != null && walletBalance >= orderTotalNumeric;
   const walletOptionDisabled =
     walletBalanceLoading || orderTotalNumeric == null || !walletHasEnough;
 
@@ -224,53 +198,6 @@ const Payment = ({ navigation, route }) => {
     setSelectedPaymentMethod(methodId);
   };
 
-  useEffect(() => {
-    setPromoInput('');
-    setAppliedCode('');
-    setAppliedPromo(null);
-    setPromoError(null);
-  }, [delivery_total]);
-
-  const handleApplyPromo = async () => {
-    if (!auth?.token) {
-      navigation.navigate('Login');
-      return;
-    }
-    if (orderTotalNumeric == null) return;
-    const trimmed = promoInput.trim();
-    if (!trimmed) {
-      setPromoError('Enter a promo code');
-      return;
-    }
-    setPromoApplying(true);
-    setPromoError(null);
-    try {
-      const data = await postJson(
-        '/api/orders/validate-promo',
-        { code: trimmed, order_total: orderTotalNumeric },
-        { token: auth.token }
-      );
-      if (data?.valid) {
-        setAppliedPromo({
-          valid: true,
-          discount_amount: data.discount_amount,
-          final_total: data.final_total,
-        });
-        setAppliedCode(trimmed);
-      } else {
-        setAppliedPromo(null);
-        setAppliedCode('');
-        setPromoError(data?.error || 'Invalid promo code');
-      }
-    } catch (e) {
-      setAppliedPromo(null);
-      setAppliedCode('');
-      setPromoError(e.message || 'Could not validate promo');
-    } finally {
-      setPromoApplying(false);
-    }
-  };
-
   const handlePay = async () => {
     try {
       if (!auth?.token) {
@@ -279,11 +206,7 @@ const Payment = ({ navigation, route }) => {
       }
 
       if (selectedPaymentMethod === 'wallet') {
-        if (
-          orderTotalNumeric == null ||
-          effectiveTotalNumeric == null ||
-          (effectiveTotalNumeric > 0 && walletBalance < effectiveTotalNumeric)
-        ) {
+        if (orderTotalNumeric == null || walletBalance < orderTotalNumeric) {
           alert('Insufficient wallet balance for this order.');
           return;
         }
@@ -305,7 +228,6 @@ const Payment = ({ navigation, route }) => {
           delivery_tier: params.delivery_tier,
           insurance_selected: params.insurance_selected,
           payment_method: selectedPaymentMethod,
-          ...(appliedPromo?.valid && appliedCode ? { promo_code: appliedCode } : {}),
         },
         { token: auth.token }
       );
@@ -314,19 +236,10 @@ const Payment = ({ navigation, route }) => {
 
       if (!orderId) throw new Error('Could not create order');
 
-      const tp = Number(res?.total_price);
-      if (Number.isFinite(tp) && tp <= 0) {
-        await fetchWalletBalance();
-        navigateToDriverMatching(orderId, res?.total_price ?? effectiveTotalNumeric ?? total);
-        return;
-      }
-
       // Gap 2: PayFast in-app WebView (wait for return_url)
       if (selectedPaymentMethod === 'payfast') {
         setPaymentMessage(null);
         setPendingOrderId(orderId);
-        payfastOrderTotalRef.current =
-          res?.total_price != null ? res.total_price : effectiveTotalNumeric ?? total;
         setPayfastLoading(true);
 
         const pay = await postJson(
@@ -371,13 +284,7 @@ const Payment = ({ navigation, route }) => {
     navigation.goBack();
   };
 
-  const displayTotal =
-    effectiveTotalNumeric != null
-      ? formatMoney(effectiveTotalNumeric)
-      : total != null
-        ? formatMoney(total)
-        : '—';
-  const totalPriceText = displayTotal;
+  const totalPriceText = total != null ? formatMoney(total) : '—';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -432,57 +339,10 @@ const Payment = ({ navigation, route }) => {
               {delivery_insurance_fee != null ? formatMoney(delivery_insurance_fee) : '—'}
             </Text>
           </View>
-          {appliedPromo?.valid && appliedPromo.discount_amount > 0 ? (
-            <View style={styles.priceRow}>
-              <Text style={[styles.priceLabel, { color: colors.success }]}>Promo discount</Text>
-              <Text style={[styles.priceValue, { color: colors.success }]}>
-                −{formatMoney(appliedPromo.discount_amount)}
-              </Text>
-            </View>
-          ) : null}
           <View style={[styles.priceRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalValue}>{totalPriceText}</Text>
           </View>
-        </View>
-
-        {/* Promo code */}
-        <View style={styles.promoSection}>
-          <Text style={styles.promoSectionTitle}>Have a promo code?</Text>
-          <View style={styles.promoRow}>
-            <TextInput
-              style={styles.promoInput}
-              placeholder="Enter code"
-              placeholderTextColor={colors.textLight}
-              value={promoInput}
-              onChangeText={(t) => {
-                setPromoInput(t);
-                if (appliedPromo?.valid) {
-                  setAppliedPromo(null);
-                  setAppliedCode('');
-                }
-                setPromoError(null);
-              }}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              editable={!promoApplying}
-            />
-            <TouchableOpacity
-              style={[styles.promoApplyBtn, promoApplying && { opacity: 0.6 }]}
-              onPress={handleApplyPromo}
-              disabled={promoApplying || orderTotalNumeric == null}
-            >
-              {promoApplying ? (
-                <ActivityIndicator size="small" color={colors.textWhite} />
-              ) : (
-                <Text style={styles.promoApplyBtnText}>Apply</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-          {promoError ? <Text style={styles.promoErrorText}>{promoError}</Text> : null}
-          {appliedPromo?.valid ? (
-            <Text style={styles.promoSuccessText}>Promo applied</Text>
-          ) : null}
         </View>
 
         {/* Payment Methods */}
@@ -585,11 +445,7 @@ const Payment = ({ navigation, route }) => {
       {/* Pay Button */}
       <View style={styles.bottomContainer}>
         <AppButton
-          label={
-            effectiveTotalNumeric != null && effectiveTotalNumeric <= 0
-              ? 'Confirm & request driver'
-              : `Pay ${totalPriceText} & request driver`
-          }
+          label={`Pay ${totalPriceText} & request driver`}
           variant="accent"
           onPress={handlePay}
         />
@@ -693,57 +549,6 @@ const styles = StyleSheet.create({
   estimatedTime: {
     fontSize: 14,
     color: colors.textSecondary,
-  },
-  promoSection: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  promoSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  promoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  promoInput: {
-    flex: 1,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: 15,
-    color: colors.textPrimary,
-    backgroundColor: colors.background,
-  },
-  promoApplyBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    minWidth: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  promoApplyBtnText: {
-    color: colors.textWhite,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  promoErrorText: {
-    color: colors.danger,
-    fontSize: 13,
-    marginTop: spacing.xs,
-  },
-  promoSuccessText: {
-    color: colors.success,
-    fontSize: 13,
-    marginTop: spacing.xs,
-    fontWeight: '600',
   },
   priceBreakdown: {
     marginHorizontal: spacing.md,

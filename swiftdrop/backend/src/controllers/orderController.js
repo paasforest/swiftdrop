@@ -1,8 +1,4 @@
 const db = require('../database/connection');
-const {
-  validatePromoForOrder,
-  applyPromoInTransaction,
-} = require('../services/promoService');
 const { haversineKm } = require('../utils/distanceHelper');
 const { generateOTP } = require('../utils/otpHelper');
 const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
@@ -113,33 +109,6 @@ function generateOrderNumber() {
   return 'SD' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
-async function validatePromo(req, res) {
-  try {
-    if (req.user.user_type !== 'customer') {
-      return res.status(403).json({ error: 'Only customers can validate promo codes' });
-    }
-    const { code, order_total } = req.body;
-    const ot = Number(order_total);
-    const result = await validatePromoForOrder(req.user.id, code, ot);
-    if (!result.valid) {
-      return res.json({
-        valid: false,
-        discount_amount: 0,
-        final_total: Number.isFinite(ot) ? roundMoney(ot) : 0,
-        error: result.error,
-      });
-    }
-    return res.json({
-      valid: true,
-      discount_amount: result.discount_amount,
-      final_total: result.final_total,
-    });
-  } catch (err) {
-    console.error('validatePromo:', err);
-    return res.status(500).json({ error: 'Promo validation failed' });
-  }
-}
-
 async function createOrder(req, res) {
   try {
     if (req.user.user_type !== 'customer') {
@@ -152,7 +121,6 @@ async function createOrder(req, res) {
       parcel_type, parcel_size, parcel_value, special_handling,
       delivery_tier, insurance_selected,
       payment_method = 'card',
-      promo_code: promoCodeBody,
     } = req.body;
 
     if (!pickup_address || pickup_lat == null || pickup_lng == null ||
@@ -209,22 +177,6 @@ async function createOrder(req, res) {
     try {
       await client.query('BEGIN');
 
-      let finalTotal = subtotal;
-      let promoDiscount = 0;
-      let promoCodeId = null;
-
-      const wantsPromo = promoCodeBody != null && String(promoCodeBody).trim() !== '';
-      if (wantsPromo) {
-        const applied = await applyPromoInTransaction(client, customerId, promoCodeBody, subtotal);
-        if (!applied) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'Invalid promo code' });
-        }
-        promoDiscount = applied.discount;
-        promoCodeId = applied.promoRow.id;
-        finalTotal = roundMoney(Math.max(0, subtotal - promoDiscount));
-      }
-
       if (payment_method === 'wallet') {
         const balRes = await client.query(
           `SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE`,
@@ -236,7 +188,7 @@ async function createOrder(req, res) {
           return res.status(400).json({ error: 'User not found' });
         }
         const balance = parseFloat(row.wallet_balance) || 0;
-        if (finalTotal > 0 && balance < finalTotal) {
+        if (balance < totalPrice) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: 'Insufficient wallet balance' });
         }
@@ -247,16 +199,14 @@ async function createOrder(req, res) {
           order_number, customer_id, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type, parcel_size, parcel_value,
           special_handling, delivery_tier, status, base_price, insurance_fee, total_price,
-          commission_amount, driver_earnings, pickup_otp, delivery_otp,
-          promo_code_id, promo_discount_amount
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          commission_amount, driver_earnings, pickup_otp, delivery_otp
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20)
         RETURNING *`,
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type || null, parcel_size || null,
           parcel_value || null, special_handling || null, delivery_tier,
-          basePrice, insuranceFee, finalTotal, commission, driverEarnings, pickupOtp, deliveryOtp,
-          promoCodeId, promoDiscount,
+          basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp,
         ]
       );
       const order = orderRes.rows[0];
@@ -264,30 +214,18 @@ async function createOrder(req, res) {
       await client.query(
         `INSERT INTO payments (order_id, amount, payment_method, escrow_status)
          VALUES ($1, $2, $3, 'held')`,
-        [order.id, finalTotal, payment_method]
+        [order.id, totalPrice, payment_method]
       );
 
-      if (payment_method === 'wallet' && finalTotal > 0) {
+      if (payment_method === 'wallet') {
         await client.query(
           `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
-          [finalTotal, customerId]
+          [totalPrice, customerId]
         );
         await client.query(
           `INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
            VALUES ($1, 'debit', $2, $3, 'Order payment')`,
-          [customerId, finalTotal, orderNumber]
-        );
-      }
-
-      if (promoCodeId) {
-        await client.query(
-          `INSERT INTO promo_code_uses (code_id, user_id, order_id, discount_applied)
-           VALUES ($1, $2, $3, $4)`,
-          [promoCodeId, customerId, order.id, promoDiscount]
-        );
-        await client.query(
-          `UPDATE promo_codes SET uses_count = uses_count + 1 WHERE id = $1`,
-          [promoCodeId]
+          [customerId, totalPrice, orderNumber]
         );
       }
 
@@ -300,19 +238,14 @@ async function createOrder(req, res) {
         price_breakdown: {
           base_price: basePrice,
           insurance_fee: insuranceFee,
-          subtotal,
-          promo_discount: promoDiscount,
           commission: commission,
           driver_earnings: driverEarnings,
-          total: finalTotal,
+          total: totalPrice,
         },
       };
       return res.status(201).json(out);
     } catch (e) {
       await client.query('ROLLBACK');
-      if (e.statusCode === 400) {
-        return res.status(400).json({ error: e.message });
-      }
       throw e;
     } finally {
       client.release();
@@ -1106,7 +1039,6 @@ async function getDriverDashboard(req, res) {
 
 module.exports = {
   createOrder,
-  validatePromo,
   calculatePrice,
   getOrderById,
   getCustomerOrders,

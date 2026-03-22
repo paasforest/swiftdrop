@@ -51,22 +51,6 @@ CREATE TABLE IF NOT EXISTS driver_tiers (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_driver_tiers_driver_id ON driver_tiers(driver_id);
 
-CREATE TABLE IF NOT EXISTS promo_codes (
-  id SERIAL PRIMARY KEY,
-  code VARCHAR(50) UNIQUE NOT NULL,
-  discount_type VARCHAR(20) NOT NULL,
-  discount_value NUMERIC(10,2) NOT NULL,
-  max_uses INTEGER DEFAULT 1,
-  uses_count INTEGER DEFAULT 0,
-  expires_at TIMESTAMP,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-INSERT INTO promo_codes (code, discount_type, discount_value, max_uses)
-VALUES ('FIRST', 'percent', 100, 1000)
-ON CONFLICT (code) DO NOTHING;
-
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   order_number VARCHAR(50) UNIQUE NOT NULL,
@@ -94,8 +78,6 @@ CREATE TABLE IF NOT EXISTS orders (
   base_price NUMERIC(12,2),
   insurance_fee NUMERIC(12,2),
   total_price NUMERIC(12,2),
-  promo_code_id INTEGER REFERENCES promo_codes(id),
-  promo_discount_amount NUMERIC(12,2) DEFAULT 0,
   commission_amount NUMERIC(12,2),
   driver_earnings NUMERIC(12,2),
   pickup_otp VARCHAR(10),
@@ -110,16 +92,6 @@ CREATE TABLE IF NOT EXISTS orders (
   driver_last_seen_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS promo_code_uses (
-  id SERIAL PRIMARY KEY,
-  code_id INTEGER REFERENCES promo_codes(id),
-  user_id INTEGER REFERENCES users(id),
-  order_id INTEGER REFERENCES orders(id),
-  discount_applied NUMERIC(10,2),
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(code_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS driver_routes (
