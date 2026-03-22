@@ -1,20 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Dimensions, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  Dimensions,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
-import { colors, spacing, radius, typography } from '../../theme/theme';
-import { AppButton } from '../../components/ui';
+import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { AppText, AppButton } from '../../components/ui';
+import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
 
 const { width, height } = Dimensions.get('window');
+
+function maskPhoneTail(phone) {
+  if (!phone) return '';
+  const d = String(phone).replace(/\D/g, '');
+  if (d.length < 4) return 'your number';
+  return `•••• ••• ${d.slice(-4)}`;
+}
 
 const OTPScreen = ({ navigation, route }) => {
   const phone = route?.params?.phone;
 
-  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
+  const [timeRemaining, setTimeRemaining] = useState(600);
   const [otp, setOtp] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [otpFocused, setOtpFocused] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -26,7 +47,6 @@ const OTPScreen = ({ navigation, route }) => {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, []);
 
@@ -70,44 +90,104 @@ const OTPScreen = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Verify your phone</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Login')}
+            hitSlop={12}
+            accessibilityLabel="Back to sign in"
+          >
+            <Ionicons name="chevron-back" size={26} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
 
-        {/* OTP Info Box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>
-            Enter the 4-digit code we sent to your phone.
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
+        >
+          <View style={styles.logoRow}>
+            <View style={styles.logoMark}>
+              <ParcelLogoIcon size={24} color={colors.primary} />
+            </View>
+            <AppText variant="h2" color="primary" style={styles.logoText}>
+              SwiftDrop
+            </AppText>
+          </View>
+
+          <AppText variant="h3" color="textPrimary" style={styles.screenTitle}>
+            Verify your phone
+          </AppText>
+          <AppText variant="small" color="textSecondary" style={styles.screenSub}>
+            Code sent to {maskPhoneTail(phone)}
+          </AppText>
+
+          <View style={styles.infoBox}>
+            <AppText variant="body" color="primary" style={styles.infoText}>
+              Enter the 4-digit code we sent by SMS.
+            </AppText>
+          </View>
+
+          <AppText variant="small" color="textSecondary" style={styles.fieldLabel}>
+            Verification code
+          </AppText>
+          <View
+            style={[
+              styles.otpField,
+              { borderColor: otpFocused ? colors.primary : colors.border },
+            ]}
+          >
+            <TextInput
+              style={styles.otpInput}
+              value={otp}
+              onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 4))}
+              keyboardType="number-pad"
+              placeholder="0 0 0 0"
+              placeholderTextColor={colors.textLight}
+              editable={!isVerifying && timeRemaining > 0}
+              maxLength={4}
+              onFocus={() => setOtpFocused(true)}
+              onBlur={() => setOtpFocused(false)}
+              textAlign="center"
+              selectionColor={colors.primary}
+            />
+          </View>
+
+          <Text style={styles.expiryText}>
+            {timeRemaining > 0
+              ? `Code expires in ${formatTime(timeRemaining)}`
+              : 'Code expired — go back and request a new one'}
           </Text>
-        </View>
 
-        {/* OTP Input */}
-        <View style={styles.otpInputRow}>
-          <TextInput
-            style={styles.otpInput}
-            value={otp}
-            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 4))}
-            keyboardType="number-pad"
-            placeholder="1234"
-            editable={!isVerifying && timeRemaining > 0}
-            maxLength={4}
+          {errorMessage ? (
+            <AppText variant="small" color="danger" style={styles.errorText}>
+              {errorMessage}
+            </AppText>
+          ) : null}
+
+          <AppButton
+            label="Confirm OTP"
+            onPress={handleVerify}
+            variant="primary"
+            loading={isVerifying}
+            disabled={isVerifying || timeRemaining <= 0}
           />
-        </View>
 
-        {/* Expiry Notice */}
-        <Text style={styles.expiryText}>
-          This code expires in {formatTime(timeRemaining)}
-        </Text>
-
-        {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
-
-        <AppButton
-          label="Confirm OTP"
-          onPress={handleVerify}
-          variant="primary"
-          loading={isVerifying}
-          disabled={isVerifying || timeRemaining <= 0}
-        />
-      </View>
+          <TouchableOpacity
+            style={styles.resendHint}
+            onPress={() => navigation.navigate('Login')}
+            disabled={isVerifying}
+          >
+            <AppText variant="small" color="primary" style={styles.resendHintText}>
+              Wrong number? Go back
+            </AppText>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -116,62 +196,104 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
-    width: width,
-    height: height,
+    width,
+    minHeight: height,
   },
-  content: {
+  flex: {
     flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 40,
-    alignItems: 'center',
   },
-  title: {
-    ...typography.h2,
-    color: colors.textPrimary,
+  topBar: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: 0,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  logoMark: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoText: {
+    fontSize: 24,
+  },
+  screenTitle: {
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: spacing.xs,
+    fontWeight: '700',
+  },
+  screenSub: {
+    textAlign: 'center',
+    marginBottom: spacing.lg,
   },
   infoBox: {
     backgroundColor: colors.primaryLight,
     borderRadius: radius.md,
     padding: spacing.md,
-    marginBottom: 40,
+    marginBottom: spacing.lg,
     width: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(26, 115, 232, 0.12)',
   },
   infoText: {
-    ...typography.body,
-    color: colors.primary,
     textAlign: 'center',
     fontWeight: '500',
+    lineHeight: 22,
   },
-  otpInputRow: {
-    marginBottom: 12,
+  fieldLabel: {
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  otpField: {
     width: '100%',
-    alignItems: 'center',
+    minHeight: 56,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.md,
+    justifyContent: 'center',
+    ...shadows.card,
+    shadowOpacity: 0.06,
+    elevation: 1,
   },
   otpInput: {
-    width: '60%',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    fontSize: 22,
-    textAlign: 'center',
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 8,
     color: colors.textPrimary,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   expiryText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: spacing.lg,
   },
   errorText: {
-    color: colors.danger,
-    fontSize: 14,
+    marginBottom: spacing.md,
     textAlign: 'center',
-    marginBottom: 24,
+  },
+  resendHint: {
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  resendHintText: {
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
 });
 
