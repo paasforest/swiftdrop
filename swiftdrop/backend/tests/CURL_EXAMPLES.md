@@ -143,3 +143,27 @@ curl -X POST "http://localhost:4000/api/admin/wallet/set" \
   -H "Content-Type: application/json" \
   -d '{"phone": "+27821234567", "wallet_balance": 500}'
 ```
+
+---
+
+## 10. Admin — verify user by email (admin JWT only)
+
+Sets `is_verified = true` for the matching user (email stored lowercase).
+
+```bash
+curl -X POST "https://swiftdrop-production.up.railway.app/api/admin/user/verify" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "charles@swiftdrop.com"
+  }'
+```
+
+Local:
+
+```bash
+curl -X POST "http://localhost:4000/api/admin/user/verify" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com"}'
+```

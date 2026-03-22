@@ -1,6 +1,10 @@
 const db = require('../database/connection');
 const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
 
+function normalizeEmailForLookup(email) {
+  return String(email ?? '').trim().toLowerCase();
+}
+
 function requireAdmin(user) {
   if (!user || user.user_type !== 'admin') {
     const err = new Error('Admins only');
@@ -198,8 +202,50 @@ async function setUserWallet(req, res) {
   }
 }
 
+/**
+ * POST /api/admin/user/verify
+ * Body: { email: string }
+ * Admin only. Sets is_verified = true for the user with this email.
+ */
+async function verifyUserByEmail(req, res) {
+  try {
+    requireAdmin(req.user);
+
+    const { email } = req.body || {};
+    if (email == null || String(email).trim() === '') {
+      return res.status(400).json({ error: 'email is required' });
+    }
+
+    const emailNorm = normalizeEmailForLookup(email);
+    if (!emailNorm || !emailNorm.includes('@')) {
+      return res.status(400).json({ error: 'Invalid email address' });
+    }
+
+    const r = await db.query(
+      `UPDATE users
+       SET is_verified = true, updated_at = NOW()
+       WHERE email = $1
+       RETURNING id, full_name, phone, email, user_type, is_verified`,
+      [emailNorm]
+    );
+
+    if (!r.rows[0]) {
+      return res.status(404).json({ error: 'User not found for this email' });
+    }
+
+    return res.json({
+      message: 'User verified',
+      user: r.rows[0],
+    });
+  } catch (err) {
+    const code = err.statusCode || 500;
+    return res.status(code).json({ error: err.message || 'Failed to verify user' });
+  }
+}
+
 module.exports = {
   dashboardStats,
   listAdminDeliveries,
   setUserWallet,
+  verifyUserByEmail,
 };
