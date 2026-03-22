@@ -29,6 +29,8 @@ const Payment = ({ navigation, route }) => {
   const params = route?.params || {};
   const {
     pickup_address,
+    pickup_lat,
+    pickup_lng,
     dropoff_address,
     delivery_tier,
     parcel_value,
@@ -99,14 +101,24 @@ const Payment = ({ navigation, route }) => {
   const navigateToDriverMatching = useCallback(
     (orderId, totalPrice) => {
       navigation.navigate('DriverMatching', {
-        orderId: orderId,
+        orderId,
         pickup_address,
+        pickup_lat,
+        pickup_lng,
         dropoff_address,
         delivery_tier,
         total_price: totalPrice != null ? totalPrice : delivery_total,
       });
     },
-    [navigation, pickup_address, dropoff_address, delivery_tier, delivery_total]
+    [
+      navigation,
+      pickup_address,
+      pickup_lat,
+      pickup_lng,
+      dropoff_address,
+      delivery_tier,
+      delivery_total,
+    ]
   );
 
   const handlePayfastSuccess = () => {

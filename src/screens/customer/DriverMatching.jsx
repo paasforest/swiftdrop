@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { API_BASE_URL } from '../../apiConfig';
@@ -88,13 +89,24 @@ function startRadarRing(scale, opacity, staggerMs, isCancelled) {
 }
 
 const DriverMatching = ({ navigation, route }) => {
-  const params = route?.params || {};
+  const {
+    orderId,
+    pickup_address,
+    pickup_lat: pickupLatParam,
+    pickup_lng: pickupLngParam,
+    dropoff_address,
+    delivery_tier,
+    total_price,
+  } = route?.params || {};
 
-  const orderId = params.orderId;
-  const pickupAddress = params.pickup_address || params.pickup || 'Pickup address';
-  const dropoffAddress = params.dropoff_address || params.dropoff || 'Delivery address';
-  const deliveryTier = params.delivery_tier || params.deliveryTier;
-  const totalPrice = params.total_price ?? params.totalPrice;
+  const pickupAddress = pickup_address || route?.params?.pickup || 'Pickup address';
+  const dropoffAddress = dropoff_address || route?.params?.dropoff || 'Delivery address';
+  const deliveryTier = delivery_tier || route?.params?.deliveryTier;
+  const totalPrice = total_price ?? route?.params?.totalPrice;
+
+  const pickupLat = Number(pickupLatParam);
+  const pickupLng = Number(pickupLngParam);
+  const hasPickupCoord = Number.isFinite(pickupLat) && Number.isFinite(pickupLng);
 
   const [noDriverFound, setNoDriverFound] = useState(false);
   const [driverFound, setDriverFound] = useState(false);
@@ -336,6 +348,34 @@ const DriverMatching = ({ navigation, route }) => {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        <MapView
+          style={styles.mapFill}
+          provider={PROVIDER_GOOGLE}
+          pointerEvents="none"
+          initialRegion={{
+            latitude: hasPickupCoord ? pickupLat : -33.9249,
+            longitude: hasPickupCoord ? pickupLng : 18.4241,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          }}
+          scrollEnabled={false}
+          zoomEnabled={false}
+          rotateEnabled={false}
+          pitchEnabled={false}
+        >
+          {hasPickupCoord ? (
+            <Marker
+              coordinate={{
+                latitude: pickupLat,
+                longitude: pickupLng,
+              }}
+              pinColor={RADAR_BLUE}
+            />
+          ) : null}
+        </MapView>
+
+        <View style={styles.mapOverlay} pointerEvents="none" />
+
         {/* Radar + center */}
         <View style={styles.radarSection}>
           <View style={styles.radarStage}>
@@ -475,9 +515,16 @@ const styles = StyleSheet.create({
     flex: 1,
     width,
     minHeight: height,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'transparent',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
+  },
+  mapFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.82)',
   },
   radarSection: {
     flex: 1,
