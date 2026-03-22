@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
-import { postJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
 import { WebView } from 'react-native-webview';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import { AppButton, AppText } from '../../components/ui';
@@ -37,6 +37,38 @@ const Payment = ({ navigation, route }) => {
   const [paymentMessage, setPaymentMessage] = useState(null);
   const [payfastLoading, setPayfastLoading] = useState(true);
   const payHandledRef = useRef(false);
+
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletFormatted, setWalletFormatted] = useState('R0.00');
+  const [walletBalanceLoading, setWalletBalanceLoading] = useState(true);
+  const [walletBalanceError, setWalletBalanceError] = useState(null);
+
+  const fetchWalletBalance = useCallback(async () => {
+    if (!auth?.token) {
+      setWalletBalance(0);
+      setWalletFormatted('R0.00');
+      setWalletBalanceLoading(false);
+      return;
+    }
+    setWalletBalanceLoading(true);
+    setWalletBalanceError(null);
+    try {
+      const data = await getJson('/api/wallet/balance', { token: auth.token });
+      const b = Number(data.balance);
+      setWalletBalance(Number.isFinite(b) ? b : 0);
+      setWalletFormatted(typeof data.formatted === 'string' ? data.formatted : formatMoney(b));
+    } catch (e) {
+      setWalletBalanceError(e.message || 'Could not load wallet');
+      setWalletBalance(0);
+      setWalletFormatted('R0.00');
+    } finally {
+      setWalletBalanceLoading(false);
+    }
+  }, [auth?.token]);
+
+  useEffect(() => {
+    fetchWalletBalance();
+  }, [fetchWalletBalance]);
 
   const closePayfast = () => {
     setPayfastModalVisible(false);
@@ -83,35 +115,56 @@ const Payment = ({ navigation, route }) => {
     delivery_insurance_fee,
   } = params;
 
-  const paymentMethods = [
-    {
-      id: 'payfast',
-      name: 'PayFast',
-      ionicon: 'card-outline',
-      description: 'Pay with card/e-wallet',
-    },
-    {
-      id: 'card',
-      name: 'Credit/Debit Card',
-      ionicon: 'card-outline',
-      description: 'Visa, Mastercard, etc.',
-    },
-    {
-      id: 'eft',
-      name: 'Instant EFT',
-      ionicon: 'phone-portrait-outline',
-      description: 'Bank transfer',
-    },
-    {
-      id: 'wallet',
-      name: 'SwiftDrop Wallet',
-      ionicon: 'wallet-outline',
-      description: 'R350 available',
-      balance: 350,
-    },
-  ];
+  const paymentMethods = useMemo(
+    () => [
+      {
+        id: 'payfast',
+        name: 'PayFast',
+        ionicon: 'card-outline',
+        description: 'Pay with card/e-wallet',
+      },
+      {
+        id: 'card',
+        name: 'Credit/Debit Card',
+        ionicon: 'card-outline',
+        description: 'Visa, Mastercard, etc.',
+      },
+      {
+        id: 'eft',
+        name: 'Instant EFT',
+        ionicon: 'phone-portrait-outline',
+        description: 'Bank transfer',
+      },
+      {
+        id: 'wallet',
+        name: 'SwiftDrop Wallet',
+        ionicon: 'wallet-outline',
+        description: '',
+        isWallet: true,
+      },
+    ],
+    []
+  );
+
+  const orderTotalNumeric = useMemo(() => {
+    if (delivery_total == null) return null;
+    const t = Number(delivery_total);
+    return Number.isFinite(t) ? t : null;
+  }, [delivery_total]);
+
+  const walletHasEnough =
+    orderTotalNumeric != null && walletBalance >= orderTotalNumeric;
+  const walletOptionDisabled =
+    walletBalanceLoading || orderTotalNumeric == null || !walletHasEnough;
+
+  useEffect(() => {
+    if (selectedPaymentMethod === 'wallet' && walletOptionDisabled) {
+      setSelectedPaymentMethod('payfast');
+    }
+  }, [selectedPaymentMethod, walletOptionDisabled]);
 
   const handlePaymentMethodSelect = (methodId) => {
+    if (methodId === 'wallet' && walletOptionDisabled) return;
     setSelectedPaymentMethod(methodId);
   };
 
@@ -120,6 +173,13 @@ const Payment = ({ navigation, route }) => {
       if (!auth?.token) {
         navigation.navigate('Login');
         return;
+      }
+
+      if (selectedPaymentMethod === 'wallet') {
+        if (orderTotalNumeric == null || walletBalance < orderTotalNumeric) {
+          alert('Insufficient wallet balance for this order.');
+          return;
+        }
       }
 
       const res = await postJson(
@@ -176,7 +236,13 @@ const Payment = ({ navigation, route }) => {
         return;
       }
 
-      // Wallet payment: navigate immediately after deduction.
+      // Wallet payment: refresh balance then navigate.
+      if (selectedPaymentMethod === 'wallet') {
+        await fetchWalletBalance();
+        navigation.navigate('Tracking', { orderId });
+        return;
+      }
+
       navigation.navigate('Tracking', { orderId });
     } catch (e) {
       console.error('Pay error:', e.message);
@@ -258,32 +324,88 @@ const Payment = ({ navigation, route }) => {
         <View style={styles.paymentSection}>
           <Text style={styles.sectionTitle}>Pay With</Text>
           
-          {paymentMethods.map((method) => (
-            <TouchableOpacity
-              key={method.id}
-              style={[
-                styles.paymentMethod,
-                selectedPaymentMethod === method.id && styles.paymentMethodSelected
-              ]}
-              onPress={() => handlePaymentMethodSelect(method.id)}
-            >
-              <View style={styles.paymentLeft}>
-                <Ionicons name={method.ionicon} size={26} color={colors.primary} style={styles.paymentIcon} />
-                <View style={styles.paymentInfo}>
-                  <Text style={styles.paymentName}>{method.name}</Text>
-                  <Text style={styles.paymentDescription}>{method.description}</Text>
-                  {method.balance && (
-                    <Text style={styles.balanceText}>Balance: R{method.balance}</Text>
-                  )}
+          {paymentMethods.map((method) => {
+            const isWallet = method.isWallet;
+            const disabled = isWallet && walletOptionDisabled;
+            const walletDesc = isWallet
+              ? walletBalanceLoading
+                ? 'Loading wallet balance…'
+                : walletBalanceError
+                  ? walletBalanceError
+                  : walletHasEnough
+                    ? `— ${walletFormatted} available`
+                    : 'Insufficient balance'
+              : method.description;
+
+            return (
+              <TouchableOpacity
+                key={method.id}
+                activeOpacity={disabled ? 1 : 0.7}
+                disabled={disabled}
+                style={[
+                  styles.paymentMethod,
+                  selectedPaymentMethod === method.id && !disabled && styles.paymentMethodSelected,
+                  disabled && styles.paymentMethodDisabled,
+                ]}
+                onPress={() => handlePaymentMethodSelect(method.id)}
+              >
+                <View style={styles.paymentLeft}>
+                  <Ionicons
+                    name={method.ionicon}
+                    size={26}
+                    color={disabled ? colors.textLight : colors.primary}
+                    style={styles.paymentIcon}
+                  />
+                  <View style={styles.paymentInfo}>
+                    <View style={styles.paymentNameRow}>
+                      <Text
+                        style={[
+                          styles.paymentName,
+                          disabled && styles.paymentTextMuted,
+                        ]}
+                      >
+                        {method.name}
+                      </Text>
+                      {isWallet && walletHasEnough && !walletBalanceLoading ? (
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={22}
+                          color={colors.success}
+                          style={styles.walletCheckIcon}
+                        />
+                      ) : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.paymentDescription,
+                        disabled && styles.paymentTextMuted,
+                        isWallet && walletHasEnough && !walletBalanceLoading && styles.walletAvailableText,
+                      ]}
+                    >
+                      {walletDesc}
+                    </Text>
+                    {isWallet && walletBalanceLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.primary}
+                        style={styles.walletLoadingIndicator}
+                      />
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-              <View style={styles.radioCircle}>
-                {selectedPaymentMethod === method.id && (
-                  <View style={styles.radioSelected} />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
+                <View
+                  style={[
+                    styles.radioCircle,
+                    disabled && styles.radioCircleDisabled,
+                  ]}
+                >
+                  {selectedPaymentMethod === method.id && !disabled ? (
+                    <View style={styles.radioSelected} />
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Parking Notice */}
@@ -463,6 +585,10 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primaryLight,
   },
+  paymentMethodDisabled: {
+    opacity: 0.55,
+    backgroundColor: colors.surface,
+  },
   paymentLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -474,21 +600,34 @@ const styles = StyleSheet.create({
   paymentInfo: {
     flex: 1,
   },
+  paymentNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 2,
+  },
   paymentName: {
     fontSize: 16,
     fontWeight: '500',
     color: colors.textPrimary,
-    marginBottom: 2,
+  },
+  walletCheckIcon: {
+    marginLeft: 6,
   },
   paymentDescription: {
     fontSize: 14,
     color: colors.textSecondary,
   },
-  balanceText: {
-    fontSize: 12,
+  paymentTextMuted: {
+    color: colors.textLight,
+  },
+  walletAvailableText: {
     color: colors.success,
-    fontWeight: '500',
-    marginTop: 2,
+    fontWeight: '600',
+  },
+  walletLoadingIndicator: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
   },
   radioCircle: {
     width: 20,
@@ -498,6 +637,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  radioCircleDisabled: {
+    borderColor: colors.textLight,
+    opacity: 0.7,
   },
   radioSelected: {
     width: 10,
