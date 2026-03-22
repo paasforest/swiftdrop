@@ -5,7 +5,8 @@
 builder = "nixpacks"
 
 [deploy]
-preDeployCommand = ["npm run db:migrate", "npm run db:ensure-admin"]
+# Railway allows only one preDeployCommand string (not an array). Chain scripts with &&.
+preDeployCommand = "npm run db:migrate && npm run db:ensure-admin"
 startCommand = "node server.js"
 healthcheckPath = "/"
 healthcheckTimeout = 30
