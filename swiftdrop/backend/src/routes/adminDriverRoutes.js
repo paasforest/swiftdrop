@@ -13,4 +13,6 @@ router.get('/drivers/:id', auth, adminDriverController.getDriverApplicationDetai
 router.post('/drivers/:id/approve', auth, adminDriverController.approveDriver);
 router.post('/drivers/:id/reject', auth, adminDriverController.rejectDriver);
 
+router.post('/wallet/set', auth, adminController.setWalletBalance);
+
 module.exports = router;
