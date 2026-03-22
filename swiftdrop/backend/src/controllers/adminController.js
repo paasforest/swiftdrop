@@ -148,7 +148,50 @@ async function listAdminDeliveries(req, res) {
   }
 }
 
+/** POST /api/admin/wallet/set */
+async function setWalletBalance(req, res) {
+  try {
+    requireAdmin(req.user);
+
+    const { phone, wallet_balance } = req.body;
+
+    if (!phone || typeof phone !== 'string' || phone.trim() === '') {
+      return res.status(400).json({ error: 'phone is required' });
+    }
+
+    if (wallet_balance === undefined || wallet_balance === null) {
+      return res.status(400).json({ error: 'wallet_balance is required' });
+    }
+
+    const balance = parseFloat(wallet_balance);
+    if (isNaN(balance) || balance < 0) {
+      return res.status(400).json({ error: 'wallet_balance must be a number >= 0' });
+    }
+
+    const result = await db.query(
+      `UPDATE users
+       SET wallet_balance = $1
+       WHERE phone = $2
+       RETURNING id, full_name, phone, wallet_balance`,
+      [balance, phone.trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.json({
+      message: 'Wallet balance updated successfully',
+      user: result.rows[0],
+    });
+  } catch (err) {
+    const code = err.statusCode || 500;
+    return res.status(code).json({ error: err.message || 'Failed to update wallet balance' });
+  }
+}
+
 module.exports = {
   dashboardStats,
   listAdminDeliveries,
+  setWalletBalance,
 };
