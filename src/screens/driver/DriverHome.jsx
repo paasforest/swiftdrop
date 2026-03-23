@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,6 +80,10 @@ const DriverHome = ({ navigation }) => {
   const [myRoutes, setMyRoutes] = useState([]);
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
+  const [jobOfferBanner, setJobOfferBanner] = useState(false);
+  const bannerNavTimerRef = useRef(null);
+  const bannerScheduledForOrderRef = useRef(null);
+  const jobOfferPulse = useRef(new Animated.Value(1)).current;
 
   const locationIntervalRef = useRef(null);
 
@@ -200,6 +205,76 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  const checkForPendingOffer = useCallback(async () => {
+    try {
+      const state = navigation.getState();
+      const current = state?.routes?.[state.index]?.name;
+      if (current === 'JobOffer') return;
+
+      const auth = getAuth();
+      if (!auth?.token) return;
+      const data = await getJson('/api/orders/pending-offer', { token: auth.token });
+
+      if (!data?.offer) {
+        bannerScheduledForOrderRef.current = null;
+        if (bannerNavTimerRef.current) {
+          clearTimeout(bannerNavTimerRef.current);
+          bannerNavTimerRef.current = null;
+        }
+        setJobOfferBanner(false);
+        return;
+      }
+
+      const oid = data.offer.orderId;
+      if (bannerScheduledForOrderRef.current === oid) return;
+
+      bannerScheduledForOrderRef.current = oid;
+      setJobOfferBanner(true);
+      if (bannerNavTimerRef.current) clearTimeout(bannerNavTimerRef.current);
+      bannerNavTimerRef.current = setTimeout(() => {
+        bannerNavTimerRef.current = null;
+        bannerScheduledForOrderRef.current = null;
+        setJobOfferBanner(false);
+        navigation.navigate('JobOffer');
+      }, 3000);
+    } catch {
+      /* silent */
+    }
+  }, [navigation]);
+
+  const handleJobOfferBannerPress = useCallback(() => {
+    if (bannerNavTimerRef.current) {
+      clearTimeout(bannerNavTimerRef.current);
+      bannerNavTimerRef.current = null;
+    }
+    bannerScheduledForOrderRef.current = null;
+    setJobOfferBanner(false);
+    navigation.navigate('JobOffer');
+  }, [navigation]);
+
+  useEffect(() => {
+    if (!jobOfferBanner) {
+      jobOfferPulse.setValue(1);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(jobOfferPulse, {
+          toValue: 0.82,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(jobOfferPulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [jobOfferBanner, jobOfferPulse]);
+
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
@@ -225,31 +300,21 @@ const DriverHome = ({ navigation }) => {
     };
   }, [stopLocationUpdates]);
 
-  /** Uber-style: while online, poll for pending offers and open JobOffer automatically. */
+  /** Poll pending offers every 3s while online; immediate check when going online. Banner + auto-nav to JobOffer. */
   useEffect(() => {
-    if (!isOnline) return undefined;
-
-    const poll = async () => {
-      try {
-        const state = navigation.getState();
-        const current = state?.routes?.[state.index]?.name;
-        if (current === 'JobOffer') return;
-
-        const auth = getAuth();
-        if (!auth?.token) return;
-        const data = await getJson('/api/orders/pending-offer', { token: auth.token });
-        if (data?.offer) {
-          navigation.navigate('JobOffer');
-        }
-      } catch {
-        /* keep polling silently */
+    if (!isOnline) {
+      if (bannerNavTimerRef.current) {
+        clearTimeout(bannerNavTimerRef.current);
+        bannerNavTimerRef.current = null;
       }
-    };
-
-    poll();
-    const intervalId = setInterval(poll, 5000);
+      bannerScheduledForOrderRef.current = null;
+      setJobOfferBanner(false);
+      return undefined;
+    }
+    void checkForPendingOffer();
+    const intervalId = setInterval(() => void checkForPendingOffer(), 3000);
     return () => clearInterval(intervalId);
-  }, [isOnline, navigation]);
+  }, [isOnline, checkForPendingOffer]);
 
   const userName = dashboard?.user?.full_name || getAuth()?.user?.full_name || 'Driver';
   const rating =
@@ -355,6 +420,23 @@ const DriverHome = ({ navigation }) => {
           </View>
         </View>
       </GradientHeader>
+
+      {jobOfferBanner ? (
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onPress={handleJobOfferBannerPress}
+          style={styles.jobOfferBannerWrap}
+        >
+          <Animated.View style={[styles.jobOfferBanner, { opacity: jobOfferPulse }]}>
+            <Ionicons name="notifications" size={24} color="#FFFFFF" style={{ marginRight: 12 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.jobOfferBannerTitle}>New delivery request!</Text>
+              <Text style={styles.jobOfferBannerSub}>Tap to view job offer · Opening in 3s…</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#FFFFFF" />
+          </Animated.View>
+        </TouchableOpacity>
+      ) : null}
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.toggleSection}>
@@ -666,6 +748,30 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     lineHeight: 24,
+  },
+  jobOfferBannerWrap: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  jobOfferBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    ...shadows.card,
+  },
+  jobOfferBannerTitle: {
+    color: colors.textWhite,
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  jobOfferBannerSub: {
+    color: 'rgba(255,255,255,0.92)',
+    fontSize: 13,
+    fontWeight: '600',
   },
   routeMatchBanner: {
     flexDirection: 'row',
