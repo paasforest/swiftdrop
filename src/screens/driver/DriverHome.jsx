@@ -219,6 +219,32 @@ const DriverHome = ({ navigation }) => {
     };
   }, [stopLocationUpdates]);
 
+  /** Uber-style: while online, poll for pending offers and open JobOffer automatically. */
+  useEffect(() => {
+    if (!isOnline) return undefined;
+
+    const poll = async () => {
+      try {
+        const state = navigation.getState();
+        const current = state?.routes?.[state.index]?.name;
+        if (current === 'JobOffer') return;
+
+        const auth = getAuth();
+        if (!auth?.token) return;
+        const data = await getJson('/api/orders/pending-offer', { token: auth.token });
+        if (data?.offer) {
+          navigation.navigate('JobOffer');
+        }
+      } catch {
+        /* keep polling silently */
+      }
+    };
+
+    poll();
+    const intervalId = setInterval(poll, 5000);
+    return () => clearInterval(intervalId);
+  }, [isOnline, navigation]);
+
   const userName = dashboard?.user?.full_name || getAuth()?.user?.full_name || 'Driver';
   const rating =
     dashboard?.current_rating != null && !Number.isNaN(Number(dashboard.current_rating))

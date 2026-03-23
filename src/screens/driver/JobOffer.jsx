@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Dimensions,
   ScrollView,
   ActivityIndicator,
@@ -12,14 +11,20 @@ import {
   Platform,
   Alert,
   ToastAndroid,
+  Vibration,
 } from 'react-native';
+import { Audio } from 'expo-av';
 import { CommonActions } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius } from '../../theme/theme';
-import { AppButton, BottomTabBar } from '../../components/ui';
 
 const { width } = Dimensions.get('window');
+
+const HEADER_BG = '#0F172A';
+const EARN_ORANGE = '#EA580C';
 
 function zoneLabel(zone) {
   if (!zone) return '';
@@ -31,10 +36,22 @@ function zoneLabel(zone) {
   return z.replace(/_/g, ' ');
 }
 
+function tierLabel(tier) {
+  if (!tier) return 'Standard';
+  const t = String(tier);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function formatMoney(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return 'R0.00';
   return `R${x.toFixed(2)}`;
+}
+
+function timerRingColor(sec) {
+  if (sec >= 10) return '#22C55E';
+  if (sec >= 5) return '#F97316';
+  return '#EF4444';
 }
 
 function showOfferExpiredToast() {
@@ -55,7 +72,32 @@ function resetToDriverHome(navigation) {
   );
 }
 
+async function playJobOfferSound(soundRef) {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+    const { sound } = await Audio.Sound.createAsync(require('../../assets/job_offer.wav'));
+    soundRef.current = sound;
+    await sound.playAsync();
+    sound.setOnPlaybackStatusUpdate((st) => {
+      if (st.isLoaded && st.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+        soundRef.current = null;
+      }
+    });
+  } catch (e) {
+    console.warn('[JobOffer] Sound:', e?.message || e);
+    Vibration.vibrate([0, 300, 100, 300, 100, 300]);
+  }
+}
+
 const JobOffer = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [offer, setOffer] = useState(null);
@@ -66,7 +108,10 @@ const JobOffer = ({ navigation }) => {
   const initialTotalSecRef = useRef(15);
   const expiredHandledRef = useRef(false);
   const offerRef = useRef(null);
+  const soundRef = useRef(null);
   const progressAnim = useRef(new Animated.Value(1)).current;
+  const headerPulse = useRef(new Animated.Value(1)).current;
+  const dangerPulse = useRef(new Animated.Value(1)).current;
 
   offerRef.current = offer;
 
@@ -96,6 +141,13 @@ const JobOffer = ({ navigation }) => {
     showOfferExpiredToast();
     resetToDriverHome(navigation);
   }, [navigation]);
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync?.().catch(() => {});
+      soundRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +190,56 @@ const JobOffer = ({ navigation }) => {
     return () => {
       cancelled = true;
     };
-  }, [runExpireFlow]);
+  }, [runExpireFlow, progressAnim]);
+
+  useEffect(() => {
+    if (!offer || loading) return;
+    Vibration.vibrate([0, 500, 200, 500]);
+    playJobOfferSound(soundRef);
+  }, [offer?.orderId, loading]);
+
+  useEffect(() => {
+    if (!offer) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(headerPulse, {
+          toValue: 1.25,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(headerPulse, {
+          toValue: 1,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [offer, headerPulse]);
+
+  useEffect(() => {
+    if (remainingSec > 4 || !offer) {
+      dangerPulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dangerPulse, {
+          toValue: 1.08,
+          duration: 380,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dangerPulse, {
+          toValue: 1,
+          duration: 380,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [remainingSec, offer, dangerPulse]);
 
   useEffect(() => {
     if (!offer || loading) return;
@@ -186,6 +287,8 @@ const JobOffer = ({ navigation }) => {
     try {
       const updated = await postJson(`/api/orders/${offer.orderId}/accept`, {}, { token: auth.token });
       expiredHandledRef.current = true;
+      await soundRef.current?.unloadAsync?.().catch(() => {});
+      soundRef.current = null;
       navigation.navigate('EnRoutePickup', {
         orderId: offer.orderId,
         pickup_address: updated?.pickup_address || offer.pickup_address,
@@ -205,6 +308,8 @@ const JobOffer = ({ navigation }) => {
     setDeclining(true);
     try {
       expiredHandledRef.current = true;
+      await soundRef.current?.unloadAsync?.().catch(() => {});
+      soundRef.current = null;
       await postJson(`/api/orders/${offer.orderId}/decline`, {}, { token: auth.token });
       resetToDriverHome(navigation);
     } catch (e) {
@@ -222,10 +327,10 @@ const JobOffer = ({ navigation }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: HEADER_BG }]}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading job offer…</Text>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.loadingTextLight}>Loading job offer…</Text>
         </View>
       </SafeAreaView>
     );
@@ -233,7 +338,7 @@ const JobOffer = ({ navigation }) => {
 
   if (loadError) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.safe}>
         <View style={styles.centered}>
           <Text style={styles.errorText}>{loadError}</Text>
           <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()}>
@@ -246,7 +351,7 @@ const JobOffer = ({ navigation }) => {
 
   if (!offer) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.safe}>
         <View style={styles.centered}>
           <Text style={styles.noOfferTitle}>No active offer</Text>
           <Text style={styles.noOfferSub}>Returning to home…</Text>
@@ -255,103 +360,140 @@ const JobOffer = ({ navigation }) => {
     );
   }
 
+  const ringColor = timerRingColor(remainingSec);
+  const tierBadge = tierLabel(offer.delivery_tier);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.offerTag}>New job offer</Text>
-
-        <View style={styles.earnHero}>
-          <Text style={styles.earnsLabel}>You earn</Text>
-          <Text style={styles.earnsValue}>{formatMoney(offer.driver_earns)}</Text>
-        </View>
-
-        <View style={styles.timerBlock}>
-          <View style={styles.timerRow}>
-            <Text style={styles.timerLabel}>Time left</Text>
-            <Text style={styles.timerSeconds}>{remainingSec}s</Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
-          </View>
-        </View>
-
-        <View style={styles.rowAddress}>
-          <View style={styles.dotGreen} />
-          <View style={styles.addressTextWrap}>
-            <Text style={styles.addrLabel}>Pickup</Text>
-            <Text style={styles.addrValue}>{offer.pickup_address}</Text>
-          </View>
-        </View>
-
-        <View style={styles.rowAddress}>
-          <View style={styles.dotRed} />
-          <View style={styles.addressTextWrap}>
-            <Text style={styles.addrLabel}>Dropoff</Text>
-            <Text style={styles.addrValue}>{offer.dropoff_address}</Text>
-          </View>
-        </View>
-
-        <View style={styles.metaGrid}>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Distance</Text>
-            <Text style={styles.metaValue}>{offer.distance_km} km</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Zone</Text>
-            <Text style={styles.metaValue}>{zoneLabel(offer.zone)}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Est. time</Text>
-            <Text style={styles.metaValue}>{offer.time_estimate}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Parcel</Text>
-            <Text style={styles.metaValue}>
-              {offer.parcel_type || '—'}
-              {offer.parcel_size ? ` · ${offer.parcel_size}` : ''}
-            </Text>
-          </View>
-        </View>
-
-        {specialHandlingText ? (
-          <View style={styles.specialBox}>
-            <Text style={styles.specialTitle}>Special handling</Text>
-            <Text style={styles.specialBody}>{specialHandlingText}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.actions}>
-          <AppButton
-            label="Accept"
-            variant="primary"
-            onPress={handleAccept}
-            loading={accepting}
-            disabled={accepting || declining}
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <View style={styles.flex1}>
+        {/* Top — incoming-request header */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
+          <Animated.View
+            style={[
+              styles.pulseRing,
+              {
+                transform: [{ scale: headerPulse }],
+              },
+            ]}
           />
-          <View style={{ height: spacing.sm }} />
-          <AppButton
-            label="Decline"
-            variant="outline"
-            onPress={handleDecline}
-            loading={declining}
-            disabled={accepting || declining}
-          />
+          <View style={styles.iconCircle}>
+            <Ionicons name="cube" size={44} color="#FFFFFF" />
+          </View>
+          <Text style={styles.headerTitle}>New delivery request</Text>
         </View>
-      </ScrollView>
-      <BottomTabBar navigation={navigation} variant="driver" active="jobs" />
+
+        <View style={styles.sheet}>
+          <ScrollView
+            contentContainerStyle={styles.scrollInner}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.earnBlock}>
+              <Text style={styles.earnLabel}>You earn</Text>
+              <Text style={styles.earnValue}>{formatMoney(offer.driver_earns)}</Text>
+              <View style={styles.tierBadge}>
+                <Text style={styles.tierBadgeText}>{tierBadge}</Text>
+              </View>
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.rowAddress}>
+                <View style={styles.dotGreen} />
+                <View style={styles.addressTextWrap}>
+                  <Text style={styles.addrLabel}>From</Text>
+                  <Text style={styles.addrValue}>{offer.pickup_address}</Text>
+                </View>
+              </View>
+              <View style={styles.rowAddress}>
+                <View style={styles.dotRed} />
+                <View style={styles.addressTextWrap}>
+                  <Text style={styles.addrLabel}>To</Text>
+                  <Text style={styles.addrValue}>{offer.dropoff_address}</Text>
+                </View>
+              </View>
+              <View style={styles.metaRow}>
+                <View style={styles.metaChip}>
+                  <Text style={styles.metaChipLabel}>Distance</Text>
+                  <Text style={styles.metaChipValue}>{offer.distance_km} km</Text>
+                </View>
+                <View style={styles.metaChip}>
+                  <Text style={styles.metaChipLabel}>Zone</Text>
+                  <Text style={styles.metaChipValue}>{zoneLabel(offer.zone)}</Text>
+                </View>
+              </View>
+              <View style={styles.parcelRow}>
+                <Text style={styles.parcelLabel}>Parcel</Text>
+                <Text style={styles.parcelValue}>
+                  {offer.parcel_type || '—'}
+                  {offer.parcel_size ? ` · ${offer.parcel_size}` : ''}
+                </Text>
+              </View>
+            </View>
+
+            {specialHandlingText ? (
+              <View style={styles.specialBox}>
+                <Text style={styles.specialTitle}>Special handling</Text>
+                <Text style={styles.specialBody}>{specialHandlingText}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={[styles.bottom, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            <Text style={styles.countdownCaption}>Time to respond</Text>
+            <Animated.View
+              style={[
+                styles.timerCircle,
+                {
+                  borderColor: ringColor,
+                  transform: remainingSec <= 4 ? [{ scale: dangerPulse }] : [{ scale: 1 }],
+                },
+              ]}
+            >
+              <Text style={[styles.timerSeconds, { color: ringColor }]}>{remainingSec}</Text>
+            </Animated.View>
+            <View style={styles.progressTrack}>
+              <Animated.View style={[styles.progressFill, { width: progressWidth, backgroundColor: ringColor }]} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.acceptBtn, accepting && styles.btnDisabled]}
+              onPress={handleAccept}
+              disabled={accepting || declining}
+              activeOpacity={0.9}
+            >
+              {accepting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.acceptBtnText}>Accept Job</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.declineLink}
+              onPress={handleDecline}
+              disabled={accepting || declining}
+              hitSlop={{ top: 12, bottom: 12 }}
+            >
+              {declining ? (
+                <ActivityIndicator color={colors.textSecondary} />
+              ) : (
+                <Text style={styles.declineLinkText}>Decline</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingBottom: 72,
+    backgroundColor: HEADER_BG,
   },
-  scroll: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
+  flex1: {
+    flex: 1,
   },
   centered: {
     flex: 1,
@@ -359,88 +501,121 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.lg,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  offerTag: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  earnHero: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  earnsLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  earnsValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: colors.accent,
-    letterSpacing: -1.5,
-  },
-  timerBlock: {
-    marginBottom: 20,
-  },
-  timerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  timerLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
+  loadingTextLight: {
+    marginTop: 16,
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.85)',
     fontWeight: '600',
   },
-  timerSeconds: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.primary,
+  header: {
+    minHeight: width * 0.34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 28,
+    position: 'relative',
   },
-  progressTrack: {
-    height: 10,
-    borderRadius: 6,
-    backgroundColor: colors.border,
+  pulseRing: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(59,130,246,0.25)',
+  },
+  iconCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.35)',
+    zIndex: 2,
+  },
+  headerTitle: {
+    marginTop: 16,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+    letterSpacing: -0.3,
+    zIndex: 2,
+  },
+  sheet: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -18,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: '100%',
-    borderRadius: 6,
-    backgroundColor: colors.success,
+  scrollInner: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  earnBlock: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  earnLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 4,
+  },
+  earnValue: {
+    fontSize: 44,
+    fontWeight: '900',
+    color: EARN_ORANGE,
+    letterSpacing: -1,
+  },
+  tierBadge: {
+    marginTop: 10,
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  tierBadgeText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#4338CA',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
   rowAddress: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: 14,
-    backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   dotGreen: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: colors.success,
-    marginTop: 4,
+    backgroundColor: '#22C55E',
+    marginTop: 5,
     marginRight: 10,
   },
   dotRed: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: colors.danger,
-    marginTop: 4,
+    backgroundColor: '#EF4444',
+    marginTop: 5,
     marginRight: 10,
   },
   addressTextWrap: {
@@ -449,52 +624,65 @@ const styles = StyleSheet.create({
   addrLabel: {
     fontSize: 12,
     color: colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 4,
   },
   addrValue: {
     fontSize: 15,
     color: colors.textPrimary,
     lineHeight: 22,
+    fontWeight: '600',
   },
-  metaGrid: {
+  metaRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginTop: 4,
   },
-  metaItem: {
+  metaChip: {
     width: '48%',
-    marginBottom: 10,
-    backgroundColor: colors.surface,
-    padding: 12,
+    backgroundColor: '#F1F5F9',
+    padding: 10,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  metaLabel: {
+  metaChipLabel: {
     fontSize: 11,
     color: colors.textLight,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontWeight: '700',
+    marginBottom: 2,
   },
-  metaValue: {
+  metaChipValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  parcelRow: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F0',
+  },
+  parcelLabel: {
+    fontSize: 11,
+    color: colors.textLight,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  parcelValue: {
     fontSize: 15,
     fontWeight: '600',
     color: colors.textPrimary,
   },
   specialBox: {
+    marginTop: spacing.md,
     backgroundColor: colors.warningLight,
     padding: 14,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.warning,
-    marginBottom: 16,
   },
   specialTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.accentDark,
     marginBottom: 6,
   },
@@ -503,8 +691,75 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 20,
   },
-  actions: {
-    marginTop: 8,
+  bottom: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    backgroundColor: '#F8FAFC',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  countdownCaption: {
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  timerCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 8,
+    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  timerSeconds: {
+    fontSize: 48,
+    fontWeight: '900',
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 18,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  acceptBtn: {
+    backgroundColor: '#16A34A',
+    minHeight: 64,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  acceptBtnText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  btnDisabled: {
+    opacity: 0.75,
+  },
+  declineLink: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  declineLinkText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#64748B',
   },
   errorText: {
     fontSize: 16,

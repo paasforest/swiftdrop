@@ -12,7 +12,8 @@
     "db:reset-admin-password": "npm run db:reset-admin-password --prefix swiftdrop/backend",
     "db:seed": "npm run db:seed --prefix swiftdrop/backend",
     "db:ensure-test-driver": "npm run db:ensure-test-driver --prefix swiftdrop/backend",
-    "generate-assets": "node scripts/generateAssets.js"
+    "generate-assets": "node scripts/generateAssets.js",
+    "job-offer-tone": "node scripts/createJobOfferTone.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -24,6 +25,8 @@
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/stack": "^6.3.20",
     "expo": "~54.0.0",
+    "expo-av": "~16.0.8",
+    "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.20",
     "expo-device": "~8.0.10",
     "expo-image-picker": "^55.0.13",

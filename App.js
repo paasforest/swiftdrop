@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 
@@ -64,7 +64,13 @@ export default function App() {
 
   useEffect(() => {
     notificationReceivedSub.current = Notifications.addNotificationReceivedListener((notification) => {
-      alertForegroundNotification(notification);
+      const raw = notification.request.content.data || {};
+      const type = raw.type != null ? String(raw.type) : '';
+      if (type === 'job_offer' || type === 'return_load') {
+        navigateFromNotificationData(raw);
+      } else {
+        alertForegroundNotification(notification);
+      }
     });
     return () => {
       notificationReceivedSub.current?.remove();
@@ -126,7 +132,18 @@ export default function App() {
         <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
         <Stack.Screen name="DriverHome" component={DriverHome} />
         <Stack.Screen name="PostRoute" component={PostRoute} />
-        <Stack.Screen name="JobOffer" component={JobOffer} />
+        <Stack.Screen
+          name="JobOffer"
+          component={JobOffer}
+          options={{
+            ...Platform.select({
+              ios: TransitionPresets.ModalSlideFromBottomIOS,
+              android: TransitionPresets.BottomSheetAndroid,
+              default: TransitionPresets.ModalSlideFromBottomIOS,
+            }),
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen name="EnRoutePickup" component={EnRoutePickup} />
         <Stack.Screen name="PickupConfirm" component={PickupConfirm} />
         <Stack.Screen name="EnRouteDelivery" component={EnRouteDelivery} />

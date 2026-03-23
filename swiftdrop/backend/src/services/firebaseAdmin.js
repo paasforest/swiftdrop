@@ -26,7 +26,9 @@ function init() {
       console.error('[firebaseAdmin] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e.message);
     }
   } else {
-    console.warn('[firebaseAdmin] FIREBASE_SERVICE_ACCOUNT_JSON not set; RTDB writes from API are skipped');
+    console.warn(
+      '[firebaseAdmin] FIREBASE_SERVICE_ACCOUNT_JSON not set — RTDB writes and FCM push are disabled. Set this env var on Railway (or locally) for driver job-offer notifications.'
+    );
   }
 }
 
