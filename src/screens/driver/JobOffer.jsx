@@ -13,7 +13,6 @@ import {
   ToastAndroid,
   Vibration,
 } from 'react-native';
-import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CommonActions } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -74,7 +73,7 @@ function resetToDriverHome(navigation) {
 
 const JobOffer = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const jobOfferPlayer = useAudioPlayer(require('../../assets/job_offer.wav'));
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [offer, setOffer] = useState(null);
@@ -91,6 +90,7 @@ const JobOffer = ({ navigation }) => {
 
   offerRef.current = offer;
 
+
   const tickOfferExpiry = useCallback(() => {
     const o = offerRef.current;
     if (!o?.offer_expires_at) return 0;
@@ -101,12 +101,6 @@ const JobOffer = ({ navigation }) => {
   const runExpireFlow = useCallback(async () => {
     if (expiredHandledRef.current) return;
     expiredHandledRef.current = true;
-
-    try {
-      jobOfferPlayer.pause();
-    } catch {
-      /* ignore */
-    }
 
     const oid = offerRef.current?.orderId;
     if (oid != null) {
@@ -122,7 +116,7 @@ const JobOffer = ({ navigation }) => {
 
     showOfferExpiredToast();
     resetToDriverHome(navigation);
-  }, [navigation, jobOfferPlayer]);
+  }, [navigation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,21 +163,8 @@ const JobOffer = ({ navigation }) => {
 
   useEffect(() => {
     if (!offer || loading) return;
-    Vibration.vibrate([0, 500, 200, 500]);
-    (async () => {
-      try {
-        await setAudioModeAsync({
-          playsInSilentMode: true,
-          shouldPlayInBackground: false,
-        });
-        await jobOfferPlayer.seekTo(0);
-        jobOfferPlayer.play();
-      } catch (e) {
-        console.warn('[JobOffer] Sound:', e?.message || e);
-        Vibration.vibrate([0, 300, 100, 300, 100, 300]);
-      }
-    })();
-  }, [offer?.orderId, loading, jobOfferPlayer]);
+    Vibration.vibrate([0, 400, 200, 400, 200, 400]);
+  }, [offer?.orderId, loading]);
 
   useEffect(() => {
     if (!offer) return;
@@ -274,11 +255,6 @@ const JobOffer = ({ navigation }) => {
     try {
       const updated = await postJson(`/api/orders/${offer.orderId}/accept`, {}, { token: auth.token });
       expiredHandledRef.current = true;
-      try {
-        jobOfferPlayer.pause();
-      } catch {
-        /* ignore */
-      }
       navigation.navigate('EnRoutePickup', {
         orderId: offer.orderId,
         pickup_address: updated?.pickup_address || offer.pickup_address,
@@ -298,11 +274,6 @@ const JobOffer = ({ navigation }) => {
     setDeclining(true);
     try {
       expiredHandledRef.current = true;
-      try {
-        jobOfferPlayer.pause();
-      } catch {
-        /* ignore */
-      }
       await postJson(`/api/orders/${offer.orderId}/decline`, {}, { token: auth.token });
       resetToDriverHome(navigation);
     } catch (e) {
