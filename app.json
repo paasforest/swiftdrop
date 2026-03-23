@@ -38,8 +38,7 @@
           "mode": "production"
         }
       ],
-      "@react-native-community/datetimepicker",
-      "expo-audio"
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
