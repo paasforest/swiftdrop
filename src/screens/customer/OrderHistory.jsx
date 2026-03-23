@@ -3,10 +3,10 @@ import {
   View,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';

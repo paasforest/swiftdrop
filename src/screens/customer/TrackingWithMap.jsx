@@ -4,11 +4,11 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Dimensions,
   ActivityIndicator,
   Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 import { formatDriverRatingDeliveriesLine } from '../../utils/driverTrustDisplay';

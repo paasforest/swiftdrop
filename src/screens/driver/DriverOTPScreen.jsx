@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { colors, spacing, radius, typography } from '../../theme/theme';

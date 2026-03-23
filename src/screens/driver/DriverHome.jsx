@@ -4,12 +4,12 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Dimensions,
   ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
@@ -208,7 +208,13 @@ const DriverHome = ({ navigation }) => {
       syncOnlineStatusFromServer();
       const auth = getAuth();
       if (auth?.token) {
-        registerForPushNotificationsAsync().catch(() => {});
+        void (async () => {
+          try {
+            await registerForPushNotificationsAsync();
+          } catch {
+            console.log('[Push] Not available in Expo Go — using polling fallback');
+          }
+        })();
       }
     }, [loadDashboard, loadMyRoutes, loadRouteMatchBanner, syncOnlineStatusFromServer])
   );

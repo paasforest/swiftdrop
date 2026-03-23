@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/theme';

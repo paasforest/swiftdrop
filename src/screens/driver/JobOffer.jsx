@@ -13,7 +13,7 @@ import {
   ToastAndroid,
   Vibration,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { CommonActions } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,32 +72,9 @@ function resetToDriverHome(navigation) {
   );
 }
 
-async function playJobOfferSound(soundRef) {
-  try {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-    const { sound } = await Audio.Sound.createAsync(require('../../assets/job_offer.wav'));
-    soundRef.current = sound;
-    await sound.playAsync();
-    sound.setOnPlaybackStatusUpdate((st) => {
-      if (st.isLoaded && st.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-        soundRef.current = null;
-      }
-    });
-  } catch (e) {
-    console.warn('[JobOffer] Sound:', e?.message || e);
-    Vibration.vibrate([0, 300, 100, 300, 100, 300]);
-  }
-}
-
 const JobOffer = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const jobOfferPlayer = useAudioPlayer(require('../../assets/job_offer.wav'));
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [offer, setOffer] = useState(null);
@@ -108,7 +85,6 @@ const JobOffer = ({ navigation }) => {
   const initialTotalSecRef = useRef(15);
   const expiredHandledRef = useRef(false);
   const offerRef = useRef(null);
-  const soundRef = useRef(null);
   const progressAnim = useRef(new Animated.Value(1)).current;
   const headerPulse = useRef(new Animated.Value(1)).current;
   const dangerPulse = useRef(new Animated.Value(1)).current;
@@ -126,6 +102,12 @@ const JobOffer = ({ navigation }) => {
     if (expiredHandledRef.current) return;
     expiredHandledRef.current = true;
 
+    try {
+      jobOfferPlayer.pause();
+    } catch {
+      /* ignore */
+    }
+
     const oid = offerRef.current?.orderId;
     if (oid != null) {
       try {
@@ -140,14 +122,7 @@ const JobOffer = ({ navigation }) => {
 
     showOfferExpiredToast();
     resetToDriverHome(navigation);
-  }, [navigation]);
-
-  useEffect(() => {
-    return () => {
-      soundRef.current?.unloadAsync?.().catch(() => {});
-      soundRef.current = null;
-    };
-  }, []);
+  }, [navigation, jobOfferPlayer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,8 +170,20 @@ const JobOffer = ({ navigation }) => {
   useEffect(() => {
     if (!offer || loading) return;
     Vibration.vibrate([0, 500, 200, 500]);
-    playJobOfferSound(soundRef);
-  }, [offer?.orderId, loading]);
+    (async () => {
+      try {
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldPlayInBackground: false,
+        });
+        await jobOfferPlayer.seekTo(0);
+        jobOfferPlayer.play();
+      } catch (e) {
+        console.warn('[JobOffer] Sound:', e?.message || e);
+        Vibration.vibrate([0, 300, 100, 300, 100, 300]);
+      }
+    })();
+  }, [offer?.orderId, loading, jobOfferPlayer]);
 
   useEffect(() => {
     if (!offer) return;
@@ -287,8 +274,11 @@ const JobOffer = ({ navigation }) => {
     try {
       const updated = await postJson(`/api/orders/${offer.orderId}/accept`, {}, { token: auth.token });
       expiredHandledRef.current = true;
-      await soundRef.current?.unloadAsync?.().catch(() => {});
-      soundRef.current = null;
+      try {
+        jobOfferPlayer.pause();
+      } catch {
+        /* ignore */
+      }
       navigation.navigate('EnRoutePickup', {
         orderId: offer.orderId,
         pickup_address: updated?.pickup_address || offer.pickup_address,
@@ -308,8 +298,11 @@ const JobOffer = ({ navigation }) => {
     setDeclining(true);
     try {
       expiredHandledRef.current = true;
-      await soundRef.current?.unloadAsync?.().catch(() => {});
-      soundRef.current = null;
+      try {
+        jobOfferPlayer.pause();
+      } catch {
+        /* ignore */
+      }
       await postJson(`/api/orders/${offer.orderId}/decline`, {}, { token: auth.token });
       resetToDriverHome(navigation);
     } catch (e) {

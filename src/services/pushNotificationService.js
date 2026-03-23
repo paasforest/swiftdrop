@@ -5,6 +5,9 @@ import Constants from 'expo-constants';
 import { postJson } from '../apiClient';
 import { getAuth } from '../authStore';
 
+// Note: Push notifications require a development build (not Expo Go).
+// Polling fallback is active on DriverHome.
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: false,
@@ -36,39 +39,44 @@ export async function getFCMToken() {
  * @returns {Promise<string|null>}
  */
 export async function registerForPushNotificationsAsync() {
-  if (!Device.isDevice) {
-    console.warn('[push] Notifications require a physical device.');
-    return null;
-  }
-
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== 'granted') {
-    console.warn('[push] Permission not granted');
-    return null;
-  }
-
-  const token = await getFCMToken();
-  if (!token) {
-    console.warn('[push] No native device push token (FCM). Check EAS projectId / google-services.');
-    return null;
-  }
-
-  const auth = getAuth();
-  if (auth?.token) {
-    try {
-      await postJson('/api/notifications/fcm-token', { fcm_token: token }, { token: auth.token });
-      console.log('[push] Registered native push token with backend');
-    } catch (e) {
-      console.warn('[push] Failed to register token on server:', e?.message || e);
+  try {
+    if (!Device.isDevice) {
+      console.warn('[push] Notifications require a physical device.');
+      return null;
     }
-  }
 
-  return token;
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+    if (existing !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') {
+      console.warn('[push] Permission not granted');
+      return null;
+    }
+
+    const token = await getFCMToken();
+    if (!token) {
+      console.warn('[push] No native device push token (FCM). Check EAS projectId / google-services.');
+      return null;
+    }
+
+    const auth = getAuth();
+    if (auth?.token) {
+      try {
+        await postJson('/api/notifications/fcm-token', { fcm_token: token }, { token: auth.token });
+        console.log('[push] Registered native push token with backend');
+      } catch (e) {
+        console.warn('[push] Failed to register token on server:', e?.message || e);
+      }
+    }
+
+    return token;
+  } catch (e) {
+    console.log('[Push] Not available in Expo Go — using polling fallback');
+    return null;
+  }
 }
 
 /**

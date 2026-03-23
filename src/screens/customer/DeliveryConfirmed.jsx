@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Dimensions,
   ScrollView,
   TextInput,
@@ -12,6 +11,7 @@ import {
   Animated,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';

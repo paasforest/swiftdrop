@@ -1,5 +1,5 @@
 /**
- * Writes a short silent WAV for in-app job-offer alert (expo-av).
+ * Writes a short silent WAV for in-app job-offer alert (expo-audio).
  * Run: node scripts/createJobOfferTone.js
  */
 const fs = require('fs');
