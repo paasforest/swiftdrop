@@ -42,9 +42,15 @@ function dedicatedScore(order, driverLat, driverLng, radiusKm) {
   return d > radiusKm ? null : d;
 }
 
-async function findMatchingDrivers(order) {
+async function findMatchingDrivers(order, excludeDriverIds = []) {
   const config = getProvinceConfig(order.province);
   if (!config) return [];
+
+  // Combine order's declined drivers with any additional exclusions
+  const allExcluded = [
+    ...(order.declined_driver_ids || []),
+    ...excludeDriverIds
+  ];
 
   const { rows: candidates } = await db.query(
     `SELECT dr.*, u.full_name, u.phone, u.profile_photo_url,
@@ -67,8 +73,9 @@ async function findMatchingDrivers(order) {
          ($2 = 'small') OR
          ($2 = 'medium' AND dr.boot_space IN ('medium','large')) OR
          ($2 = 'large' AND dr.boot_space = 'large')
-       )`,
-    [order.province, order.parcel_size]
+       )
+       AND ($3::integer[] IS NULL OR dr.driver_id != ALL($3::integer[]))`,
+    [order.province, order.parcel_size, allExcluded.length > 0 ? allExcluded : null]
   );
 
   const matches = [];

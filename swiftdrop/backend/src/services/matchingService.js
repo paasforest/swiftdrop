@@ -356,9 +356,25 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
   );
 }
 
+/**
+ * Wrapper function for smart matching - creates job offer and notifies driver
+ * @param {Object} order - The order object
+ * @param {Object} driver - The matched driver/route object with driver_id
+ */
+async function sendJobOfferToDriver(order, driver) {
+  const driverId = driver.driver_id || driver.driver_user_id;
+  if (!driverId) {
+    throw new Error('Driver ID not found in matched driver object');
+  }
+  
+  await createJobOffers(order.id, [driverId], { matchedVia: 'smart_match' });
+  await notifyDriversNewOffer([driverId], order);
+}
+
 module.exports = {
   runMatching,
   runMatchingAttempt,
   runMatchingWithRetry,
   offerReturnLoadAfterIntercityPickup,
+  sendJobOfferToDriver,
 };

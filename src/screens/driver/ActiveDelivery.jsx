@@ -51,6 +51,10 @@ const ActiveDelivery = ({ navigation, route }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState(null);
 
+  // Today's earnings state
+  const [todayTotal, setTodayTotal] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
+
   const snapPoints = ['25%', '50%', '85%'];
 
   // Poll order status
@@ -171,15 +175,39 @@ const ActiveDelivery = ({ navigation, route }) => {
     }, 1000);
   }, [driverCoords]);
 
+  // Fetch today's earnings when delivery completes
+  useEffect(() => {
+    if (phase === 'COMPLETE') {
+      const fetchTodayEarnings = async () => {
+        try {
+          const auth = getAuth();
+          if (!auth?.token) return;
+          const data = await getJson('/api/driver/earnings/today', { token: auth.token });
+          setTodayTotal(data.total || 0);
+          setTodayCount(data.count || 0);
+        } catch (err) {
+          console.error('Failed to fetch today earnings:', err);
+        }
+      };
+      fetchTodayEarnings();
+    }
+  }, [phase]);
+
   // Navigate to DriverHome after completion
   useEffect(() => {
     if (phase === 'COMPLETE') {
       const timer = setTimeout(() => {
-        navigation.navigate('DriverHome');
+        // Check if driver is dedicated type - stay online
+        const driverType = route.params?.driver_type;
+        if (driverType === 'dedicated') {
+          navigation.navigate('DriverHome', { stayOnline: true });
+        } else {
+          navigation.navigate('DriverHome');
+        }
       }, 4000);
       return () => clearTimeout(timer);
     }
-  }, [phase, navigation]);
+  }, [phase, navigation, route.params]);
 
   const handleLocationUpdate = useCallback((coords) => {
     setDriverCoords(coords);
@@ -625,6 +653,11 @@ const ActiveDelivery = ({ navigation, route }) => {
           <View style={styles.earningsCard}>
             <Text style={styles.earningsLabel}>You earned</Text>
             <Text style={styles.earningsAmount}>R{order?.driver_earnings?.toFixed(2) || '0.00'}</Text>
+          </View>
+          <View style={{ marginTop: 12, alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: '#9E9E9E' }}>
+              Today: {todayCount} {todayCount === 1 ? 'delivery' : 'deliveries'} · R{todayTotal.toFixed(2)} earned
+            </Text>
           </View>
           <Text style={styles.redirectText}>Returning to home...</Text>
         </View>

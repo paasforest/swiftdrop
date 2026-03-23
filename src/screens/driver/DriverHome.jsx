@@ -79,6 +79,7 @@ const DriverHome = ({ navigation }) => {
   const [myRoutes, setMyRoutes] = useState([]);
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
+  const [todayStats, setTodayStats] = useState(null);
 
   const locationIntervalRef = useRef(null);
 
@@ -200,12 +201,24 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  const fetchTodayStats = useCallback(async () => {
+    try {
+      const auth = getAuth();
+      if (!auth?.token) return;
+      const data = await getJson('/api/driver/earnings/today', { token: auth.token });
+      setTodayStats(data);
+    } catch (err) {
+      console.error('Failed to fetch today stats:', err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
       loadMyRoutes();
       loadRouteMatchBanner();
       syncOnlineStatusFromServer();
+      fetchTodayStats();
       const auth = getAuth();
       if (auth?.token) {
         void (async () => {
@@ -216,7 +229,7 @@ const DriverHome = ({ navigation }) => {
           }
         })();
       }
-    }, [loadDashboard, loadMyRoutes, loadRouteMatchBanner, syncOnlineStatusFromServer])
+    }, [loadDashboard, loadMyRoutes, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats])
   );
 
   useEffect(() => {
@@ -392,6 +405,25 @@ const DriverHome = ({ navigation }) => {
                 : 'Go online to start earning'}
           </Text>
         </View>
+
+        {todayStats && (
+          <View style={styles.todayEarningsCard}>
+            <View>
+              <Text style={styles.todayLabel}>TODAY</Text>
+              <Text style={styles.todayAmount}>R{(todayStats.total || 0).toFixed(2)}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={styles.todayLabel}>DELIVERIES</Text>
+              <Text style={styles.todayAmount}>{todayStats.count || 0}</Text>
+            </View>
+          </View>
+        )}
+
+        {!todayStats || todayStats.count === 0 ? (
+          <View style={styles.motivationalCard}>
+            <Text style={styles.motivationalSubtext}>Ready for your first delivery today</Text>
+          </View>
+        ) : null}
 
         {routeMatchBanner ? (
           <TouchableOpacity
@@ -914,6 +946,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+  },
+  todayEarningsCard: {
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    padding: 20,
+    margin: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  todayLabel: {
+    color: '#9E9E9E',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  todayAmount: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  motivationalCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  motivationalSubtext: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
   },
   activityInfo: {
     flex: 1,

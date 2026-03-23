@@ -283,6 +283,33 @@ async function cancelDriverRoute(req, res) {
   }
 }
 
+async function getTodayEarnings(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const driverId = req.user.id;
+    
+    const { rows } = await db.query(`
+      SELECT 
+        COUNT(*)::int as count,
+        COALESCE(SUM(amount), 0) as total
+      FROM wallet_transactions
+      WHERE user_id = $1
+      AND type = 'credit'
+      AND created_at >= CURRENT_DATE
+    `, [driverId]);
+    
+    res.json({
+      count: rows[0].count,
+      total: Number(rows[0].total)
+    });
+  } catch (err) {
+    console.error('getTodayEarnings:', err);
+    return res.status(500).json({ error: 'Failed to fetch earnings' });
+  }
+}
+
 module.exports = {
   getStatus,
   patchStatus,
@@ -290,4 +317,5 @@ module.exports = {
   createDriverRoute,
   listMyDriverRoutes,
   cancelDriverRoute,
+  getTodayEarnings,
 };

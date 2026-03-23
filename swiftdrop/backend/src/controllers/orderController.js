@@ -755,6 +755,8 @@ async function declineOrder(req, res) {
     }
     const { id } = req.params;
     const driverId = req.user.id;
+    
+    // Mark job offer as declined
     const result = await db.query(
       `UPDATE job_offers SET status = 'declined' WHERE order_id = $1 AND driver_id = $2 AND status = 'pending' RETURNING id`,
       [id, driverId]
@@ -762,6 +764,35 @@ async function declineOrder(req, res) {
     if (result.rowCount === 0) {
       return res.json({ message: 'No pending offer (already expired or resolved)', alreadyResolved: true });
     }
+
+    // Add driver to declined list and try next match
+    await db.query(
+      `UPDATE orders SET declined_driver_ids = array_append(COALESCE(declined_driver_ids, '{}'), $1) WHERE id = $2`,
+      [driverId, id]
+    );
+
+    // Try to find next matching driver
+    const { findMatchingDrivers } = require('../services/routeMatchingService');
+    const { sendJobOfferToDriver } = require('../services/matchingService');
+
+    setImmediate(async () => {
+      try {
+        const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+        const order = orderRes.rows[0];
+        if (!order || order.status !== 'matching') return;
+
+        const matches = await findMatchingDrivers(order);
+        if (matches.length > 0) {
+          await sendJobOfferToDriver(order, matches[0]);
+        } else {
+          // No more matches - set back to pending
+          await db.query(`UPDATE orders SET status = 'pending' WHERE id = $1`, [id]);
+        }
+      } catch (err) {
+        console.error('[Decline cascade]', err.message);
+      }
+    });
+
     return res.json({ message: 'Offer declined' });
   } catch (err) {
     console.error('declineOrder:', err);
