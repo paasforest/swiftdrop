@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,7 +71,7 @@ function formatRouteDeparture(iso) {
 
 const STATUS_ERR = 'Could not update status. Check connection.';
 
-const DriverHome = ({ navigation }) => {
+const DriverHome = ({ navigation, route }) => {
   const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -80,8 +81,10 @@ const DriverHome = ({ navigation }) => {
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
+  const [showWaitingScreen, setShowWaitingScreen] = useState(false);
 
   const locationIntervalRef = useRef(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const stopLocationUpdates = useCallback(() => {
     if (locationIntervalRef.current != null) {
@@ -212,6 +215,38 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  // Detect stayOnline param from navigation
+  useEffect(() => {
+    const stayOnline = route.params?.stayOnline;
+    if (stayOnline) {
+      setShowWaitingScreen(true);
+      setIsOnline(true);
+    }
+  }, [route.params]);
+
+  // Pulsing animation for waiting screen
+  useEffect(() => {
+    if (!showWaitingScreen) return;
+
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.3,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.0,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseAnimation.start();
+
+    return () => pulseAnimation.stop();
+  }, [showWaitingScreen, pulseAnim]);
+
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
@@ -273,6 +308,24 @@ const DriverHome = ({ navigation }) => {
   const todayDeliveries = dashboard?.today?.deliveries ?? 0;
   const totalDone = dashboard?.total_deliveries_completed ?? 0;
   const recent = Array.isArray(dashboard?.recent_orders) ? dashboard.recent_orders : [];
+
+  const handleGoOffline = async () => {
+    if (statusBusy) return;
+    const auth = getAuth();
+    if (!auth?.token) return;
+
+    setStatusBusy(true);
+    try {
+      await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
+      stopLocationUpdates();
+      setIsOnline(false);
+      setShowWaitingScreen(false);
+    } catch {
+      Alert.alert('', STATUS_ERR);
+    } finally {
+      setStatusBusy(false);
+    }
+  };
 
   const handleToggleOnline = async () => {
     if (statusBusy) return;
@@ -340,6 +393,64 @@ const DriverHome = ({ navigation }) => {
       ]
     );
   };
+
+  // Show waiting screen for dedicated drivers who just completed a delivery
+  if (showWaitingScreen) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <GradientHeader>
+          <View style={styles.header}>
+            <View style={styles.driverInfo}>
+              <Text style={styles.driverNameLight}>{userName}</Text>
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={18} color={colors.warning} />
+                <Text style={styles.driverRatingLight}> {rating}</Text>
+              </View>
+            </View>
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                onPress={() => resetToLogin(navigation)}
+                style={styles.logoutHeaderBtn}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.95)" />
+                <Text style={styles.logoutHeaderBtnText}>Log out</Text>
+              </TouchableOpacity>
+              <AvatarPlaceholder size={60} />
+            </View>
+          </View>
+        </GradientHeader>
+
+        <View style={styles.waitingContainer}>
+          <Animated.View style={[styles.pulsingDot, { transform: [{ scale: pulseAnim }] }]} />
+          <Text style={styles.onlineText}>Online</Text>
+          <Text style={styles.waitingSubtext}>Waiting for your next delivery...</Text>
+
+          {todayStats && (
+            <View style={styles.waitingEarningsCard}>
+              <Text style={styles.waitingEarningsLabel}>Today's Earnings</Text>
+              <Text style={styles.waitingEarningsAmount}>R{(todayStats.total || 0).toFixed(2)}</Text>
+              <Text style={styles.waitingEarningsCount}>
+                {todayStats.count || 0} {todayStats.count === 1 ? 'delivery' : 'deliveries'}
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.goOfflineButton}
+            onPress={handleGoOffline}
+            disabled={statusBusy}
+          >
+            {statusBusy ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.goOfflineButtonText}>Go Offline</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -976,6 +1087,68 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     textAlign: 'center',
+  },
+  waitingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  pulsingDot: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#22C55E',
+    marginBottom: 24,
+  },
+  onlineText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  waitingSubtext: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    marginBottom: 40,
+  },
+  waitingEarningsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 40,
+    width: '100%',
+    ...shadows.card,
+  },
+  waitingEarningsLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  waitingEarningsAmount: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: colors.primary,
+    marginBottom: 4,
+  },
+  waitingEarningsCount: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  goOfflineButton: {
+    backgroundColor: colors.danger,
+    paddingVertical: 16,
+    paddingHorizontal: 48,
+    borderRadius: radius.md,
+    minWidth: 200,
+    alignItems: 'center',
+  },
+  goOfflineButtonText: {
+    color: colors.textWhite,
+    fontSize: 16,
+    fontWeight: '700',
   },
   activityInfo: {
     flex: 1,
