@@ -19,13 +19,14 @@ const URGENCY_MULTIPLIERS = {
   urgent: 1.4,
 };
 
+const PARCEL_VALUE_LIMIT = 2000;
+
 const VALUE_COMPONENT_BY_PARCEL_VALUE = [
   { max: 199.999, value: 0 }, // Under R200
   { max: 500, value: 15 }, // R200-R500
   { max: 1000, value: 25 }, // R501-R1000
   { max: 2000, value: 40 }, // R1001-R2000
-  { max: 5000, value: 65 }, // R2001-R5000
-  { max: Infinity, value: 65 }, // fallback
+  { max: Infinity, value: -1 }, // -1 signals "not allowed" — caught by limit check
 ];
 
 // Minimum PRICE component (excluding `value_component`) by zone+tier
@@ -133,6 +134,37 @@ async function createOrder(req, res) {
       return res.status(400).json({ error: 'Invalid delivery_tier' });
     }
 
+    if (parcel_value && Number(parcel_value) > PARCEL_VALUE_LIMIT) {
+      return res.status(400).json({
+        error: `SwiftDrop doesn't yet support items over R${PARCEL_VALUE_LIMIT}. Premium insured delivery is coming soon.`,
+        code: 'VALUE_EXCEEDED'
+      });
+    }
+
+    const { detectProvince } = require('../services/provinceService');
+
+    const pickupProvince = detectProvince(Number(pickup_lat), Number(pickup_lng));
+    if (!pickupProvince) {
+      return res.status(400).json({
+        error: 'Delivery not available in your area yet. SwiftDrop currently serves Western Cape and Gauteng.',
+        code: 'OUTSIDE_SERVICE_AREA'
+      });
+    }
+    const dropoffProvince = detectProvince(Number(dropoff_lat), Number(dropoff_lng));
+    if (!dropoffProvince) {
+      return res.status(400).json({
+        error: 'Dropoff address is outside our current area.',
+        code: 'OUTSIDE_SERVICE_AREA'
+      });
+    }
+    if (pickupProvince !== dropoffProvince) {
+      return res.status(400).json({
+        error: 'Inter-provincial delivery is coming soon!',
+        code: 'INTER_PROVINCIAL'
+      });
+    }
+    const province = pickupProvince;
+
     const dist = haversineKm(
       parseFloat(pickup_lat), parseFloat(pickup_lng),
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
@@ -199,14 +231,14 @@ async function createOrder(req, res) {
           order_number, customer_id, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type, parcel_size, parcel_value,
           special_handling, delivery_tier, status, base_price, insurance_fee, total_price,
-          commission_amount, driver_earnings, pickup_otp, delivery_otp
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20)
+          commission_amount, driver_earnings, pickup_otp, delivery_otp, province
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20,$21)
         RETURNING *`,
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type || null, parcel_size || null,
           parcel_value || null, special_handling || null, delivery_tier,
-          basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp,
+          basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp, province,
         ]
       );
       const order = orderRes.rows[0];
@@ -239,7 +271,19 @@ async function createOrder(req, res) {
 
       await client.query('COMMIT');
 
-      runMatching(order.id);
+      const { findMatchingDrivers } = require('../services/routeMatchingService');
+      const { sendJobOfferToDriver } = require('../services/matchingService');
+
+      setImmediate(async () => {
+        try {
+          const matches = await findMatchingDrivers(order);
+          if (matches.length > 0) {
+            await sendJobOfferToDriver(order, matches[0]);
+          }
+        } catch (err) {
+          console.error('[Match]', err.message);
+        }
+      });
 
       const out = {
         ...order,
@@ -269,6 +313,13 @@ async function calculatePrice(req, res) {
     const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value } = req.body;
     if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null) {
       return res.status(400).json({ error: 'pickup and dropoff coordinates required' });
+    }
+
+    if (parcel_value && Number(parcel_value) > PARCEL_VALUE_LIMIT) {
+      return res.status(400).json({
+        error: `SwiftDrop doesn't yet support items over R${PARCEL_VALUE_LIMIT}. Premium insured delivery is coming soon.`,
+        code: 'VALUE_EXCEEDED'
+      });
     }
 
     const dist = haversineKm(

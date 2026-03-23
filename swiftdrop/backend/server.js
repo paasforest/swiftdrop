@@ -12,6 +12,9 @@ const disputeRoutes = require('./src/routes/disputeRoutes');
 const notificationRoutes = require('./src/routes/notificationRoutes');
 const walletRoutes = require('./src/routes/walletRoutes');
 
+// Start background jobs
+require('./src/jobs/rematchPendingOrders');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 

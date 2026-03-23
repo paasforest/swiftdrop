@@ -28,16 +28,32 @@ function parseEstimatedValueToNumber(range) {
   return m ? Number(m[1]) : null;
 }
 
+const VALUE_LIMIT = 2000;
+
 const ParcelDescription = ({ navigation, route }) => {
   const baseParams = route?.params || {};
   const [selectedCategory, setSelectedCategory] = useState('Documents');
   const [selectedSize, setSelectedSize] = useState('medium');
   const [estimatedValue, setEstimatedValue] = useState('R200-R500');
+  const [valueError, setValueError] = useState(null);
   const [fragile, setFragile] = useState(false);
   const [upright, setUpright] = useState(false);
   const [careful, setCareful] = useState(false);
   const [prohibitedConfirmed, setProhibitedConfirmed] = useState(false);
   const [showProhibitedModal, setShowProhibitedModal] = useState(false);
+
+  const handleValueChange = (range) => {
+    setEstimatedValue(range);
+    const num = parseEstimatedValueToNumber(range);
+    if (num && num > VALUE_LIMIT) {
+      setValueError(
+        `Items over R${VALUE_LIMIT} aren't supported yet. ` +
+        `Premium insured delivery is coming soon — tap to join the waitlist.`
+      );
+    } else {
+      setValueError(null);
+    }
+  };
 
   const categories = [
     { id: 'documents', name: 'Documents & Paperwork', icon: '📄' },
@@ -203,7 +219,7 @@ const ParcelDescription = ({ navigation, route }) => {
                   styles.valueOption,
                   estimatedValue === range && styles.valueOptionSelected
                 ]}
-                onPress={() => setEstimatedValue(range)}
+                onPress={() => handleValueChange(range)}
               >
                 <Text style={[
                   styles.valueText,
@@ -214,6 +230,20 @@ const ParcelDescription = ({ navigation, route }) => {
               </TouchableOpacity>
             ))}
           </View>
+          {valueError && (
+            <View style={{
+              backgroundColor: '#FFF5F5',
+              borderRadius: 8,
+              padding: 12,
+              marginTop: 8,
+              borderWidth: 1,
+              borderColor: '#FFCDD2'
+            }}>
+              <Text style={{ color: '#D32F2F', fontSize: 13, lineHeight: 18 }}>
+                {valueError}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Special Handling */}
@@ -254,7 +284,11 @@ const ParcelDescription = ({ navigation, route }) => {
 
       {/* Next Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+        <TouchableOpacity 
+          style={[styles.nextButton, !!valueError && { opacity: 0.4 }]} 
+          onPress={handleNext}
+          disabled={!!valueError}
+        >
           <Text style={styles.nextButtonText}>Next</Text>
         </TouchableOpacity>
       </View>

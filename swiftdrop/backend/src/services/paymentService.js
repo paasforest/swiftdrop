@@ -21,6 +21,24 @@ async function releaseEscrow(orderId) {
        WHERE order_id = $4`,
       [commission, driverAmount, insuranceAmount, orderId]
     );
+
+    // Credit driver wallet
+    await client.query(
+      `INSERT INTO wallet_transactions 
+       (user_id, type, amount, reference, description)
+       SELECT o.driver_id, 'credit', $1, $2, 'Delivery earnings'
+       FROM orders o WHERE o.id = $3`,
+      [driverAmount, `ORDER-${orderId}`, orderId]
+    );
+
+    await client.query(
+      `UPDATE users SET 
+         wallet_balance = COALESCE(wallet_balance, 0) + $1,
+         updated_at = NOW()
+       WHERE id = (SELECT driver_id FROM orders WHERE id = $2)`,
+      [driverAmount, orderId]
+    );
+
     await client.query('COMMIT');
     return { commission, driverAmount, insuranceAmount };
   } catch (err) {

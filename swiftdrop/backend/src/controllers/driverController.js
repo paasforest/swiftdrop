@@ -89,6 +89,12 @@ async function patchLocation(req, res) {
       [driverId, latN, lngN]
     );
 
+    // Also update users table for smart matching
+    await db.query(
+      `UPDATE users SET current_lat = $1, current_lng = $2, updated_at = NOW() WHERE id = $3`,
+      [latN, lngN, driverId]
+    );
+
     const rt = getRealtimeDb();
     if (rt) {
       try {
@@ -165,12 +171,27 @@ async function createDriverRoute(req, res) {
       return res.status(400).json({ error: 'Departure time must be at least 30 minutes from now' });
     }
 
+    const { detectProvince } = require('../services/provinceService');
+    const { fetchRoutePolyline } = require('../services/directionsService');
+
+    const province = detectProvince(Number(from_lat), Number(from_lng));
+    if (!province) {
+      return res.status(400).json({
+        error: 'Route posting not available in your area.',
+        code: 'OUTSIDE_SERVICE_AREA'
+      });
+    }
+
+    const route_polyline = await fetchRoutePolyline(from_lat, from_lng, to_lat, to_lng);
+
+    const driver_type = req.body.driver_type || 'commuter';
+
     const driverId = req.user.id;
     const result = await db.query(
       `INSERT INTO driver_routes (
         driver_id, from_address, from_lat, from_lng, to_address, to_lat, to_lng,
-        departure_time, max_parcels, boot_space, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
+        departure_time, max_parcels, boot_space, status, province, route_polyline, driver_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11, $12, $13)
       RETURNING *`,
       [
         driverId,
@@ -183,6 +204,9 @@ async function createDriverRoute(req, res) {
         dep.toISOString(),
         mp,
         boot,
+        province,
+        route_polyline,
+        driver_type,
       ]
     );
 
