@@ -2,19 +2,20 @@ const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const { sendPushNotification } = require('./notificationService');
 
-/** Driver job-offer window — parallel offers to all eligible drivers. */
-const OFFER_TIMEOUT_MS = 25000; // 25 seconds
+/** Driver job-offer window (production). Do not raise for testing — use a branch or env if needed. */
+const OFFER_TIMEOUT_MS = 15000; // 15 seconds
 const ROUTE_RADIUS_KM = 15;
 /** Wider radii — 10/30km was too tight for sparse or misaligned GPS vs pickup. */
 const NEARBY_RADIUS_KM = 25;
 const INTERCITY_RADIUS_KM = 60;
+const MAX_NEARBY_DRIVERS = 5;
 /** New / low-volume drivers: allow 3.0+ (still exclude very poor if rated). */
 const MIN_DRIVER_RATING = 3.0;
 const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
-/** Retries if no acceptance after offer window expires. */
-const MAX_MATCHING_ATTEMPTS = 4;
-const MATCHING_RETRY_DELAY_MS = 20000;
+/** Full cascade retries before marking unmatched (6 × ~30s gaps + work ≈ up to ~3 min customer wait). */
+const MAX_MATCHING_ATTEMPTS = 6;
+const MATCHING_RETRY_DELAY_MS = 30000;
 
 function zoneForDistance(distanceKm) {
   const d = Number(distanceKm);
@@ -80,11 +81,6 @@ async function findRouteRiders(order) {
   return matching.map((r) => r.driver_id);
 }
 
-/**
- * Nearby / wider-radius drivers for matching.
- * Does NOT filter on users.is_verified — only driver_profiles.verification_status = 'approved',
- * is_online, is_active, rating threshold, and not on an active delivery.
- */
 async function findNearbyDrivers(order, radiusKm) {
   const pickupLat = parseFloat(order.pickup_lat);
   const pickupLng = parseFloat(order.pickup_lng);
@@ -141,9 +137,9 @@ async function notifyDriversNewOffer(driverIds, order) {
   const body = `Earn R${amountStr} — ${order.pickup_address} to ${order.dropoff_address}`;
   for (const driverId of driverIds) {
     await sendPushNotification(driverId, title, body, {
+      orderId: order.id,
+      orderNumber: order.order_number,
       type: 'job_offer',
-      orderId: String(order.id),
-      orderNumber: order.order_number != null ? String(order.order_number) : '',
     });
   }
 }
@@ -158,7 +154,7 @@ async function notifyCustomerNoDriver(customerId, order) {
 }
 
 /**
- * Parallel matching: route + nearby + intercity pools at once, single offer window, all drivers notified together.
+ * One full cascade: route → nearby → intercity, with awaited offer windows.
  * @returns {Promise<boolean>} true if a driver accepted / assigned
  */
 async function runMatchingAttempt(orderId) {
@@ -168,28 +164,64 @@ async function runMatchingAttempt(orderId) {
   if (!order || order.status !== 'matching') return !!order?.driver_id;
   if (order.driver_id) return true;
 
-  const [routeRiders, nearbyDrivers, intercityDrivers] = await Promise.all([
-    findRouteRiders(order),
-    findNearbyDrivers(order, NEARBY_RADIUS_KM),
-    findIntercityDrivers(order),
-  ]);
+  // Step 1: route riders
+  const riderIds = await findRouteRiders(order);
+  console.log('[Matching] Route riders found:', riderIds.length);
+  if (riderIds.length > 0) {
+    await createJobOffers(orderId, riderIds, { matchedVia: 'route' });
+    await notifyDriversNewOffer(riderIds, order);
+    if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
+    await expireJobOffers(orderId);
+  }
 
-  const allDriverIds = [...new Set([...routeRiders, ...nearbyDrivers, ...intercityDrivers])];
-
-  console.log('[Matching] Total drivers found:', allDriverIds.length);
-  console.log('[Matching] Route riders:', routeRiders.length);
-  console.log('[Matching] Nearby:', nearbyDrivers.length);
-  console.log('[Matching] Intercity:', intercityDrivers.length);
-
-  if (allDriverIds.length === 0) return false;
-
-  await createJobOffersCombined(orderId, routeRiders, allDriverIds);
   order = await getOrder(orderId);
-  await notifyDriversNewOffer(allDriverIds, order);
+  if (!order || order.status !== 'matching') return !!order?.driver_id;
+  if (order.driver_id) return true;
 
-  const matched = await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS);
-  if (!matched) await expireJobOffers(orderId);
-  return matched;
+  // Step 2: nearby
+  await expireJobOffers(orderId);
+  const nearbyIds = await findNearbyDrivers(order, NEARBY_RADIUS_KM);
+  console.log('[Matching] Drivers found (nearby):', nearbyIds.length);
+  const toOffer2 = nearbyIds.slice(0, MAX_NEARBY_DRIVERS);
+
+  if (toOffer2.length > 0) {
+    for (const driverId of toOffer2) {
+      order = await getOrder(orderId);
+      if (!order || order.status !== 'matching') return !!order?.driver_id;
+      if (order.driver_id) return true;
+      await createJobOffers(orderId, [driverId]);
+      await notifyDriversNewOffer([driverId], order);
+      if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
+      await expireJobOffers(orderId);
+    }
+  }
+
+  order = await getOrder(orderId);
+  if (!order || order.status !== 'matching') return !!order?.driver_id;
+  if (order.driver_id) return true;
+
+  // Step 3: intercity
+  await expireJobOffers(orderId);
+  const wideIds = await findNearbyDrivers(order, INTERCITY_RADIUS_KM);
+  console.log('[Matching] Drivers found (intercity):', wideIds.length);
+  const toOffer3 = wideIds.slice(0, MAX_NEARBY_DRIVERS);
+
+  if (toOffer3.length === 0) {
+    return false;
+  }
+
+  for (const driverId of toOffer3) {
+    order = await getOrder(orderId);
+    if (!order || order.status !== 'matching') return !!order?.driver_id;
+    if (order.driver_id) return true;
+    await createJobOffers(orderId, [driverId]);
+    await notifyDriversNewOffer([driverId], order);
+    if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
+    await expireJobOffers(orderId);
+  }
+
+  order = await getOrder(orderId);
+  return !!(order && order.driver_id);
 }
 
 async function tryStep4(orderId) {
@@ -220,7 +252,7 @@ async function runMatchingWithRetry(orderId) {
     if (!order || order.status !== 'matching' || order.driver_id) return;
 
     if (attempt < MAX_MATCHING_ATTEMPTS) {
-      console.log('[Matching] No driver found, retrying in 20s...');
+      console.log('[Matching] No driver found, retrying in 30s...');
       await sleep(MATCHING_RETRY_DELAY_MS);
     }
   }
@@ -329,6 +361,4 @@ module.exports = {
   runMatchingAttempt,
   runMatchingWithRetry,
   offerReturnLoadAfterIntercityPickup,
-  findNearbyDrivers,
-  findIntercityDrivers,
 };
