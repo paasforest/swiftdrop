@@ -43,8 +43,9 @@ const ActiveDelivery = ({ navigation, route }) => {
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [otpError, setOtpError] = useState(null);
 
-  // Photo state
-  const [photoAsset, setPhotoAsset] = useState(null);
+  // Photo state - separate for pickup and delivery
+  const [pickupPhoto, setPickupPhoto] = useState(null);
+  const [deliveryPhoto, setDeliveryPhoto] = useState(null);
   const [capturingPhoto, setCapturingPhoto] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -96,6 +97,19 @@ const ActiveDelivery = ({ navigation, route }) => {
       setPhase('COMPLETE');
     }
   }, [order?.status]);
+
+  // Snap bottom sheet based on phase
+  useEffect(() => {
+    if (!bottomSheetRef.current) return;
+
+    if (phase === 'EN_ROUTE_PICKUP' || phase === 'EN_ROUTE_DELIVERY') {
+      bottomSheetRef.current.snapToIndex(0); // Minimize when driving
+    } else if (phase === 'PICKUP_ARRIVED' || phase === 'DELIVERY_ARRIVED' || phase === 'PICKUP_PHOTO' || phase === 'DELIVERY_PHOTO') {
+      bottomSheetRef.current.snapToIndex(1); // Expand for action
+    } else if (phase === 'COMPLETE') {
+      bottomSheetRef.current.snapToIndex(2); // Full expand for completion
+    }
+  }, [phase]);
 
   // Fetch route from Google Directions API
   useEffect(() => {
@@ -294,7 +308,7 @@ const ActiveDelivery = ({ navigation, route }) => {
     }
   };
 
-  const handleTakePhoto = async () => {
+  const handleTakePhoto = async (isPickup) => {
     if (capturingPhoto || uploading) return;
     setUploadError(null);
     try {
@@ -307,11 +321,16 @@ const ActiveDelivery = ({ navigation, route }) => {
       if (result.canceled) return;
       const asset = result.assets?.[0];
       if (!asset?.uri) throw new Error('No photo captured');
-      setPhotoAsset({
+      const photoData = {
         uri: asset.uri,
         type: asset.type || 'image/jpeg',
         fileName: asset.fileName || `photo-${Date.now()}.jpg`,
-      });
+      };
+      if (isPickup) {
+        setPickupPhoto(photoData);
+      } else {
+        setDeliveryPhoto(photoData);
+      }
     } catch (e) {
       setUploadError(e.message || 'Failed to capture photo');
     } finally {
@@ -320,7 +339,7 @@ const ActiveDelivery = ({ navigation, route }) => {
   };
 
   const handleUploadPickupPhoto = async () => {
-    if (!orderId || !photoAsset || uploading) return;
+    if (!orderId || !pickupPhoto || uploading) return;
     const auth = getAuth();
     if (!auth?.token) throw new Error('Not signed in');
 
@@ -334,9 +353,9 @@ const ActiveDelivery = ({ navigation, route }) => {
       await new Promise((resolve, reject) => {
         const formData = new FormData();
         formData.append('photo', {
-          uri: photoAsset.uri,
-          type: photoAsset.type,
-          name: photoAsset.fileName,
+          uri: pickupPhoto.uri,
+          type: pickupPhoto.type,
+          name: pickupPhoto.fileName,
         });
 
         const xhr = new XMLHttpRequest();
@@ -370,7 +389,7 @@ const ActiveDelivery = ({ navigation, route }) => {
       });
 
       setPhase('EN_ROUTE_DELIVERY');
-      setPhotoAsset(null);
+      setPickupPhoto(null);
     } catch (e) {
       setUploadError(e?.message || 'Upload failed');
     } finally {
@@ -379,7 +398,7 @@ const ActiveDelivery = ({ navigation, route }) => {
   };
 
   const handleUploadDeliveryPhoto = async () => {
-    if (!orderId || !photoAsset || uploading) return;
+    if (!orderId || !deliveryPhoto || uploading) return;
     const auth = getAuth();
     if (!auth?.token) throw new Error('Not signed in');
 
@@ -393,9 +412,9 @@ const ActiveDelivery = ({ navigation, route }) => {
       await new Promise((resolve, reject) => {
         const formData = new FormData();
         formData.append('photo', {
-          uri: photoAsset.uri,
-          type: photoAsset.type,
-          name: photoAsset.fileName,
+          uri: deliveryPhoto.uri,
+          type: deliveryPhoto.type,
+          name: deliveryPhoto.fileName,
         });
 
         const xhr = new XMLHttpRequest();
@@ -429,8 +448,7 @@ const ActiveDelivery = ({ navigation, route }) => {
       });
 
       setPhase('COMPLETE');
-      setPhotoAsset(null);
-      bottomSheetRef.current?.snapToIndex(2);
+      setDeliveryPhoto(null);
     } catch (e) {
       setUploadError(e?.message || 'Upload failed');
     } finally {
@@ -490,15 +508,15 @@ const ActiveDelivery = ({ navigation, route }) => {
         <View style={styles.sheetContent}>
           <Text style={styles.header}>Take parcel photo</Text>
           <Text style={styles.subtext}>Photo required before proceeding</Text>
-          {!photoAsset ? (
-            <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto} disabled={capturingPhoto}>
+          {!pickupPhoto ? (
+            <TouchableOpacity style={styles.cameraButton} onPress={() => handleTakePhoto(true)} disabled={capturingPhoto}>
               <Text style={styles.cameraButtonText}>{capturingPhoto ? 'Opening camera...' : '📷 Take Photo'}</Text>
             </TouchableOpacity>
           ) : (
             <>
-              <Image source={{ uri: photoAsset.uri }} style={styles.photoPreview} />
+              <Image source={{ uri: pickupPhoto.uri }} style={styles.photoPreview} />
               <View style={styles.photoActions}>
-                <TouchableOpacity style={styles.retakeButton} onPress={() => setPhotoAsset(null)}>
+                <TouchableOpacity style={styles.retakeButton} onPress={() => setPickupPhoto(null)}>
                   <Text style={styles.retakeButtonText}>Retake</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -569,15 +587,15 @@ const ActiveDelivery = ({ navigation, route }) => {
         <View style={styles.sheetContent}>
           <Text style={styles.header}>Take delivery photo</Text>
           <Text style={styles.subtext}>Photo required to complete delivery</Text>
-          {!photoAsset ? (
-            <TouchableOpacity style={styles.cameraButton} onPress={handleTakePhoto} disabled={capturingPhoto}>
+          {!deliveryPhoto ? (
+            <TouchableOpacity style={styles.cameraButton} onPress={() => handleTakePhoto(false)} disabled={capturingPhoto}>
               <Text style={styles.cameraButtonText}>{capturingPhoto ? 'Opening camera...' : '📷 Take Photo'}</Text>
             </TouchableOpacity>
           ) : (
             <>
-              <Image source={{ uri: photoAsset.uri }} style={styles.photoPreview} />
+              <Image source={{ uri: deliveryPhoto.uri }} style={styles.photoPreview} />
               <View style={styles.photoActions}>
-                <TouchableOpacity style={styles.retakeButton} onPress={() => setPhotoAsset(null)}>
+                <TouchableOpacity style={styles.retakeButton} onPress={() => setDeliveryPhoto(null)}>
                   <Text style={styles.retakeButtonText}>Retake</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -643,7 +661,7 @@ const ActiveDelivery = ({ navigation, route }) => {
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         initialRegion={initialRegion}
         showsUserLocation={false}
       >

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
@@ -100,69 +101,71 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-    <NavigationContainer ref={navigationRef}>
-      <StatusBar style="auto" />
-      <Stack.Navigator
-        initialRouteName="Loading"
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Stack.Screen name="Loading" component={LoadingScreen} />
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        {/* Customer Flow */}
-        <Stack.Screen name="Onboarding" component={Onboarding} />
-        <Stack.Screen name="Login" component={Login} />
-        <Stack.Screen name="Home" component={Home} />
-        <Stack.Screen name="AddressEntry" component={AddressEntry} />
-        <Stack.Screen name="ParcelDescription" component={ParcelDescription} />
-        <Stack.Screen name="DeliveryTiers" component={DeliveryTiers} />
-        <Stack.Screen name="Payment" component={Payment} />
-        <Stack.Screen name="DriverMatching" component={DriverMatching} />
-        <Stack.Screen name="Tracking" component={TrackingWithMap} />
-        <Stack.Screen name="OTPScreen" component={OTPScreen} />
-        <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
-        <Stack.Screen name="OrderDetail" component={OrderDetail} />
-        <Stack.Screen name="OrderHistory" component={OrderHistory} />
-        <Stack.Screen name="Profile" component={Profile} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <NavigationContainer ref={navigationRef}>
+          <StatusBar style="auto" />
+          <Stack.Navigator
+            initialRouteName="Loading"
+            screenOptions={{
+              headerShown: false,
+            }}
+          >
+            <Stack.Screen name="Loading" component={LoadingScreen} />
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
+            {/* Customer Flow */}
+            <Stack.Screen name="Onboarding" component={Onboarding} />
+            <Stack.Screen name="Login" component={Login} />
+            <Stack.Screen name="Home" component={Home} />
+            <Stack.Screen name="AddressEntry" component={AddressEntry} />
+            <Stack.Screen name="ParcelDescription" component={ParcelDescription} />
+            <Stack.Screen name="DeliveryTiers" component={DeliveryTiers} />
+            <Stack.Screen name="Payment" component={Payment} />
+            <Stack.Screen name="DriverMatching" component={DriverMatching} />
+            <Stack.Screen name="Tracking" component={TrackingWithMap} />
+            <Stack.Screen name="OTPScreen" component={OTPScreen} />
+            <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
+            <Stack.Screen name="OrderDetail" component={OrderDetail} />
+            <Stack.Screen name="OrderHistory" component={OrderHistory} />
+            <Stack.Screen name="Profile" component={Profile} />
 
-        {/* Driver Flow */}
-        <Stack.Screen name="DriverLogin" component={DriverLogin} />
-        <Stack.Screen name="DriverRegister" component={DriverRegister} />
-        <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
-        <Stack.Screen name="DriverHome" component={DriverHome} />
-        <Stack.Screen name="PostRoute" component={PostRoute} />
-        <Stack.Screen
-          name="JobOffer"
-          component={JobOffer}
-          options={{
-            ...Platform.select({
-              ios: TransitionPresets.ModalSlideFromBottomIOS,
-              android: TransitionPresets.BottomSheetAndroid,
-              default: TransitionPresets.ModalSlideFromBottomIOS,
-            }),
-            gestureEnabled: false,
-          }}
-        />
-        <Stack.Screen
-          name="ActiveDelivery"
-          component={ActiveDelivery}
-          options={{
-            headerShown: false,
-            gestureEnabled: false,
-          }}
-        />
-        <Stack.Screen name="EnRoutePickup" component={EnRoutePickup} />
-        <Stack.Screen name="PickupConfirm" component={PickupConfirm} />
-        <Stack.Screen name="EnRouteDelivery" component={EnRouteDelivery} />
-        <Stack.Screen name="DeliveryConfirm" component={DeliveryConfirm} />
-        <Stack.Screen name="Earnings" component={Earnings} />
+            {/* Driver Flow */}
+            <Stack.Screen name="DriverLogin" component={DriverLogin} />
+            <Stack.Screen name="DriverRegister" component={DriverRegister} />
+            <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
+            <Stack.Screen name="DriverHome" component={DriverHome} />
+            <Stack.Screen name="PostRoute" component={PostRoute} />
+            <Stack.Screen
+              name="JobOffer"
+              component={JobOffer}
+              options={{
+                ...Platform.select({
+                  ios: TransitionPresets.ModalSlideFromBottomIOS,
+                  android: TransitionPresets.BottomSheetAndroid,
+                  default: TransitionPresets.ModalSlideFromBottomIOS,
+                }),
+                gestureEnabled: false,
+              }}
+            />
+            <Stack.Screen
+              name="ActiveDelivery"
+              component={ActiveDelivery}
+              options={{
+                headerShown: false,
+                gestureEnabled: false,
+              }}
+            />
+            <Stack.Screen name="EnRoutePickup" component={EnRoutePickup} />
+            <Stack.Screen name="PickupConfirm" component={PickupConfirm} />
+            <Stack.Screen name="EnRouteDelivery" component={EnRouteDelivery} />
+            <Stack.Screen name="DeliveryConfirm" component={DeliveryConfirm} />
+            <Stack.Screen name="Earnings" component={Earnings} />
 
-        {/* Admin: bottom tabs (Overview, Deliveries, Drivers, Disputes, Finance) */}
-        <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
-      </Stack.Navigator>
-    </NavigationContainer>
-    </SafeAreaProvider>
+            {/* Admin: bottom tabs (Overview, Deliveries, Drivers, Disputes, Finance) */}
+            <Stack.Screen name="AdminTabs" component={AdminTabNavigator} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
