@@ -35,6 +35,7 @@ import DriverRegister from './src/screens/driver/DriverRegister';
 import DriverHome from './src/screens/driver/DriverHome';
 import PostRoute from './src/screens/driver/PostRoute';
 import JobOffer from './src/screens/driver/JobOffer';
+import ActiveDelivery from './src/screens/driver/ActiveDelivery';
 import EnRoutePickup from './src/screens/driver/EnRoutePickup';
 import PickupConfirm from './src/screens/driver/PickupConfirm';
 import EnRouteDelivery from './src/screens/driver/EnRouteDelivery';
@@ -141,6 +142,14 @@ export default function App() {
               android: TransitionPresets.BottomSheetAndroid,
               default: TransitionPresets.ModalSlideFromBottomIOS,
             }),
+            gestureEnabled: false,
+          }}
+        />
+        <Stack.Screen
+          name="ActiveDelivery"
+          component={ActiveDelivery}
+          options={{
+            headerShown: false,
             gestureEnabled: false,
           }}
         />

@@ -8,7 +8,7 @@ import { startDriverLocationTracking, stopDriverLocationTracking, updateDelivery
  * Component to manage driver location tracking during active deliveries
  * This should be rendered when driver has an active delivery
  */
-const DriverLocationService = ({ orderId, onStop }) => {
+const DriverLocationService = ({ orderId, onStop, onLocationUpdate }) => {
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState(null);
 
@@ -33,7 +33,7 @@ const DriverLocationService = ({ orderId, onStop }) => {
       }
 
       console.log('[DriverLocation] Starting tracking for order:', orderId);
-      await startDriverLocationTracking(auth.user.id, orderId);
+      await startDriverLocationTracking(auth.user.id, orderId, onLocationUpdate);
       setIsTracking(true);
       setError(null);
     } catch (err) {

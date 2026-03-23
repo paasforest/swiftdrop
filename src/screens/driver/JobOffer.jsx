@@ -255,10 +255,14 @@ const JobOffer = ({ navigation }) => {
     try {
       const updated = await postJson(`/api/orders/${offer.orderId}/accept`, {}, { token: auth.token });
       expiredHandledRef.current = true;
-      navigation.navigate('EnRoutePickup', {
+      navigation.navigate('ActiveDelivery', {
         orderId: offer.orderId,
         pickup_address: updated?.pickup_address || offer.pickup_address,
         dropoff_address: updated?.dropoff_address || offer.dropoff_address,
+        pickup_lat: updated?.pickup_lat || offer.pickup_lat,
+        pickup_lng: updated?.pickup_lng || offer.pickup_lng,
+        dropoff_lat: updated?.dropoff_lat || offer.dropoff_lat,
+        dropoff_lng: updated?.dropoff_lng || offer.dropoff_lng,
       });
     } catch (e) {
       Alert.alert('Could not accept', e.message || 'Accept failed');

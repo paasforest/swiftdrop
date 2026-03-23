@@ -3,13 +3,16 @@ import { ref, set, onValue, off } from 'firebase/database';
 import { database } from './firebaseConfig';
 
 let locationSubscription = null;
+let locationUpdateCallback = null;
 
 /**
  * Start tracking driver location and update Firebase in real-time
  * @param {string} driverId - The driver's user ID
  * @param {string} orderId - The active order ID
+ * @param {function} onLocationUpdate - Optional callback for location updates
  */
-export async function startDriverLocationTracking(driverId, orderId) {
+export async function startDriverLocationTracking(driverId, orderId, onLocationUpdate = null) {
+  locationUpdateCallback = onLocationUpdate;
   try {
     // Request location permissions
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -29,6 +32,11 @@ export async function startDriverLocationTracking(driverId, orderId) {
       },
       (location) => {
         const { latitude, longitude, heading, speed } = location.coords;
+        
+        // Call the optional callback with coordinates
+        if (locationUpdateCallback) {
+          locationUpdateCallback({ latitude, longitude });
+        }
         
         // Update Firebase with current location
         const locationRef = ref(database, `active_deliveries/${orderId}/driver_location`);
