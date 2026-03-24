@@ -13,7 +13,7 @@ import {
   ToastAndroid,
   Vibration,
 } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
@@ -90,7 +90,6 @@ const JobOffer = ({ navigation }) => {
 
   offerRef.current = offer;
 
-
   const tickOfferExpiry = useCallback(() => {
     const o = offerRef.current;
     if (!o?.offer_expires_at) return 0;
@@ -118,48 +117,60 @@ const JobOffer = ({ navigation }) => {
     resetToDriverHome(navigation);
   }, [navigation]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        const auth = getAuth();
-        if (!auth?.token) {
-          setLoadError('Please sign in as a driver.');
-          setOffer(null);
-          return;
-        }
-        const data = await getJson('/api/orders/pending-offer', { token: auth.token });
-        if (cancelled) return;
-        if (!data?.offer) {
-          setOffer(null);
-          return;
-        }
-        offerRef.current = data.offer;
-        setOffer(data.offer);
-        const rem = Math.max(
-          0,
-          Math.ceil((new Date(data.offer.offer_expires_at).getTime() - Date.now()) / 1000)
-        );
-        initialTotalSecRef.current = rem > 0 ? rem : 15;
-        setRemainingSec(rem);
-        progressAnim.setValue(rem > 0 ? 1 : 0);
-        expiredHandledRef.current = false;
-        if (rem <= 0) {
-          setTimeout(() => runExpireFlow(), 0);
-        }
-      } catch (e) {
-        if (!cancelled) setLoadError(e.message || 'Could not load offer');
-      } finally {
-        if (!cancelled) setLoading(false);
+  const loadOffer = useCallback(async (cancelRef) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const auth = getAuth();
+      if (!auth?.token) {
+        setLoadError('Please sign in as a driver.');
+        setOffer(null);
+        offerRef.current = null;
+        return;
       }
+      const data = await getJson('/api/orders/pending-offer', { token: auth.token });
+      if (cancelRef?.current) return;
+      if (!data?.offer) {
+        setOffer(null);
+        offerRef.current = null;
+        setRemainingSec(0);
+        progressAnim.setValue(0);
+        return;
+      }
+      offerRef.current = data.offer;
+      setOffer(data.offer);
+      const rem = Math.max(
+        0,
+        Math.ceil((new Date(data.offer.offer_expires_at).getTime() - Date.now()) / 1000)
+      );
+      initialTotalSecRef.current = rem > 0 ? rem : 15;
+      setRemainingSec(rem);
+      progressAnim.setValue(rem > 0 ? 1 : 0);
+      expiredHandledRef.current = false;
+      if (rem <= 0) {
+        setTimeout(() => runExpireFlow(), 0);
+      }
+    } catch (e) {
+      if (!cancelRef?.current) setLoadError(e.message || 'Could not load offer');
+    } finally {
+      if (!cancelRef?.current) setLoading(false);
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [runExpireFlow, progressAnim]);
+  }, [progressAnim, runExpireFlow]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const cancelRef = { current: false };
+      loadOffer(cancelRef);
+      return () => {
+        cancelRef.current = true;
+        expiredHandledRef.current = false;
+        setOffer(null);
+        offerRef.current = null;
+        setRemainingSec(0);
+        progressAnim.setValue(0);
+      };
+    }, [loadOffer, progressAnim])
+  );
 
   useEffect(() => {
     if (!offer || loading) return;
@@ -255,7 +266,7 @@ const JobOffer = ({ navigation }) => {
     try {
       const updated = await postJson(`/api/orders/${offer.orderId}/accept`, {}, { token: auth.token });
       expiredHandledRef.current = true;
-      navigation.navigate('ActiveDelivery', {
+      navigation.replace('ActiveDelivery', {
         orderId: offer.orderId,
         pickup_address: updated?.pickup_address || offer.pickup_address,
         dropoff_address: updated?.dropoff_address || offer.dropoff_address,

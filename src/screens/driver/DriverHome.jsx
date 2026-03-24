@@ -282,7 +282,18 @@ const DriverHome = ({ navigation }) => {
       try {
         const state = navigation.getState();
         const current = state?.routes?.[state.index]?.name;
-        if (current === 'JobOffer') return;
+        if (
+          [
+            'JobOffer',
+            'ActiveDelivery',
+            'EnRoutePickup',
+            'PickupConfirm',
+            'EnRouteDelivery',
+            'DeliveryConfirm',
+          ].includes(current)
+        ) {
+          return;
+        }
 
         const auth = getAuth();
         if (!auth?.token) return;
