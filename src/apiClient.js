@@ -52,10 +52,6 @@ export async function refreshAccessToken(explicitRefreshToken) {
   return refreshInFlight;
 }
 
-function logApiError(method, msg, quiet) {
-  if (!quiet) console.error(`[API] ${method} Error:`, msg);
-}
-
 export async function getJson(path, { token, quiet, _retryAfterRefresh } = {}) {
   const authToken = token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
@@ -78,12 +74,15 @@ export async function getJson(path, { token, quiet, _retryAfterRefresh } = {}) {
     }
 
     if (!res.ok) {
-      const message = json?.error || json?.message || `Request failed with ${res.status}`;
+      let message = json?.error || json?.message || `Request failed with ${res.status}`;
+      if (res.status === 404 && message === 'Application not found') {
+        message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: GET ${url}`;
+      }
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    logApiError('GET', err.message, quiet);
+    if (!quiet) console.error('[API] GET', url, err.message);
     throw err;
   }
 }
@@ -111,12 +110,15 @@ export async function patchJson(path, body, { token, quiet, _retryAfterRefresh }
     }
 
     if (!res.ok) {
-      const message = json?.error || json?.message || `Request failed with ${res.status}`;
+      let message = json?.error || json?.message || `Request failed with ${res.status}`;
+      if (res.status === 404 && message === 'Application not found') {
+        message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: PATCH ${url}`;
+      }
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    logApiError('PATCH', err.message, quiet);
+    if (!quiet) console.error('[API] PATCH', url, err.message);
     throw err;
   }
 }
@@ -143,12 +145,15 @@ export async function deleteJson(path, { token, quiet, _retryAfterRefresh } = {}
     }
 
     if (!res.ok) {
-      const message = json?.error || json?.message || `Request failed with ${res.status}`;
+      let message = json?.error || json?.message || `Request failed with ${res.status}`;
+      if (res.status === 404 && message === 'Application not found') {
+        message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: DELETE ${url}`;
+      }
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    logApiError('DELETE', err.message, quiet);
+    if (!quiet) console.error('[API] DELETE', url, err.message);
     throw err;
   }
 }
@@ -192,7 +197,10 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
     }
 
     if (!res.ok) {
-      const message = json?.error || json?.message || `Request failed with ${res.status}`;
+      let message = json?.error || json?.message || `Request failed with ${res.status}`;
+      if (res.status === 404 && message === 'Application not found') {
+        message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: POST ${url}`;
+      }
       throw new Error(message);
     }
 
@@ -202,7 +210,7 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
       console.error('[API] Timeout:', url);
       throw new Error('Request timed out. Check your internet connection.');
     }
-    if (!quiet) console.error('[API] Error:', err.message);
+    if (!quiet) console.error('[API] POST', url, err.message);
     throw err;
   }
 }
