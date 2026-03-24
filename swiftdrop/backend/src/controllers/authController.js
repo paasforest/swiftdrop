@@ -362,6 +362,22 @@ async function forgotPassword(req, res) {
       return res.json({ message: 'If an account exists, a reset code has been sent.' });
     }
 
+    const { rows } = await db.query(
+      `SELECT created_at FROM otps
+       WHERE phone = $1
+       AND purpose = 'reset_password'
+       AND consumed_at IS NULL
+       AND created_at > NOW() - INTERVAL '60 seconds'
+       ORDER BY created_at DESC LIMIT 1`,
+      [user.phone]
+    );
+
+    if (rows.length > 0) {
+      return res.status(429).json({
+        error: 'Please wait 60 seconds before requesting another code.',
+      });
+    }
+
     const otp = generateOTP();
     await storeOTP(user.id, user.phone, otp, 'reset_password');
     await sendSMS(user.phone, `Your SwiftDrop password reset code is: ${otp}. Valid for 10 minutes.`);

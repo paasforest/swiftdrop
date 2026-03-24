@@ -182,7 +182,7 @@ const ActiveDelivery = ({ navigation, route }) => {
         try {
           const auth = getAuth();
           if (!auth?.token) return;
-          const data = await getJson('/api/driver/earnings/today', { token: auth.token });
+          const data = await getJson('/api/drivers/earnings/today', { token: auth.token });
           setTodayTotal(data.total || 0);
           setTodayCount(data.count || 0);
         } catch (err) {

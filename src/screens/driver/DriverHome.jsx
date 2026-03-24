@@ -83,6 +83,7 @@ const DriverHome = ({ navigation, route }) => {
   const [todayStats, setTodayStats] = useState(null);
 
   const locationIntervalRef = useRef(null);
+  const lastJobOfferNavigatedOrderIdRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const stopLocationUpdates = useCallback(() => {
@@ -207,7 +208,7 @@ const DriverHome = ({ navigation, route }) => {
     try {
       const auth = getAuth();
       if (!auth?.token) return;
-      const data = await getJson('/api/driver/earnings/today', { token: auth.token });
+      const data = await getJson('/api/drivers/earnings/today', { token: auth.token });
       setTodayStats(data);
     } catch (err) {
       console.error('Failed to fetch today stats:', err);
@@ -284,7 +285,13 @@ const DriverHome = ({ navigation, route }) => {
         if (!auth?.token) return;
         const data = await getJson('/api/orders/pending-offer', { token: auth.token });
         if (data?.offer) {
-          navigation.navigate('JobOffer');
+          const oid = data.offer.orderId;
+          if (lastJobOfferNavigatedOrderIdRef.current !== oid) {
+            lastJobOfferNavigatedOrderIdRef.current = oid;
+            navigation.navigate('JobOffer');
+          }
+        } else {
+          lastJobOfferNavigatedOrderIdRef.current = null;
         }
       } catch {
         /* keep polling silently */

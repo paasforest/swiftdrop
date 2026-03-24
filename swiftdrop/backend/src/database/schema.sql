@@ -200,7 +200,8 @@ CREATE TABLE IF NOT EXISTS otps (
   code VARCHAR(10) NOT NULL,
   purpose VARCHAR(50) NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
-  consumed_at TIMESTAMPTZ
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS wallet_transactions (

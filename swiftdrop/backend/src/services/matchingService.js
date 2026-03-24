@@ -130,6 +130,39 @@ async function expireJobOffers(orderId) {
   );
 }
 
+/**
+ * Whether to send a push for this order+driver. Call BEFORE inserting the new job_offer row.
+ * - First-time offer: notify.
+ * - Same matching run, new phase (e.g. route timed out → nearby): latest row is expired → notify.
+ * - Matching retry (attemptIndex > 0) re-offering the same driver after expired: do not notify (stops push spam).
+ * - Re-offer after declined: notify.
+ */
+async function shouldNotifyDriverForOffer(orderId, driverId, attemptIndex) {
+  const r = await db.query(
+    `SELECT status FROM job_offers
+     WHERE order_id = $1 AND driver_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [orderId, driverId]
+  );
+  if (r.rows.length === 0) return true;
+  const status = r.rows[0].status;
+  if (status === 'declined') return true;
+  if (status === 'pending') return false;
+  if (attemptIndex === 0 && status === 'expired') return true;
+  return false;
+}
+
+async function filterDriversToNotify(orderId, driverIds, attemptIndex) {
+  const out = [];
+  for (const driverId of driverIds) {
+    if (await shouldNotifyDriverForOffer(orderId, driverId, attemptIndex)) {
+      out.push(driverId);
+    }
+  }
+  return out;
+}
+
 async function notifyDriversNewOffer(driverIds, order) {
   const earn = Number(order.driver_earnings || order.total_price || 0);
   const amountStr = Number.isFinite(earn) ? earn.toFixed(2) : '0.00';
@@ -189,8 +222,9 @@ async function runMatchingAttempt(orderId) {
       order = await getOrder(orderId);
       if (!order || order.status !== 'matching') return !!order?.driver_id;
       if (order.driver_id) return true;
+      const toNotifyNearby = await filterDriversToNotify(orderId, [driverId], attemptIndex);
       await createJobOffers(orderId, [driverId]);
-      await notifyDriversNewOffer([driverId], order);
+      await notifyDriversNewOffer(toNotifyNearby, order);
       if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
       await expireJobOffers(orderId);
     }
@@ -214,8 +248,9 @@ async function runMatchingAttempt(orderId) {
     order = await getOrder(orderId);
     if (!order || order.status !== 'matching') return !!order?.driver_id;
     if (order.driver_id) return true;
+    const toNotifyWide = await filterDriversToNotify(orderId, [driverId], attemptIndex);
     await createJobOffers(orderId, [driverId]);
-    await notifyDriversNewOffer([driverId], order);
+    await notifyDriversNewOffer(toNotifyWide, order);
     if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
     await expireJobOffers(orderId);
   }
@@ -245,7 +280,7 @@ async function runMatchingWithRetry(orderId) {
 
     console.log(`[Matching] Attempt ${attempt} of ${MAX_MATCHING_ATTEMPTS} for order ${orderId}`);
 
-    const matched = await runMatchingAttempt(orderId);
+    const matched = await runMatchingAttempt(orderId, attempt - 1);
     if (matched) return;
 
     order = await getOrder(orderId);
@@ -367,8 +402,9 @@ async function sendJobOfferToDriver(order, driver) {
     throw new Error('Driver ID not found in matched driver object');
   }
   
+  const toNotify = await filterDriversToNotify(order.id, [driverId], 0);
   await createJobOffers(order.id, [driverId], { matchedVia: 'smart_match' });
-  await notifyDriversNewOffer([driverId], order);
+  await notifyDriversNewOffer(toNotify, order);
 }
 
 module.exports = {
