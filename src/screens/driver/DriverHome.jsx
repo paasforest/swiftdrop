@@ -81,7 +81,6 @@ const DriverHome = ({ navigation, route }) => {
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
-  const [showWaitingScreen, setShowWaitingScreen] = useState(false);
 
   const locationIntervalRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -215,37 +214,35 @@ const DriverHome = ({ navigation, route }) => {
     }
   }, []);
 
-  // Detect stayOnline param from navigation
+  const stayOnline = route.params?.stayOnline === true;
+
+  // When opened with stayOnline (e.g. after delivery), reflect online for polling/location
   useEffect(() => {
-    const stayOnline = route.params?.stayOnline;
-    if (stayOnline) {
-      setShowWaitingScreen(true);
+    if (route.params?.stayOnline) {
       setIsOnline(true);
     }
   }, [route.params]);
 
-  // Pulsing animation for waiting screen
+  // Pulsing animation for stay-online waiting UI
   useEffect(() => {
-    if (!showWaitingScreen) return;
-
-    const pulseAnimation = Animated.loop(
+    if (!stayOnline) return;
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.3,
-          duration: 750,
+          toValue: 1.4,
+          duration: 800,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 1.0,
-          duration: 750,
+          duration: 800,
           useNativeDriver: true,
         }),
       ])
     );
-    pulseAnimation.start();
-
-    return () => pulseAnimation.stop();
-  }, [showWaitingScreen, pulseAnim]);
+    loop.start();
+    return () => loop.stop();
+  }, [stayOnline, pulseAnim]);
 
   useFocusEffect(
     useCallback(() => {
@@ -319,7 +316,6 @@ const DriverHome = ({ navigation, route }) => {
       await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
       stopLocationUpdates();
       setIsOnline(false);
-      setShowWaitingScreen(false);
     } catch {
       Alert.alert('', STATUS_ERR);
     } finally {
@@ -394,57 +390,99 @@ const DriverHome = ({ navigation, route }) => {
     );
   };
 
-  // Show waiting screen for dedicated drivers who just completed a delivery
-  if (showWaitingScreen) {
+  if (stayOnline) {
     return (
-      <SafeAreaView style={styles.container}>
-        <GradientHeader>
-          <View style={styles.header}>
-            <View style={styles.driverInfo}>
-              <Text style={styles.driverNameLight}>{userName}</Text>
-              <View style={styles.ratingRow}>
-                <Ionicons name="star" size={18} color={colors.warning} />
-                <Text style={styles.driverRatingLight}> {rating}</Text>
-              </View>
-            </View>
-            <View style={styles.headerRight}>
-              <TouchableOpacity
-                onPress={() => resetToLogin(navigation)}
-                style={styles.logoutHeaderBtn}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.95)" />
-                <Text style={styles.logoutHeaderBtnText}>Log out</Text>
-              </TouchableOpacity>
-              <AvatarPlaceholder size={60} />
-            </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: '#FFFFFF',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View style={{ alignItems: 'center', marginBottom: 32 }}>
+            <Animated.View
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: 'rgba(0,200,83,0.15)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: [{ scale: pulseAnim }],
+              }}
+            >
+              <View
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#00C853',
+                }}
+              />
+            </Animated.View>
           </View>
-        </GradientHeader>
 
-        <View style={styles.waitingContainer}>
-          <Animated.View style={[styles.pulsingDot, { transform: [{ scale: pulseAnim }] }]} />
-          <Text style={styles.onlineText}>Online</Text>
-          <Text style={styles.waitingSubtext}>Waiting for your next delivery...</Text>
+          <Text style={{ fontSize: 22, fontWeight: '700', color: '#000' }}>Online</Text>
+          <Text
+            style={{
+              fontSize: 15,
+              color: '#9E9E9E',
+              marginTop: 8,
+              textAlign: 'center',
+              paddingHorizontal: 40,
+            }}
+          >
+            Waiting for your next delivery...
+          </Text>
 
-          {todayStats && (
-            <View style={styles.waitingEarningsCard}>
-              <Text style={styles.waitingEarningsLabel}>Today's Earnings</Text>
-              <Text style={styles.waitingEarningsAmount}>R{(todayStats.total || 0).toFixed(2)}</Text>
-              <Text style={styles.waitingEarningsCount}>
-                {todayStats.count || 0} {todayStats.count === 1 ? 'delivery' : 'deliveries'}
+          <View
+            style={{
+              backgroundColor: '#F5F5F5',
+              borderRadius: 16,
+              padding: 20,
+              marginTop: 32,
+              width: '80%',
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>TODAY</Text>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
+                R{(todayStats?.total || 0).toFixed(2)}
               </Text>
             </View>
-          )}
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>DELIVERIES</Text>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
+                {todayStats?.count || 0}
+              </Text>
+            </View>
+          </View>
 
           <TouchableOpacity
-            style={styles.goOfflineButton}
-            onPress={handleGoOffline}
+            onPress={() => {
+              navigation.setParams({ stayOnline: false });
+              handleGoOffline();
+            }}
             disabled={statusBusy}
+            style={{
+              position: 'absolute',
+              bottom: 48,
+              paddingHorizontal: 32,
+              paddingVertical: 14,
+              borderRadius: 30,
+              borderWidth: 1.5,
+              borderColor: '#E0E0E0',
+            }}
           >
             {statusBusy ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color="#757575" />
             ) : (
-              <Text style={styles.goOfflineButtonText}>Go Offline</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: '#757575' }}>Go offline</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -1087,68 +1125,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     textAlign: 'center',
-  },
-  waitingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  pulsingDot: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#22C55E',
-    marginBottom: 24,
-  },
-  onlineText: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  waitingSubtext: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginBottom: 40,
-  },
-  waitingEarningsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 40,
-    width: '100%',
-    ...shadows.card,
-  },
-  waitingEarningsLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  waitingEarningsAmount: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: colors.primary,
-    marginBottom: 4,
-  },
-  waitingEarningsCount: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  goOfflineButton: {
-    backgroundColor: colors.danger,
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: radius.md,
-    minWidth: 200,
-    alignItems: 'center',
-  },
-  goOfflineButtonText: {
-    color: colors.textWhite,
-    fontSize: 16,
-    fontWeight: '700',
   },
   activityInfo: {
     flex: 1,
