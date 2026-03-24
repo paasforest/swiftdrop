@@ -109,7 +109,10 @@ const ActiveDelivery = ({ navigation, route }) => {
     } else if (order.status === 'pickup_arrived') {
       setPhase('PICKUP_ARRIVED');
     } else if (order.status === 'collected') {
-      setPhase('EN_ROUTE_DELIVERY');
+      // Parcel collected but pickup photo not uploaded yet — server stays `collected` until
+      // POST /pickup-photo advances to `delivery_en_route`. Do not skip to en-route delivery UI
+      // or PATCH delivery_arrived will fail (allowed only from delivery_en_route).
+      setPhase('PICKUP_PHOTO');
     } else if (order.status === 'delivery_en_route') {
       setPhase('EN_ROUTE_DELIVERY');
     } else if (order.status === 'delivery_arrived') {
