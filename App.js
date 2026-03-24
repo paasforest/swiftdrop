@@ -23,7 +23,7 @@ import ParcelDescription from './src/screens/customer/ParcelDescription';
 import DeliveryTiers from './src/screens/customer/DeliveryTiers';
 import Payment from './src/screens/customer/Payment';
 import DriverMatching from './src/screens/customer/DriverMatching';
-import TrackingWithMap from './src/screens/customer/TrackingWithMap';
+import Tracking from './src/screens/customer/Tracking';
 import OTPScreen from './src/screens/customer/OTPScreen';
 import DeliveryConfirmed from './src/screens/customer/DeliveryConfirmed';
 import OrderDetail from './src/screens/customer/OrderDetail';
@@ -122,7 +122,7 @@ export default function App() {
             <Stack.Screen name="DeliveryTiers" component={DeliveryTiers} />
             <Stack.Screen name="Payment" component={Payment} />
             <Stack.Screen name="DriverMatching" component={DriverMatching} />
-            <Stack.Screen name="Tracking" component={TrackingWithMap} />
+            <Stack.Screen name="Tracking" component={Tracking} />
             <Stack.Screen name="OTPScreen" component={OTPScreen} />
             <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
             <Stack.Screen name="OrderDetail" component={OrderDetail} />
