@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useRoute } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -10,7 +11,9 @@ import {
   ActivityIndicator,
   Platform,
   Keyboard,
+  Switch,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +46,18 @@ function formatDepartureDisplay(d) {
 }
 
 const PostRoute = ({ navigation }) => {
+  const route = useRoute();
+  const defaultDriverType = route.params?.defaultDriverType || 'commuter';
+  const [driverType, setDriverType] = useState(defaultDriverType);
+  const [hasReturn, setHasReturn] = useState(false);
+  const [returnDepartureTime, setReturnDepartureTime] = useState(() => {
+    const t = new Date();
+    t.setHours(17, 0, 0, 0);
+    return t;
+  });
+  const [showReturnPicker, setShowReturnPicker] = useState(false);
+  const [androidReturnPickerMode, setAndroidReturnPickerMode] = useState(null);
+
   const [fromAddress, setFromAddress] = useState('');
   const [fromLat, setFromLat] = useState(null);
   const [fromLng, setFromLng] = useState(null);
@@ -84,6 +99,13 @@ const PostRoute = ({ navigation }) => {
       if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const d = route.params?.defaultDriverType;
+    if (d === 'commuter' || d === 'dedicated') {
+      setDriverType(d);
+    }
+  }, [route.params?.defaultDriverType]);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,18 +232,51 @@ const PostRoute = ({ navigation }) => {
     if (date) setDepartureAt(date);
   }, [androidPickerMode]);
 
+  const onReturnDepartureChange = useCallback((event, date) => {
+    if (Platform.OS === 'android') {
+      if (event?.type === 'dismissed') {
+        setShowReturnPicker(false);
+        setAndroidReturnPickerMode(null);
+        return;
+      }
+      if (date) {
+        if (androidReturnPickerMode === 'date') {
+          setReturnDepartureTime((prev) => {
+            const n = new Date(prev);
+            n.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+            return n;
+          });
+          setAndroidReturnPickerMode('time');
+        } else {
+          setReturnDepartureTime((prev) => {
+            const n = new Date(prev);
+            n.setHours(date.getHours(), date.getMinutes(), 0, 0);
+            return n;
+          });
+          setShowReturnPicker(false);
+          setAndroidReturnPickerMode(null);
+        }
+      }
+      return;
+    }
+    if (event?.type === 'dismissed') return;
+    if (date) setReturnDepartureTime(date);
+  }, [androidReturnPickerMode]);
+
   const validate = useCallback(() => {
-    if (!fromAddress.trim()) {
-      return 'From address is required.';
-    }
-    if (fromLat == null || fromLng == null) {
-      return 'Choose a From address from the suggestions so we have a location.';
-    }
-    if (!toAddress.trim()) {
-      return 'To address is required.';
-    }
-    if (toLat == null || toLng == null) {
-      return 'Choose a To address from the suggestions so we have a location.';
+    if (driverType === 'commuter') {
+      if (!fromAddress.trim()) {
+        return 'From address is required.';
+      }
+      if (fromLat == null || fromLng == null) {
+        return 'Choose a From address from the suggestions so we have a location.';
+      }
+      if (!toAddress.trim()) {
+        return 'To address is required.';
+      }
+      if (toLat == null || toLng == null) {
+        return 'Choose a To address from the suggestions so we have a location.';
+      }
     }
     if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) {
       return 'Departure time is invalid.';
@@ -239,8 +294,29 @@ const PostRoute = ({ navigation }) => {
     if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) {
       return 'Please select boot space.';
     }
+    if (driverType === 'commuter' && hasReturn) {
+      if (!(returnDepartureTime instanceof Date) || Number.isNaN(returnDepartureTime.getTime())) {
+        return 'Return departure time is invalid.';
+      }
+      if (returnDepartureTime.getTime() <= departureAt.getTime()) {
+        return 'Return time must be after your outbound departure time.';
+      }
+    }
     return null;
-  }, [fromAddress, fromLat, fromLng, toAddress, toLat, toLng, departureAt, maxParcels, bootSpace]);
+  }, [
+    driverType,
+    fromAddress,
+    fromLat,
+    fromLng,
+    toAddress,
+    toLat,
+    toLng,
+    departureAt,
+    maxParcels,
+    bootSpace,
+    hasReturn,
+    returnDepartureTime,
+  ]);
 
   const handlePostRoute = async () => {
     setErrorMessage(null);
@@ -259,17 +335,50 @@ const PostRoute = ({ navigation }) => {
 
     setSubmitting(true);
     try {
-      const body = {
-        from_address: fromAddress.trim(),
-        from_lat: Number(fromLat),
-        from_lng: Number(fromLng),
-        to_address: toAddress.trim(),
-        to_lat: Number(toLat),
-        to_lng: Number(toLng),
-        departure_time: departureAt.toISOString(),
-        max_parcels: maxParcels,
-        boot_space: bootSpace,
-      };
+      let body;
+
+      if (driverType === 'dedicated') {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (perm.status !== 'granted') {
+          setErrorMessage('Location permission is required to post as available to deliver.');
+          setSubmitting(false);
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        body = {
+          from_address: 'Current location',
+          from_lat: Number(lat),
+          from_lng: Number(lng),
+          to_address: 'Current location',
+          to_lat: Number(lat),
+          to_lng: Number(lng),
+          departure_time: departureAt.toISOString(),
+          max_parcels: maxParcels,
+          boot_space: bootSpace,
+          driver_type: 'dedicated',
+        };
+      } else {
+        body = {
+          from_address: fromAddress.trim(),
+          from_lat: Number(fromLat),
+          from_lng: Number(fromLng),
+          to_address: toAddress.trim(),
+          to_lat: Number(toLat),
+          to_lng: Number(toLng),
+          departure_time: departureAt.toISOString(),
+          max_parcels: maxParcels,
+          boot_space: bootSpace,
+          driver_type: 'commuter',
+        };
+        if (hasReturn) {
+          body.has_return = true;
+          body.return_departure_time = returnDepartureTime.toISOString();
+        }
+      }
 
       await postJson('/api/driver-routes', body, { token: auth.token });
 
@@ -336,85 +445,149 @@ const PostRoute = ({ navigation }) => {
         ) : null}
 
         <View style={styles.formContainer}>
-          <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>From</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={fromAddress}
-                onChangeText={(t) => {
-                  setFromAddress(t);
-                  if (!t.trim()) {
-                    setFromLat(null);
-                    setFromLng(null);
-                  }
+          {/* Driver type selector */}
+          <View
+            style={{
+              flexDirection: 'row',
+              gap: 10,
+              marginBottom: 24,
+            }}
+          >
+            {[
+              { key: 'commuter', label: 'Commuter trip' },
+              { key: 'dedicated', label: 'Available to deliver' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                onPress={() => setDriverType(opt.key)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 24,
+                  alignItems: 'center',
+                  backgroundColor: driverType === opt.key ? '#000000' : 'transparent',
+                  borderWidth: 1.5,
+                  borderColor: driverType === opt.key ? '#000000' : '#E0E0E0',
                 }}
-                placeholder="Search starting address"
-                placeholderTextColor={colors.textLight}
-              />
-            </View>
-            {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
-            {fromPredictions.length > 0 && (
-              <View style={styles.predictionsBox}>
-                {fromPredictions.map((item) => (
-                  <TouchableOpacity
-                    key={item.place_id}
-                    style={styles.predictionRow}
-                    onPress={() => onSelectFromPrediction(item)}
-                  >
-                    <Text style={styles.predictionMain} numberOfLines={2}>
-                      {item.structured_formatting?.main_text || item.description}
-                    </Text>
-                    <Text style={styles.predictionSub} numberOfLines={1}>
-                      {item.structured_formatting?.secondary_text || ''}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: driverType === opt.key ? '#FFFFFF' : '#757575',
+                  }}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
-          <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>To</Text>
-            <View style={styles.inputContainer}>
-              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                value={toAddress}
-                onChangeText={(t) => {
-                  setToAddress(t);
-                  if (!t.trim()) {
-                    setToLat(null);
-                    setToLng(null);
-                  }
+          {driverType === 'dedicated' && (
+            <View
+              style={{
+                backgroundColor: '#F5F5F5',
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 20,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 14,
+                  color: '#757575',
+                  textAlign: 'center',
+                  lineHeight: 20,
                 }}
-                placeholder="Search destination address"
-                placeholderTextColor={colors.textLight}
-              />
+              >
+                You will receive nearby delivery orders based on your GPS location
+              </Text>
             </View>
-            {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
-            {toPredictions.length > 0 && (
-              <View style={styles.predictionsBox}>
-                {toPredictions.map((item) => (
-                  <TouchableOpacity
-                    key={item.place_id}
-                    style={styles.predictionRow}
-                    onPress={() => onSelectToPrediction(item)}
-                  >
-                    <Text style={styles.predictionMain} numberOfLines={2}>
-                      {item.structured_formatting?.main_text || item.description}
-                    </Text>
-                    <Text style={styles.predictionSub} numberOfLines={1}>
-                      {item.structured_formatting?.secondary_text || ''}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+          )}
+
+          {driverType === 'commuter' && (
+            <>
+              <View style={styles.inputSection}>
+                <Text style={styles.inputLabel}>From</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={fromAddress}
+                    onChangeText={(t) => {
+                      setFromAddress(t);
+                      if (!t.trim()) {
+                        setFromLat(null);
+                        setFromLng(null);
+                      }
+                    }}
+                    placeholder="Search starting address"
+                    placeholderTextColor={colors.textLight}
+                  />
+                </View>
+                {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
+                {fromPredictions.length > 0 && (
+                  <View style={styles.predictionsBox}>
+                    {fromPredictions.map((item) => (
+                      <TouchableOpacity
+                        key={item.place_id}
+                        style={styles.predictionRow}
+                        onPress={() => onSelectFromPrediction(item)}
+                      >
+                        <Text style={styles.predictionMain} numberOfLines={2}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        <Text style={styles.predictionSub} numberOfLines={1}>
+                          {item.structured_formatting?.secondary_text || ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
               </View>
-            )}
-            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
-          </View>
+
+              <View style={styles.inputSection}>
+                <Text style={styles.inputLabel}>To</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    value={toAddress}
+                    onChangeText={(t) => {
+                      setToAddress(t);
+                      if (!t.trim()) {
+                        setToLat(null);
+                        setToLng(null);
+                      }
+                    }}
+                    placeholder="Search destination address"
+                    placeholderTextColor={colors.textLight}
+                  />
+                </View>
+                {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
+                {toPredictions.length > 0 && (
+                  <View style={styles.predictionsBox}>
+                    {toPredictions.map((item) => (
+                      <TouchableOpacity
+                        key={item.place_id}
+                        style={styles.predictionRow}
+                        onPress={() => onSelectToPrediction(item)}
+                      >
+                        <Text style={styles.predictionMain} numberOfLines={2}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        <Text style={styles.predictionSub} numberOfLines={1}>
+                          {item.structured_formatting?.secondary_text || ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
+              </View>
+            </>
+          )}
 
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Departure time</Text>
@@ -497,6 +670,91 @@ const PostRoute = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {driverType === 'commuter' && (
+            <View style={{ marginTop: 24 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingVertical: 4,
+                }}
+              >
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '600',
+                      color: '#000',
+                    }}
+                  >
+                    Returning today?
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: '#9E9E9E',
+                      marginTop: 2,
+                    }}
+                  >
+                    We will set up your return trip automatically
+                  </Text>
+                </View>
+                <Switch
+                  value={hasReturn}
+                  onValueChange={setHasReturn}
+                  trackColor={{ false: '#E0E0E0', true: '#000000' }}
+                  ios_backgroundColor="#E0E0E0"
+                />
+              </View>
+              {hasReturn ? (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={[styles.inputLabel, { marginBottom: 8 }]}>Return departure time</Text>
+                  <TouchableOpacity
+                    style={styles.dateContainer}
+                    onPress={() => {
+                      if (Platform.OS === 'android') {
+                        setAndroidReturnPickerMode('date');
+                      }
+                      setShowReturnPicker(true);
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.dateIcon} />
+                    <Text style={styles.dateText}>{formatDepartureDisplay(returnDepartureTime)}</Text>
+                  </TouchableOpacity>
+                  {showReturnPicker && Platform.OS === 'ios' && (
+                    <>
+                      <DateTimePicker
+                        value={returnDepartureTime}
+                        mode="datetime"
+                        display="spinner"
+                        minimumDate={departureAt}
+                        onChange={onReturnDepartureChange}
+                      />
+                      <TouchableOpacity
+                        style={styles.iosPickerDone}
+                        onPress={() => setShowReturnPicker(false)}
+                      >
+                        <Text style={styles.iosPickerDoneText}>Done</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {showReturnPicker && Platform.OS === 'android' && androidReturnPickerMode && (
+                    <DateTimePicker
+                      value={returnDepartureTime}
+                      mode={androidReturnPickerMode === 'date' ? 'date' : 'time'}
+                      display="default"
+                      minimumDate={
+                        androidReturnPickerMode === 'date' ? departureAt : undefined
+                      }
+                      onChange={onReturnDepartureChange}
+                    />
+                  )}
+                </View>
+              ) : null}
+            </View>
+          )}
         </View>
 
         <View style={styles.noticeBanner}>

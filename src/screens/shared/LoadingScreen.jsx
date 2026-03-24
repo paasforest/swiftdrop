@@ -3,7 +3,7 @@ import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
-import { loadAuth, setAuth, clearAuth } from '../../authStore';
+import { loadAuth, setAuth, clearAuth, getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { resetToRoleHome } from '../../navigationHelpers';
 
@@ -32,12 +32,15 @@ export default function LoadingScreen() {
       const stored = await loadAuth();
 
       if (stored?.token) {
+        setAuth(stored);
+
         try {
-          const me = await getJson('/api/auth/me', { token: stored.token });
+          const me = await getJson('/api/auth/me', { quiet: true });
           if (cancelled) return;
+          const session = getAuth();
           setAuth({
-            token: stored.token,
-            refreshToken: stored.refreshToken ?? null,
+            token: session?.token ?? stored.token,
+            refreshToken: session?.refreshToken ?? stored.refreshToken ?? null,
             user: me,
           });
           await finish();

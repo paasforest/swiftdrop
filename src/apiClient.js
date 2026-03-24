@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './apiConfig';
+import { getAuth, setAuth } from './authStore';
 
 function safeJsonParse(text) {
   try {
@@ -8,89 +9,164 @@ function safeJsonParse(text) {
   }
 }
 
-export async function getJson(path, { token } = {}) {
+/** Single-flight refresh so parallel 401s don't stampede the server. */
+let refreshInFlight = null;
+
+/**
+ * Exchange refresh token for a new access token and persist via setAuth.
+ * @param {string} [explicitRefreshToken] — use when getAuth() is not hydrated yet (e.g. LoadingScreen).
+ * @returns {Promise<string|null>} new access token or null
+ */
+export async function refreshAccessToken(explicitRefreshToken) {
+  const rt = explicitRefreshToken ?? getAuth()?.refreshToken;
+  if (!rt) return null;
+
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    try {
+      const url = `${API_BASE_URL}/api/auth/refresh-token`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      const text = await res.text();
+      const json = safeJsonParse(text);
+      if (!res.ok || !json?.token) return null;
+
+      const prev = getAuth();
+      setAuth({
+        token: json.token,
+        refreshToken: rt,
+        user: json.user ?? prev?.user ?? null,
+      });
+      return json.token;
+    } catch {
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
+}
+
+function logApiError(method, msg, quiet) {
+  if (!quiet) console.error(`[API] ${method} Error:`, msg);
+}
+
+export async function getJson(path, { token, quiet, _retryAfterRefresh } = {}) {
+  const authToken = token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
   try {
     const res = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
     });
     const text = await res.text();
     const json = safeJsonParse(text);
+
+    if (res.status === 401 && !_retryAfterRefresh && getAuth()?.refreshToken) {
+      const newTok = await refreshAccessToken();
+      if (newTok) {
+        return getJson(path, { token: newTok, quiet, _retryAfterRefresh: true });
+      }
+    }
+
     if (!res.ok) {
       const message = json?.error || json?.message || `Request failed with ${res.status}`;
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    console.error('[API] GET Error:', err.message);
+    logApiError('GET', err.message, quiet);
     throw err;
   }
 }
 
-export async function patchJson(path, body, { token } = {}) {
+export async function patchJson(path, body, { token, quiet, _retryAfterRefresh } = {}) {
+  const authToken = token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
   try {
     const res = await fetch(url, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
       body: JSON.stringify(body ?? {}),
     });
     const text = await res.text();
     const json = safeJsonParse(text);
+
+    if (res.status === 401 && !_retryAfterRefresh && getAuth()?.refreshToken) {
+      const newTok = await refreshAccessToken();
+      if (newTok) {
+        return patchJson(path, body, { token: newTok, quiet, _retryAfterRefresh: true });
+      }
+    }
+
     if (!res.ok) {
       const message = json?.error || json?.message || `Request failed with ${res.status}`;
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    console.error('[API] PATCH Error:', err.message);
+    logApiError('PATCH', err.message, quiet);
     throw err;
   }
 }
 
-export async function deleteJson(path, { token } = {}) {
+export async function deleteJson(path, { token, quiet, _retryAfterRefresh } = {}) {
+  const authToken = token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
   try {
     const res = await fetch(url, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
     });
     const text = await res.text();
     const json = safeJsonParse(text);
+
+    if (res.status === 401 && !_retryAfterRefresh && getAuth()?.refreshToken) {
+      const newTok = await refreshAccessToken();
+      if (newTok) {
+        return deleteJson(path, { token: newTok, quiet, _retryAfterRefresh: true });
+      }
+    }
+
     if (!res.ok) {
       const message = json?.error || json?.message || `Request failed with ${res.status}`;
       throw new Error(message);
     }
     return json ?? {};
   } catch (err) {
-    console.error('[API] DELETE Error:', err.message);
+    logApiError('DELETE', err.message, quiet);
     throw err;
   }
 }
 
-export async function postJson(path, body, { token } = {}) {
+export async function postJson(path, body, { token, quiet, _retryAfterRefresh, skipAuthRetry } = {}) {
+  const authToken = token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
   console.log('[API] POST', url);
-  
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       },
       body: JSON.stringify(body ?? {}),
       signal: controller.signal,
@@ -103,6 +179,18 @@ export async function postJson(path, body, { token } = {}) {
 
     console.log('[API] Response:', res.status, json);
 
+    if (
+      res.status === 401 &&
+      !_retryAfterRefresh &&
+      !skipAuthRetry &&
+      getAuth()?.refreshToken
+    ) {
+      const newTok = await refreshAccessToken();
+      if (newTok) {
+        return postJson(path, body, { token: newTok, quiet, _retryAfterRefresh: true, skipAuthRetry });
+      }
+    }
+
     if (!res.ok) {
       const message = json?.error || json?.message || `Request failed with ${res.status}`;
       throw new Error(message);
@@ -114,8 +202,7 @@ export async function postJson(path, body, { token } = {}) {
       console.error('[API] Timeout:', url);
       throw new Error('Request timed out. Check your internet connection.');
     }
-    console.error('[API] Error:', err.message);
+    if (!quiet) console.error('[API] Error:', err.message);
     throw err;
   }
 }
-

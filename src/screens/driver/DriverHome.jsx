@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson, patchJson, deleteJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
@@ -71,7 +71,8 @@ function formatRouteDeparture(iso) {
 
 const STATUS_ERR = 'Could not update status. Check connection.';
 
-const DriverHome = ({ navigation, route }) => {
+const DriverHome = ({ navigation }) => {
+  const route = useRoute();
   const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +82,8 @@ const DriverHome = ({ navigation, route }) => {
   const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
+  /** Mirrors intended PostRoute driver type when opening the posting flow from home. */
+  const [selectedMode, setSelectedMode] = useState('commuter');
 
   const locationIntervalRef = useRef(null);
   const lastJobOfferNavigatedOrderIdRef = useRef(null);
@@ -373,7 +376,7 @@ const DriverHome = ({ navigation, route }) => {
     }
   };
 
-  const handleCancelPostedRoute = (route) => {
+  const handleCancelPostedRoute = (postedRoute) => {
     Alert.alert(
       'Cancel this route?',
       'You will no longer receive parcel offers for this trip.',
@@ -386,8 +389,8 @@ const DriverHome = ({ navigation, route }) => {
             try {
               const auth = getAuth();
               if (!auth?.token) return;
-              await deleteJson(`/api/driver-routes/${route.id}`, { token: auth.token });
-              setMyRoutes((prev) => prev.filter((r) => Number(r.id) !== Number(route.id)));
+              await deleteJson(`/api/driver-routes/${postedRoute.id}`, { token: auth.token });
+              setMyRoutes((prev) => prev.filter((r) => Number(r.id) !== Number(postedRoute.id)));
             } catch (e) {
               Alert.alert('Could not cancel', e.message || 'Try again.');
             }
@@ -562,6 +565,42 @@ const DriverHome = ({ navigation, route }) => {
           </Text>
         </View>
 
+        <View style={styles.modeSelectorSection}>
+          <Text style={styles.modeSelectorTitle}>How do you want to work?</Text>
+          <View style={styles.modeCardsRow}>
+            <TouchableOpacity
+              style={[styles.modeCard, selectedMode === 'commuter' && styles.modeCardSelected]}
+              onPress={() => {
+                setSelectedMode('commuter');
+                navigation.navigate('PostRoute', { defaultDriverType: 'commuter' });
+              }}
+              activeOpacity={0.88}
+            >
+              <Text
+                style={[styles.modeCardTitle, selectedMode === 'commuter' && styles.modeCardTitleSelected]}
+              >
+                I am heading somewhere
+              </Text>
+              <Text style={styles.modeCardSub}>Post a route for your trip</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modeCard, selectedMode === 'dedicated' && styles.modeCardSelected]}
+              onPress={() => {
+                setSelectedMode('dedicated');
+                navigation.navigate('PostRoute', { defaultDriverType: 'dedicated' });
+              }}
+              activeOpacity={0.88}
+            >
+              <Text
+                style={[styles.modeCardTitle, selectedMode === 'dedicated' && styles.modeCardTitleSelected]}
+              >
+                I am available to deliver
+              </Text>
+              <Text style={styles.modeCardSub}>Get orders near your GPS</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {todayStats && (
           <View style={styles.todayEarningsCard}>
             <View>
@@ -655,7 +694,10 @@ const DriverHome = ({ navigation, route }) => {
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.postRouteButton}
-            onPress={() => navigation.navigate('PostRoute')}
+            onPress={() => {
+              setSelectedMode('commuter');
+              navigation.navigate('PostRoute', { defaultDriverType: 'commuter' });
+            }}
           >
             <Text style={styles.postRouteText}>Post a Route</Text>
           </TouchableOpacity>
@@ -854,6 +896,48 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     lineHeight: 24,
+  },
+  modeSelectorSection: {
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  modeSelectorTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  modeCardsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modeCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  modeCardSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  modeCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  modeCardTitleSelected: {
+    color: colors.primary,
+  },
+  modeCardSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   routeMatchBanner: {
     flexDirection: 'row',
