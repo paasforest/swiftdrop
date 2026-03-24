@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { launchCameraImageOptions } from '../../utils/cameraPickerOptions';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth } from '../../authStore';
@@ -195,10 +196,7 @@ const PickupConfirm = ({ navigation, route }) => {
       setCapturingPhoto(true);
       await ensureCameraPermission();
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.85,
-      });
+      const result = await ImagePicker.launchCameraAsync(launchCameraImageOptions);
 
       if (result.canceled) return;
       const asset = result.assets?.[0];

@@ -138,6 +138,7 @@ async function expireJobOffers(orderId) {
  * - Re-offer after declined: notify.
  */
 async function shouldNotifyDriverForOffer(orderId, driverId, attemptIndex) {
+  const ai = Number.isFinite(attemptIndex) ? attemptIndex : 0;
   const r = await db.query(
     `SELECT status FROM job_offers
      WHERE order_id = $1 AND driver_id = $2
@@ -147,9 +148,10 @@ async function shouldNotifyDriverForOffer(orderId, driverId, attemptIndex) {
   );
   if (r.rows.length === 0) return true;
   const status = r.rows[0].status;
+  if (status === 'accepted') return false;
   if (status === 'declined') return true;
   if (status === 'pending') return false;
-  if (attemptIndex === 0 && status === 'expired') return true;
+  if (ai === 0 && status === 'expired') return true;
   return false;
 }
 
@@ -164,14 +166,19 @@ async function filterDriversToNotify(orderId, driverIds, attemptIndex) {
 }
 
 async function notifyDriversNewOffer(driverIds, order) {
-  const earn = Number(order.driver_earnings || order.total_price || 0);
+  if (!driverIds?.length) return;
+  const fresh = await getOrder(order.id);
+  if (!fresh || fresh.status !== 'matching' || fresh.driver_id) {
+    return;
+  }
+  const earn = Number(fresh.driver_earnings || fresh.total_price || 0);
   const amountStr = Number.isFinite(earn) ? earn.toFixed(2) : '0.00';
   const title = 'New Delivery Job!';
-  const body = `Earn R${amountStr} — ${order.pickup_address} to ${order.dropoff_address}`;
+  const body = `Earn R${amountStr} — ${fresh.pickup_address} to ${fresh.dropoff_address}`;
   for (const driverId of driverIds) {
     await sendPushNotification(driverId, title, body, {
-      orderId: order.id,
-      orderNumber: order.order_number,
+      orderId: fresh.id,
+      orderNumber: fresh.order_number,
       type: 'job_offer',
     });
   }
@@ -188,9 +195,10 @@ async function notifyCustomerNoDriver(customerId, order) {
 
 /**
  * One full cascade: route → nearby → intercity, with awaited offer windows.
+ * @param {number} attemptIndex 0-based retry index from runMatchingWithRetry (affects push dedupe).
  * @returns {Promise<boolean>} true if a driver accepted / assigned
  */
-async function runMatchingAttempt(orderId) {
+async function runMatchingAttempt(orderId, attemptIndex = 0) {
   await expireJobOffers(orderId);
 
   let order = await getOrder(orderId);
@@ -201,8 +209,9 @@ async function runMatchingAttempt(orderId) {
   const riderIds = await findRouteRiders(order);
   console.log('[Matching] Route riders found:', riderIds.length);
   if (riderIds.length > 0) {
+    const toNotifyRoute = await filterDriversToNotify(orderId, riderIds, attemptIndex);
     await createJobOffers(orderId, riderIds, { matchedVia: 'route' });
-    await notifyDriversNewOffer(riderIds, order);
+    await notifyDriversNewOffer(toNotifyRoute, order);
     if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
     await expireJobOffers(orderId);
   }

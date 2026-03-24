@@ -2,6 +2,37 @@ import { createNavigationContainerRef } from '@react-navigation/native';
 
 export const navigationRef = createNavigationContainerRef();
 
+/** Deepest focused route name (handles nested navigators). */
+function getFocusedRouteName(state) {
+  if (!state || state.index == null || !state.routes?.length) return undefined;
+  const r = state.routes[state.index];
+  if (r?.state) return getFocusedRouteName(r.state);
+  return r?.name;
+}
+
+/**
+ * Avoid stacking JobOffer again (foreground push + poll) or jumping to a new offer
+ * while already in an active delivery flow for another job.
+ */
+function shouldSkipJobOfferNavigation(type) {
+  const name = getFocusedRouteName(navigationRef.getState());
+  if (name === 'JobOffer') return true;
+  if (type === 'job_offer') {
+    if (
+      [
+        'ActiveDelivery',
+        'EnRoutePickup',
+        'PickupConfirm',
+        'EnRouteDelivery',
+        'DeliveryConfirm',
+      ].includes(name)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Normalize FCM/expo data (values are often strings). */
 export function normalizePushData(raw) {
   if (!raw || typeof raw !== 'object') return {};
@@ -35,6 +66,9 @@ export function navigateFromNotificationData(raw) {
     switch (type) {
       case 'job_offer':
       case 'return_load':
+        if (shouldSkipJobOfferNavigation(type)) {
+          return;
+        }
         navigationRef.navigate('JobOffer');
         break;
       case 'payment':

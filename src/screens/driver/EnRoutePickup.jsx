@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DriverLocationService from './DriverLocationService';
@@ -9,11 +10,23 @@ import { colors, spacing, radius, typography, shadows } from '../../theme/theme'
 
 const { width, height } = Dimensions.get('window');
 
+const UBER_MAP_STYLE = [
+  { featureType: 'all', elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#f5f1eb' }] },
+  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#fdfcf8' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#f8c967' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#e9bc62' }] },
+  { featureType: 'water', elementType: 'geometry.fill', stylers: [{ color: '#c9d2d3' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#dde9cb' }] },
+  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
+];
+
 const EnRoutePickup = ({ route, navigation }) => {
   const orderId = route?.params?.orderId;
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+  const [driverCoords, setDriverCoords] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +56,38 @@ const EnRoutePickup = ({ route, navigation }) => {
     };
   }, [orderId]);
 
+  const canConfirmPickup =
+    order?.status === 'accepted' || order?.status === 'pickup_en_route' || order?.status === 'pickup_arrived';
+
+  const pickupCoords =
+    order?.pickup_lat != null && order?.pickup_lng != null
+      ? {
+          latitude: Number(order.pickup_lat),
+          longitude: Number(order.pickup_lng),
+        }
+      : null;
+
+  const initialRegion = driverCoords
+    ? {
+        latitude: driverCoords.latitude,
+        longitude: driverCoords.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }
+    : pickupCoords
+      ? {
+          latitude: pickupCoords.latitude,
+          longitude: pickupCoords.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }
+      : {
+          latitude: -33.9249,
+          longitude: 18.4241,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        };
+
   const handleBack = () => {
     console.log('Back pressed');
   };
@@ -56,28 +101,50 @@ const EnRoutePickup = ({ route, navigation }) => {
           ? String(order.status).replace(/_/g, ' ')
           : 'Heading to pickup';
 
-  const canConfirmPickup =
-    order?.status === 'accepted' || order?.status === 'pickup_en_route' || order?.status === 'pickup_arrived';
-
   return (
     <SafeAreaView style={styles.container}>
-      {orderId ? <DriverLocationService orderId={orderId} /> : null}
+      {orderId ? <DriverLocationService orderId={orderId} onLocationUpdate={setDriverCoords} /> : null}
       {/* Map View */}
       <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          {/* Route Line */}
-          <View style={styles.routeLine} />
-          
-          {/* Driver Position */}
-          <View style={[styles.driverMarker, { left: 100, top: 200 }]}>
-            <Ionicons name="car-sport" size={22} color={colors.textWhite} />
-          </View>
-          
-          {/* Pickup Location */}
-          <View style={[styles.pickupMarker, { left: 200, top: 120 }]}>
-            <View style={styles.pickupDot} />
-          </View>
-        </View>
+        <MapView
+          style={styles.map}
+          provider={PROVIDER_GOOGLE}
+          initialRegion={initialRegion}
+          showsUserLocation={false}
+          showsMyLocationButton={false}
+          customMapStyle={UBER_MAP_STYLE}
+        >
+          {driverCoords ? (
+            <Marker coordinate={driverCoords} title="You" anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={styles.driverMarkerWrap}>
+                <View style={styles.driverMarkerRing} />
+                <View style={styles.driverMarker}>
+                  <Ionicons name="car-sport" size={14} color={colors.textWhite} />
+                </View>
+              </View>
+            </Marker>
+          ) : null}
+
+          {pickupCoords ? (
+            <Marker coordinate={pickupCoords} title="Pickup" description={order?.pickup_address || ''}>
+              <View style={styles.pickupMarkerWrap}>
+                <View style={styles.pickupMarkerRing} />
+                <View style={styles.pickupMarker}>
+                  <View style={styles.pickupDot} />
+                </View>
+              </View>
+            </Marker>
+          ) : null}
+
+          {driverCoords && pickupCoords ? (
+            <Polyline
+              coordinates={[driverCoords, pickupCoords]}
+              strokeColor="#000000"
+              strokeWidth={4}
+              lineCap="round"
+            />
+          ) : null}
+        </MapView>
 
         {/* Top Overlay Bar */}
         <View style={styles.topOverlay}>
@@ -134,28 +201,28 @@ const styles = StyleSheet.create({
   },
   mapContainer: {
     flex: 1,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: '#F5F3EF',
     position: 'relative',
   },
-  mapPlaceholder: {
+  map: {
     flex: 1,
-    position: 'relative',
   },
-  routeLine: {
+  driverMarkerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  driverMarkerRing: {
     position: 'absolute',
-    width: 2,
-    height: 150,
-    backgroundColor: colors.primary,
-    left: 150,
-    top: 100,
-    transform: [{ rotate: '-30deg' }],
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(17, 17, 17, 0.12)',
   },
   driverMarker: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#111111',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: colors.black,
@@ -163,13 +230,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 4,
+    borderWidth: 2,
+    borderColor: colors.textWhite,
   },
-  driverIcon: {
-    fontSize: 20,
-    color: colors.textWhite,
+  pickupMarkerWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickupMarkerRing: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34, 197, 94, 0.18)',
   },
   pickupMarker: {
-    position: 'absolute',
     width: 30,
     height: 30,
     borderRadius: 15,
@@ -196,14 +271,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderRadius: 18,
     padding: 16,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
   },
   backArrow: {
     fontSize: 24,
@@ -222,28 +297,29 @@ const styles = StyleSheet.create({
   },
   bottomPanel: {
     backgroundColor: colors.textWhite,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 30,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 12,
   },
   statusBadge: {
-    backgroundColor: colors.primaryLight,
+    backgroundColor: '#F4F4F5',
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
     marginBottom: 20,
+    alignSelf: 'flex-start',
   },
   statusText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: '#3F3F46',
   },
   customerSection: {
     marginBottom: 24,
@@ -341,15 +417,15 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   arrivedButton: {
-    backgroundColor: colors.accent,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: '#111111',
+    paddingVertical: 17,
+    borderRadius: 18,
     alignItems: 'center',
   },
   arrivedButtonText: {
     color: colors.textWhite,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 
