@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
@@ -53,9 +54,11 @@ const DriverHome = ({ navigation }) => {
   const [statusBusy, setStatusBusy] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
+  const [driverCoords, setDriverCoords] = useState(null);
 
   const locationIntervalRef = useRef(null);
   const lastJobOfferNavigatedOrderIdRef = useRef(null);
+  const mapRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const stopLocationUpdates = useCallback(() => {
@@ -72,6 +75,10 @@ const DriverHome = ({ navigation }) => {
     if (perm.status !== 'granted') return;
     const pos = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
+    });
+    setDriverCoords({
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
     });
     await patchJson(
       '/api/drivers/location',
@@ -272,6 +279,19 @@ const DriverHome = ({ navigation }) => {
     };
   }, [stopLocationUpdates]);
 
+  useEffect(() => {
+    if (!mapRef.current || !driverCoords) return;
+    mapRef.current.animateToRegion(
+      {
+        latitude: driverCoords.latitude,
+        longitude: driverCoords.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      },
+      500
+    );
+  }, [driverCoords]);
+
   /** Uber-style: while online, poll for pending offers and open JobOffer automatically. */
   useEffect(() => {
     if (!isOnline) return undefined;
@@ -386,24 +406,35 @@ const DriverHome = ({ navigation }) => {
   };
 
   if (stayOnline) {
+    const fallbackRegion = { latitude: -33.9249, longitude: 18.4241, latitudeDelta: 0.6, longitudeDelta: 0.6 };
+    const initialRegion = driverCoords
+      ? { ...driverCoords, latitudeDelta: 0.05, longitudeDelta: 0.05 }
+      : fallbackRegion;
+
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: '#FFFFFF',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingHorizontal: 24,
-          }}
-        >
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <View style={styles.waitingRoot}>
+          <MapView
+            ref={mapRef}
+            style={styles.waitingMap}
+            provider={PROVIDER_GOOGLE}
+            initialRegion={initialRegion}
+            showsUserLocation={false}
+            showsMyLocationButton={false}
+          >
+            {driverCoords ? (
+              <Marker coordinate={driverCoords} title="You" pinColor={colors.primary} />
+            ) : null}
+          </MapView>
+
+          <View style={styles.waitingOverlay}>
           <View style={{ alignItems: 'center', marginBottom: 32 }}>
             <Animated.View
               style={{
                 width: 80,
                 height: 80,
                 borderRadius: 40,
-                backgroundColor: 'rgba(0,200,83,0.15)',
+                backgroundColor: colors.successLight,
                 alignItems: 'center',
                 justifyContent: 'center',
                 transform: [{ scale: pulseAnim }],
@@ -414,17 +445,17 @@ const DriverHome = ({ navigation }) => {
                   width: 32,
                   height: 32,
                   borderRadius: 16,
-                  backgroundColor: '#00C853',
+                  backgroundColor: colors.success,
                 }}
               />
             </Animated.View>
           </View>
 
-          <Text style={{ fontSize: 22, fontWeight: '700', color: '#000' }}>Online</Text>
+          <Text style={{ fontSize: 22, fontWeight: '700', color: colors.textPrimary }}>Online</Text>
           <Text
             style={{
               fontSize: 15,
-              color: '#9E9E9E',
+              color: colors.textLight,
               marginTop: 8,
               textAlign: 'center',
               paddingHorizontal: 40,
@@ -435,7 +466,7 @@ const DriverHome = ({ navigation }) => {
 
           <View
             style={{
-              backgroundColor: '#F5F5F5',
+              backgroundColor: colors.surface,
               borderRadius: 16,
               padding: 20,
               marginTop: 32,
@@ -445,14 +476,14 @@ const DriverHome = ({ navigation }) => {
             }}
           >
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>TODAY</Text>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
+              <Text style={{ fontSize: 12, color: colors.textLight }}>TODAY</Text>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary, marginTop: 4 }}>
                 R{(todayStats?.total || 0).toFixed(2)}
               </Text>
             </View>
             <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>DELIVERIES</Text>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
+              <Text style={{ fontSize: 12, color: colors.textLight }}>DELIVERIES</Text>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: colors.textPrimary, marginTop: 4 }}>
                 {todayStats?.count || 0}
               </Text>
             </View>
@@ -471,15 +502,16 @@ const DriverHome = ({ navigation }) => {
               paddingVertical: 14,
               borderRadius: 30,
               borderWidth: 1.5,
-              borderColor: '#E0E0E0',
+              borderColor: colors.border,
             }}
           >
             {statusBusy ? (
-              <ActivityIndicator color="#757575" />
+              <ActivityIndicator color={colors.textSecondary} />
             ) : (
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#757575' }}>Go offline</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>Go offline</Text>
             )}
           </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -692,6 +724,18 @@ const styles = StyleSheet.create({
     width,
     minHeight: height,
     paddingBottom: 72,
+  },
+  waitingRoot: {
+    flex: 1,
+  },
+  waitingMap: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  waitingOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   header: {
     flexDirection: 'row',
