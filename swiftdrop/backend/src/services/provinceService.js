@@ -21,20 +21,6 @@ const SERVICE_AREAS = [
   },
 ];
 
-/** Legacy corridor config (Phase 2 / admin tools). Bounds match SERVICE_AREAS. */
-const PROVINCES = {
-  western_cape: {
-    corridorThresholdKm: 5,
-    dedicatedRadiusKm: 10,
-    bounds: SERVICE_AREAS[0].bounds,
-  },
-  gauteng: {
-    corridorThresholdKm: 3,
-    dedicatedRadiusKm: 8,
-    bounds: SERVICE_AREAS[1].bounds,
-  },
-};
-
 function detectProvince(lat, lng) {
   const la = Number(lat);
   const ln = Number(lng);
@@ -48,8 +34,4 @@ function detectProvince(lat, lng) {
   return null;
 }
 
-function getProvinceConfig(key) {
-  return PROVINCES[key] || null;
-}
-
-module.exports = { detectProvince, getProvinceConfig, SERVICE_AREAS };
+module.exports = { detectProvince, SERVICE_AREAS };

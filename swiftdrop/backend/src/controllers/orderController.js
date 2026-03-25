@@ -399,7 +399,35 @@ async function getOrderById(req, res) {
         dp.vehicle_year,
         dp.vehicle_plate,
         COALESCE(dt.deliveries_completed, 0) AS driver_deliveries_completed,
-        COALESCE(dt.current_rating, 0.0) AS driver_rating
+        COALESCE(dt.current_rating, 0.0) AS driver_rating,
+        CASE
+          WHEN o.driver_id IS NOT NULL
+            AND u.current_lat IS NOT NULL
+            AND u.current_lng IS NOT NULL
+          THEN ROUND(
+            (point(u.current_lng, u.current_lat) <->
+             point(o.pickup_lng, o.pickup_lat))
+            * 111.0 / 50.0 * 60
+          )::text || ' min'
+          ELSE NULL
+        END AS time_estimate,
+        CASE
+          WHEN o.status IN (
+            'accepted','pickup_en_route','pickup_arrived',
+            'collected','delivery_en_route',
+            'delivery_arrived','delivered','completed'
+          ) THEN 'accepted'
+          WHEN EXISTS (
+            SELECT 1 FROM job_offers jo
+            WHERE jo.order_id = o.id
+            AND jo.status = 'pending'
+            AND jo.expires_at > NOW()
+          ) THEN 'offered'
+          WHEN o.status = 'pending'
+            OR o.status = 'matching'
+          THEN 'searching'
+          ELSE 'searching'
+        END AS matching_status
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id
@@ -759,10 +787,31 @@ async function updateOrderStatus(req, res) {
     if (status === 'pickup_arrived') {
       await sendPushNotification(
         order.customer_id,
-        'Driver Has Arrived',
-        `Your pickup code is: ${order.pickup_otp}`,
+        'Driver has arrived at pickup',
+        `Pickup code: ${order.pickup_otp} — ` +
+        `Please forward the delivery code ` +
+        `${order.delivery_otp} to your recipient ` +
+        `so they are ready when the driver arrives.`,
         { orderId: id, type: 'otp_pickup', otp: order.pickup_otp }
       );
+
+      const customerRes = await db.query(
+        'SELECT phone FROM users WHERE id = $1',
+        [order.customer_id]
+      );
+      const customerPhone = customerRes.rows[0]?.phone;
+
+      if (customerPhone) {
+        await smsService.sendSMS(
+          customerPhone,
+          `SwiftDrop: Your driver has arrived to ` +
+          `collect your parcel.\n` +
+          `Pickup code: ${order.pickup_otp}\n` +
+          `Please forward the delivery code ` +
+          `${order.delivery_otp} to your recipient ` +
+          `so they are ready.`
+        );
+      }
     }
 
     if (status === 'delivery_arrived') {

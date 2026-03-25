@@ -209,7 +209,10 @@ async function tryStep4(orderId) {
   const order = await getOrder(orderId);
   if (!order || order.driver_id || order.status !== 'matching') return;
 
-  await db.query(`UPDATE orders SET status = 'unmatched', updated_at = NOW() WHERE id = $1`, [orderId]);
+  await db.query(
+    `UPDATE orders SET status = 'unmatched', match_attempted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+    [orderId]
+  );
   await notifyCustomerNoDriver(order.customer_id, order);
 }
 

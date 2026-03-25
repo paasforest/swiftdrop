@@ -123,6 +123,36 @@ async function patchLocation(req, res) {
       }
     }
 
+    if (online) {
+      const { detectProvince } = require('../services/provinceService');
+      const { runMatching } = require('../services/matchingService');
+      const province = detectProvince(latN, lngN);
+      if (province) {
+        const unmatched = await db.query(
+          `SELECT id FROM orders
+           WHERE status = 'unmatched'
+             AND province = $1
+             AND created_at > NOW() - INTERVAL '2 hours'
+             AND match_attempted_at < NOW() - INTERVAL '5 minutes'`,
+          [province]
+        );
+        for (const row of unmatched.rows) {
+          const oid = row.id;
+          setImmediate(() => {
+            db.query(
+              `UPDATE orders SET status = 'matching', driver_id = NULL, updated_at = NOW()
+               WHERE id = $1 AND status = 'unmatched'`,
+              [oid]
+            )
+              .then((r) => {
+                if (r.rowCount) runMatching(oid);
+              })
+              .catch((e) => console.error('rematch unmatched on driver location:', e));
+          });
+        }
+      }
+    }
+
     return res.json({ updated: true });
   } catch (err) {
     console.error('patchDriverLocation:', err);

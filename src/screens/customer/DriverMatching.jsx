@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,26 +6,26 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
-  Alert,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { API_BASE_URL } from '../../apiConfig';
-import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius } from '../../theme/theme';
-import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
+import { getJson } from '../../apiClient';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const RADAR_BLUE = '#1A73E8';
-const POLL_MS = 3000;
-const FOUND_NAV_DELAY_MS = 1500;
+const POLL_MS = 4000;
 
-/** Driver has accepted or job is already in progress (poll may skip `accepted`). */
-function isDriverMatchedStatus(status) {
+/** While matching / waiting for a driver */
+function isSearchingStatus(status) {
+  const s = String(status || '');
+  return s === 'matching' || s === 'pending';
+}
+
+/** Order is in progress — send customer to tracking */
+function isActiveDeliveryStatus(status) {
   const s = String(status || '');
   return [
     'accepted',
@@ -39,239 +39,37 @@ function isDriverMatchedStatus(status) {
   ].includes(s);
 }
 
-const STATUS_MESSAGES = [
-  'Finding your driver...',
-  'Checking nearby drivers...',
-  'Searching in your area...',
-  'Still searching — please wait...',
-  'Almost there...',
-];
-
-/** Secondary reassurance line under rotating title (by elapsed search time). */
-function reassuranceSubtitle(elapsedSec) {
-  if (elapsedSec >= 120) return 'Almost there — checking all drivers...';
-  if (elapsedSec >= 90) return 'Expanding search area...';
-  if (elapsedSec >= 60) return 'Searching for 1 minute...';
-  if (elapsedSec >= 30) return 'Searching for 30 seconds...';
-  return '';
-}
-
-function formatMoney(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return '—';
-  return `R${x.toFixed(2)}`;
-}
-
-function tierLabel(tier) {
-  if (!tier) return 'Standard';
-  const s = String(tier);
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** Staggered infinite pulse: first cycle waits `staggerMs`, then every 1800ms. */
-function startRadarRing(scale, opacity, staggerMs, isCancelled) {
-  let first = true;
-  const step = () => {
-    if (isCancelled()) return;
-    const delayMs = first ? staggerMs : 0;
-    first = false;
-    Animated.sequence([
-      Animated.delay(delayMs),
-      Animated.parallel([
-        Animated.timing(scale, {
-          toValue: 1.5,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.parallel([
-        Animated.timing(scale, { toValue: 0.3, duration: 0, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.6, duration: 0, useNativeDriver: true }),
-      ]),
-    ]).start(() => step());
-  };
-  step();
-}
-
 const DriverMatching = ({ navigation, route }) => {
-  const {
-    orderId,
-    pickup_address,
-    pickup_lat: pickupLatParam,
-    pickup_lng: pickupLngParam,
-    dropoff_address,
-    delivery_tier,
-    total_price,
-  } = route?.params || {};
+  const { orderId } = route?.params || {};
 
-  const pickupAddress = pickup_address || route?.params?.pickup || 'Pickup address';
-  const dropoffAddress = dropoff_address || route?.params?.dropoff || 'Delivery address';
-  const deliveryTier = delivery_tier || route?.params?.deliveryTier;
-  const totalPrice = total_price ?? route?.params?.totalPrice;
-
-  const pickupLat = Number(pickupLatParam);
-  const pickupLng = Number(pickupLngParam);
-  const hasPickupCoord = Number.isFinite(pickupLat) && Number.isFinite(pickupLng);
-
-  const [noDriverFound, setNoDriverFound] = useState(false);
-  const [driverFound, setDriverFound] = useState(false);
+  const [phase, setPhase] = useState('searching'); // 'searching' | 'unmatched'
+  const [matchStatus, setMatchStatus] = useState('searching');
+  const [driverEta, setDriverEta] = useState(null);
+  const [foundDriverName, setFoundDriverName] = useState(null);
+  const [searchSeconds, setSearchSeconds] = useState(0);
   const [cancelling, setCancelling] = useState(false);
-  const [retrying, setRetrying] = useState(false);
 
-  const cancelledRef = useRef(false);
-  const timeoutRef = useRef(null);
+  const pollRef = useRef(null);
+  const searchTimerRef = useRef(null);
+  const stoppedRef = useRef(false);
+  const pulseScale = useRef(new Animated.Value(1)).current;
 
-  const scale0 = useRef(new Animated.Value(0.3)).current;
-  const opacity0 = useRef(new Animated.Value(0.6)).current;
-  const scale1 = useRef(new Animated.Value(0.3)).current;
-  const opacity1 = useRef(new Animated.Value(0.6)).current;
-  const scale2 = useRef(new Animated.Value(0.3)).current;
-  const opacity2 = useRef(new Animated.Value(0.6)).current;
-
-  const dot0 = useRef(new Animated.Value(0.35)).current;
-  const dot1 = useRef(new Animated.Value(0.35)).current;
-  const dot2 = useRef(new Animated.Value(0.35)).current;
-
-  const messageOpacity = useRef(new Animated.Value(1)).current;
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [elapsedSec, setElapsedSec] = useState(0);
-
-  const stopAnimations = useCallback(() => {
-    cancelledRef.current = true;
-    scale0.stopAnimation();
-    scale1.stopAnimation();
-    scale2.stopAnimation();
-    opacity0.stopAnimation();
-    opacity1.stopAnimation();
-    opacity2.stopAnimation();
-    dot0.stopAnimation();
-    dot1.stopAnimation();
-    dot2.stopAnimation();
-  }, [scale0, scale1, scale2, opacity0, opacity1, opacity2, dot0, dot1, dot2]);
-
-  const startAnimations = useCallback(() => {
-    cancelledRef.current = false;
-    scale0.setValue(0.3);
-    opacity0.setValue(0.6);
-    scale1.setValue(0.3);
-    opacity1.setValue(0.6);
-    scale2.setValue(0.3);
-    opacity2.setValue(0.6);
-
-    const isCancelled = () => cancelledRef.current;
-    startRadarRing(scale0, opacity0, 0, isCancelled);
-    startRadarRing(scale1, opacity1, 600, isCancelled);
-    startRadarRing(scale2, opacity2, 1200, isCancelled);
-
-    const typingLoop = () => {
-      if (isCancelled()) return;
-      Animated.sequence([
-        Animated.timing(dot0, { toValue: 1, duration: 280, useNativeDriver: true }),
-        Animated.timing(dot0, { toValue: 0.35, duration: 280, useNativeDriver: true }),
-        Animated.timing(dot1, { toValue: 1, duration: 280, useNativeDriver: true }),
-        Animated.timing(dot1, { toValue: 0.35, duration: 280, useNativeDriver: true }),
-        Animated.timing(dot2, { toValue: 1, duration: 280, useNativeDriver: true }),
-        Animated.timing(dot2, { toValue: 0.35, duration: 280, useNativeDriver: true }),
-      ]).start(() => typingLoop());
-    };
-    typingLoop();
-  }, [scale0, scale1, scale2, opacity0, opacity1, opacity2, dot0, dot1, dot2]);
-
-  const isSearching = !noDriverFound && !driverFound;
-  const reassuranceText = reassuranceSubtitle(elapsedSec);
-
-  useEffect(() => {
-    if (!isSearching) {
-      stopAnimations();
-      return undefined;
+  const clearPoll = useCallback(() => {
+    if (pollRef.current != null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
-    startAnimations();
-    return () => {
-      stopAnimations();
-    };
-  }, [isSearching, startAnimations, stopAnimations]);
+  }, []);
 
-  useEffect(() => {
-    if (!isSearching) return undefined;
-    const started = Date.now();
-    setElapsedSec(0);
-    const tick = setInterval(() => {
-      setElapsedSec(Math.floor((Date.now() - started) / 1000));
-    }, 1000);
-    return () => clearInterval(tick);
-  }, [isSearching]);
-
-  useEffect(() => {
-    if (!isSearching) return undefined;
-    const id = setInterval(() => {
-      Animated.timing(messageOpacity, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }).start(() => {
-        setMessageIndex((i) => (i + 1) % STATUS_MESSAGES.length);
-        Animated.timing(messageOpacity, {
-          toValue: 1,
-          duration: 220,
-          useNativeDriver: true,
-        }).start();
-      });
-    }, 3000);
-    return () => clearInterval(id);
-  }, [isSearching, messageOpacity]);
-
-  useEffect(() => {
-    if (!orderId || driverFound || noDriverFound) return undefined;
-    const auth = getAuth();
-    if (!auth?.token) return undefined;
-
-    let cancelled = false;
-
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
-        const st = data?.status;
-
-        if (st === 'unmatched') {
-          setNoDriverFound(true);
-          return;
-        }
-
-        if (isDriverMatchedStatus(st)) {
-          setDriverFound(true);
-        }
-      } catch {
-        /* keep polling */
-      }
-    };
-
-    tick();
-    const intervalId = setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [orderId, driverFound, noDriverFound]);
-
-  useEffect(() => {
-    if (!driverFound || !orderId) return undefined;
-    const t = setTimeout(() => {
-      navigation.replace('Tracking', { orderId });
-    }, FOUND_NAV_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [driverFound, orderId, navigation]);
-
-  const handleCancelOrder = async () => {
-    if (!orderId) {
-      Alert.alert('Cannot cancel', 'No order is linked. You can go back.');
-      return;
+  const clearSearchTimer = useCallback(() => {
+    if (searchTimerRef.current != null) {
+      clearInterval(searchTimerRef.current);
+      searchTimerRef.current = null;
     }
+  }, []);
+
+  const handleDeleteAndGoHome = useCallback(async () => {
+    if (!orderId) return;
     const auth = getAuth();
     if (!auth?.token) {
       navigation.navigate('Welcome');
@@ -288,227 +86,236 @@ const DriverMatching = ({ navigation, route }) => {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || json?.message || 'Cancel failed');
-      const refund = json?.refund;
-      const refundMessage =
-        refund != null ? `Refund: ${formatMoney(refund)}` : json?.message || 'Order cancelled';
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home', params: { refundMessage } }],
-      });
+      navigation.replace('Home');
     } catch (e) {
-      Alert.alert('Cancel failed', e.message || 'Could not cancel the order.');
-    } finally {
       setCancelling(false);
+      Alert.alert('Cancel failed', e?.message || 'Could not cancel the order.');
     }
-  };
+  }, [orderId, navigation]);
 
-  const onCancelPress = () => {
-    Alert.alert(
-      'Cancel order?',
-      'Are you sure? You will receive a full refund.',
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Cancel order',
-          style: 'destructive',
-          onPress: handleCancelOrder,
-        },
-      ]
-    );
-  };
+  const pollOnce = useCallback(async () => {
+    if (stoppedRef.current || !orderId) return;
+    const auth = getAuth();
+    if (!auth?.token) return;
 
-  const handleKeepSearching = async () => {
-    if (!orderId) {
-      setNoDriverFound(false);
-      setDriverFound(false);
-      return;
-    }
-    setRetrying(true);
     try {
-      const auth = getAuth();
-      if (!auth?.token) {
-        navigation.navigate('Welcome');
+      const order = await getJson(`/api/orders/${orderId}`, { token: auth.token });
+      const st = String(order?.status || '');
+
+      if (order?.matching_status === 'searching') {
+        setMatchStatus('searching');
+        setDriverEta(null);
+        setFoundDriverName(null);
+      }
+      if (order?.matching_status === 'offered') {
+        setMatchStatus('notified');
+        setDriverEta(null);
+        setFoundDriverName(null);
+      }
+      if (order?.matching_status === 'accepted') {
+        setMatchStatus('found');
+        setFoundDriverName(order?.driver_name || 'Your driver');
+        setDriverEta(order?.time_estimate || null);
+      }
+
+      if (st === 'unmatched') {
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        setPhase('unmatched');
         return;
       }
-      await postJson(`/api/orders/${orderId}/retry-matching`, {}, { token: auth.token });
-      setNoDriverFound(false);
-      setDriverFound(false);
-    } catch (e) {
-      Alert.alert('Retry failed', e.message || 'Could not retry matching.');
-    } finally {
-      setRetrying(false);
+
+      if (st === 'accepted' || isActiveDeliveryStatus(st)) {
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        navigation.replace('Tracking', { orderId });
+        return;
+      }
+
+      if (st === 'cancelled') {
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        navigation.replace('Home');
+        return;
+      }
+
+      if (!isSearchingStatus(st)) {
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        navigation.replace('Tracking', { orderId });
+      }
+    } catch {
+      /* keep polling */
     }
-  };
+  }, [orderId, navigation, clearPoll, clearSearchTimer]);
 
-  const handleCancelFromSadState = () => {
-    Alert.alert(
-      'Cancel for full refund?',
-      'Are you sure? You will receive a full refund.',
-      [
-        { text: 'Keep waiting', style: 'cancel' },
-        { text: 'Cancel for full refund', style: 'destructive', onPress: handleCancelOrder },
-      ]
+  useEffect(() => {
+    stoppedRef.current = false;
+    if (!orderId) return undefined;
+
+    void pollOnce();
+    pollRef.current = setInterval(pollOnce, POLL_MS);
+
+    return () => {
+      stoppedRef.current = true;
+      clearPoll();
+      clearSearchTimer();
+    };
+  }, [orderId, pollOnce, clearPoll, clearSearchTimer]);
+
+  useEffect(() => {
+    if (phase !== 'searching') {
+      clearSearchTimer();
+      return undefined;
+    }
+    setSearchSeconds(0);
+    const started = Date.now();
+    searchTimerRef.current = setInterval(() => {
+      setSearchSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => {
+      clearSearchTimer();
+    };
+  }, [phase, clearSearchTimer]);
+
+  useEffect(() => {
+    if (phase !== 'searching') {
+      pulseScale.setValue(1);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseScale, {
+          toValue: 1.15,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseScale, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
     );
-  };
+    loop.start();
+    return () => {
+      loop.stop();
+      pulseScale.setValue(1);
+    };
+  }, [phase, pulseScale]);
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <MapView
-          style={styles.mapFill}
-          provider={PROVIDER_GOOGLE}
-          pointerEvents="none"
-          initialRegion={{
-            latitude: hasPickupCoord ? pickupLat : -33.9249,
-            longitude: hasPickupCoord ? pickupLng : 18.4241,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-        >
-          {hasPickupCoord ? (
-            <Marker
-              coordinate={{
-                latitude: pickupLat,
-                longitude: pickupLng,
-              }}
-              pinColor={RADAR_BLUE}
-            />
-          ) : null}
-        </MapView>
-
-        <View style={styles.mapOverlay} pointerEvents="none" />
-
-        {/* Radar + center */}
-        <View style={styles.radarSection}>
-          <View style={styles.radarStage}>
-            {isSearching ? (
-              <>
-                <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale0 }], opacity: opacity0 },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale1 }], opacity: opacity1 },
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale2 }], opacity: opacity2 },
-                  ]}
-                />
-              </>
-            ) : null}
-
-            <View style={styles.centerIconWrap} pointerEvents="none">
-              {driverFound ? (
-                <View style={styles.centerIconSuccess}>
-                  <Ionicons name="checkmark" size={38} color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={styles.centerIcon}>
-                  {noDriverFound ? (
-                    <Ionicons name="warning-outline" size={34} color={RADAR_BLUE} />
-                  ) : (
-                    <ParcelLogoIcon size={34} color={RADAR_BLUE} />
-                  )}
-                </View>
-              )}
-            </View>
-          </View>
-
-          {driverFound ? (
-            <>
-              <Text style={styles.mainTitle}>Driver found!</Text>
-              <Text style={styles.subtitle}>Starting live tracking…</Text>
-            </>
-          ) : noDriverFound ? (
-            <>
-              <Text style={styles.mainTitle}>No drivers are available near your pickup right now.</Text>
-              <Text style={styles.subtitle}>
-                {"We'll keep looking and notify you as soon as one becomes available."}
-              </Text>
-            </>
-          ) : (
-            <>
-              <Animated.Text style={[styles.mainTitle, { opacity: messageOpacity }]}>
-                {STATUS_MESSAGES[messageIndex]}
-              </Animated.Text>
-              {reassuranceText ? <Text style={styles.reassuranceLine}>{reassuranceText}</Text> : null}
-              <View style={styles.dotsRow}>
-                <Animated.View style={[styles.loadingDot, { opacity: dot0 }]} />
-                <Animated.View style={[styles.loadingDot, { opacity: dot1 }]} />
-                <Animated.View style={[styles.loadingDot, { opacity: dot2 }]} />
-              </View>
-            </>
-          )}
+  if (!orderId) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>No order to match.</Text>
+          <TouchableOpacity onPress={() => navigation.replace('Home')}>
+            <Text style={styles.link}>Back to Home</Text>
+          </TouchableOpacity>
         </View>
+      </SafeAreaView>
+    );
+  }
 
-        {/* Order card */}
-        <View style={styles.card}>
-          <View style={styles.addrRow}>
-            <View style={[styles.dot, styles.dotGreen]} />
-            <Text style={styles.addrText} numberOfLines={2}>
-              {pickupAddress}
-            </Text>
-          </View>
-          <View style={styles.addrRow}>
-            <View style={[styles.dot, styles.dotRed]} />
-            <Text style={styles.addrText} numberOfLines={2}>
-              {dropoffAddress}
-            </Text>
-          </View>
-          <View style={styles.cardFooter}>
-            <View style={styles.tierBadge}>
-              <Text style={styles.tierBadgeText}>{tierLabel(deliveryTier)}</Text>
-            </View>
-            <Text style={styles.priceText}>{formatMoney(totalPrice)}</Text>
-          </View>
-        </View>
-
-        {driverFound ? null : noDriverFound ? (
-          <View style={styles.sadActions}>
-            <TouchableOpacity
-              style={[styles.primaryBtn, retrying && styles.btnDisabled]}
-              onPress={handleKeepSearching}
-              disabled={retrying}
-            >
-              {retrying ? (
-                <ActivityIndicator color={colors.textWhite} />
-              ) : (
-                <Text style={styles.primaryBtnText}>Keep Searching</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.secondaryBtn, cancelling && styles.btnDisabled, { marginTop: 4 }]}
-              onPress={handleCancelFromSadState}
-              disabled={cancelling}
-            >
-              <Text style={styles.secondaryBtnText}>Cancel for Full Refund</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
+  if (phase === 'unmatched') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.unmatchedWrap}>
+          <Text style={styles.unmatchedEmoji}>😔</Text>
+          <Text style={styles.unmatchedHeading}>No drivers available right now</Text>
+          <Text style={styles.unmatchedBody}>
+            {"We'll automatically retry when a driver comes online nearby. You don't need to do anything."}
+          </Text>
+          <Text style={styles.unmatchedNote}>Orders are retried for up to 2 hours</Text>
           <TouchableOpacity
-            style={styles.cancelLink}
-            onPress={onCancelPress}
+            style={[styles.unmatchedBtn, cancelling && styles.unmatchedBtnDisabled]}
+            onPress={handleDeleteAndGoHome}
             disabled={cancelling}
-            hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
+            activeOpacity={0.88}
           >
             {cancelling ? (
-              <ActivityIndicator size="small" color="#6B7280" />
+              <ActivityIndicator color="#FFF" />
             ) : (
-              <Text style={styles.cancelLinkText}>Cancel Order</Text>
+              <Text style={styles.unmatchedBtnText}>Cancel order</Text>
             )}
           </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.searchWrap}>
+        <Animated.View style={[styles.pulseOuter, { transform: [{ scale: pulseScale }] }]}>
+          <View style={styles.pulseInner}>
+            <Text style={styles.boxEmoji}>📦</Text>
+          </View>
+        </Animated.View>
+
+        {matchStatus === 'searching' && (
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.statusHeading}>
+              Looking for a driver
+            </Text>
+            <Text style={styles.statusSubtext}>
+              Searching near your pickup address...
+            </Text>
+            <Text style={styles.statusTimer}>
+              Searching for {searchSeconds}s
+            </Text>
+          </View>
         )}
+
+        {matchStatus === 'notified' && (
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.statusHeading}>
+              Driver notified
+            </Text>
+            <Text style={styles.statusSubtext}>
+              Waiting for a driver to accept...
+            </Text>
+            <Text style={styles.statusTimer}>
+              Searching for {searchSeconds}s
+            </Text>
+          </View>
+        )}
+
+        {matchStatus === 'found' && (
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[styles.statusHeading, { color: '#00C853' }]}>
+              Driver found!
+            </Text>
+            <Text style={styles.statusSubtext}>
+              {foundDriverName} is heading to pickup
+            </Text>
+            {driverEta && (
+              <View style={styles.etaChip}>
+                <Text style={styles.etaText}>
+                  ⏱ {driverEta}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        <View style={styles.footerSpacer} />
+        <TouchableOpacity
+          style={styles.cancelSearchBtn}
+          onPress={handleDeleteAndGoHome}
+          disabled={cancelling}
+          activeOpacity={0.7}
+        >
+          {cancelling ? (
+            <ActivityIndicator color="#FF3B30" />
+          ) : (
+            <Text style={styles.cancelSearchText}>Cancel order</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -519,218 +326,142 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  container: {
+  searchWrap: {
     flex: 1,
-    width,
-    minHeight: height,
-    backgroundColor: 'transparent',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  mapFill: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  mapOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.82)',
-  },
-  radarSection: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: height * 0.38,
-    marginTop: spacing.md,
-  },
-  radarStage: {
-    width: 260,
-    height: 260,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  radarRing: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    borderWidth: 2,
-    borderColor: RADAR_BLUE,
-    backgroundColor: 'transparent',
-  },
-  centerIconWrap: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  centerIcon: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
     backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: RADAR_BLUE,
-    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  centerIconSuccess: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#22C55E',
-    borderWidth: 3,
-    borderColor: '#16A34A',
     justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    paddingHorizontal: 24,
   },
-  mainTitle: {
+  pulseOuter: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  pulseInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  boxEmoji: {
+    fontSize: 32,
+  },
+  statusHeading: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#000',
     textAlign: 'center',
-    paddingHorizontal: spacing.md,
     marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
-    lineHeight: 22,
-    marginBottom: 12,
-  },
-  reassuranceLine: {
+  statusSubtext: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: '#757575',
     textAlign: 'center',
-    paddingHorizontal: spacing.lg,
     lineHeight: 20,
-    marginBottom: 8,
-    fontWeight: '600',
+    marginBottom: 6,
   },
-  dotsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  statusTimer: {
+    fontSize: 12,
+    color: '#BDBDBD',
+    textAlign: 'center',
     marginTop: 4,
   },
-  loadingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: RADAR_BLUE,
-    marginHorizontal: 5,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  addrRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 5,
-    marginRight: 10,
-  },
-  dotGreen: {
-    backgroundColor: '#22C55E',
-  },
-  dotRed: {
-    backgroundColor: '#EF4444',
-  },
-  addrText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
-    lineHeight: 22,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E5E7EB',
-  },
-  tierBadge: {
-    backgroundColor: '#E8F4FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  etaChip: {
+    backgroundColor: '#F5F5F5',
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginTop: 10,
+    alignSelf: 'center',
   },
-  tierBadgeText: {
+  etaText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: RADAR_BLUE,
+    fontWeight: '600',
+    color: '#000',
   },
-  priceText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
+  footerSpacer: {
+    flex: 1,
+    minHeight: 24,
   },
-  cancelLink: {
+  cancelSearchBtn: {
+    backgroundColor: 'transparent',
+    paddingVertical: 16,
+    marginBottom: 24,
+    width: '100%',
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    marginBottom: spacing.sm,
   },
-  cancelLinkText: {
-    fontSize: 15,
-    color: '#6B7280',
+  cancelSearchText: {
+    color: '#FF3B30',
+    fontSize: 14,
     fontWeight: '600',
   },
-  sadActions: {
-    marginBottom: spacing.sm,
-  },
-  primaryBtn: {
-    backgroundColor: RADAR_BLUE,
-    paddingVertical: 16,
-    borderRadius: radius.md,
+  unmatchedWrap: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  primaryBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
+  unmatchedEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
   },
-  secondaryBtn: {
-    paddingVertical: 14,
+  unmatchedHeading: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000',
+    textAlign: 'center',
+  },
+  unmatchedBody: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    lineHeight: 22,
+    marginTop: 12,
+  },
+  unmatchedNote: {
+    fontSize: 12,
+    color: '#BDBDBD',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  unmatchedBtn: {
+    backgroundColor: '#000',
+    borderRadius: 14,
+    height: 52,
+    width: width - 48,
+    maxWidth: 400,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 32,
   },
-  secondaryBtnText: {
-    color: '#6B7280',
+  unmatchedBtnDisabled: {
+    opacity: 0.7,
+  },
+  unmatchedBtnText: {
+    color: '#FFF',
     fontSize: 15,
     fontWeight: '700',
   },
-  btnDisabled: {
-    opacity: 0.7,
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#000',
+    marginBottom: 16,
+  },
+  link: {
+    fontSize: 16,
+    color: '#1A73E8',
+    fontWeight: '600',
   },
 });
 
