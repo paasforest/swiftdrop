@@ -8,6 +8,7 @@ import {
   Animated,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAuth } from '../../authStore';
@@ -18,40 +19,85 @@ const { width } = Dimensions.get('window');
 
 const POLL_MS = 4000;
 
+function computeTimeTakenString(orderData) {
+  try {
+    const startRaw = orderData?.pickup_confirmed_at || orderData?.created_at;
+    const endRaw = orderData?.delivery_confirmed_at || orderData?.updated_at;
+    if (!startRaw || !endRaw) return null;
+    const start = new Date(startRaw).getTime();
+    const end = new Date(endRaw).getTime();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+    const mins = Math.max(0, Math.round((end - start) / 60000));
+    return `${mins} min`;
+  } catch {
+    return null;
+  }
+}
+
+function deliveryConfirmedParams(data) {
+  return {
+    orderId: data.id,
+    driverName: data.driver_name,
+    driverRating: data.driver_rating,
+    driverPhoto: data.driver_photo ?? null,
+    driverDeliveriesCompleted: data.driver_deliveries_completed,
+    deliveryPhoto: data.delivery_photo_url ?? null,
+    delivery_photo_url: data.delivery_photo_url ?? null,
+    fromAddress: data.pickup_address,
+    toAddress: data.dropoff_address,
+    totalPrice: data.total_price,
+    timeTaken: computeTimeTakenString(data),
+    basePrice: data.base_price,
+    insuranceFee: data.insurance_fee,
+    commissionAmount: data.commission_amount,
+  };
+}
+
+function initialsFromName(name) {
+  const s = String(name || '').trim();
+  if (!s) return '?';
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return s.slice(0, 2).toUpperCase();
+}
+
+function isPhotoUrl(uri) {
+  if (uri == null || String(uri).trim() === '') return false;
+  const u = String(uri).trim();
+  return u.startsWith('http://') || u.startsWith('https://');
+}
+
 /** While matching / waiting for a driver */
 function isSearchingStatus(status) {
   const s = String(status || '');
   return s === 'matching' || s === 'pending';
 }
 
-/** Order is in progress — send customer to tracking */
-function isActiveDeliveryStatus(status) {
-  const s = String(status || '');
-  return [
-    'accepted',
-    'pickup_en_route',
-    'pickup_arrived',
-    'collected',
-    'delivery_en_route',
-    'delivery_arrived',
-    'delivered',
-    'completed',
-  ].includes(s);
-}
+const TRACKING_NOW_STATUSES = [
+  'pickup_en_route',
+  'pickup_arrived',
+  'collected',
+  'delivery_en_route',
+  'delivery_arrived',
+];
 
 const DriverMatching = ({ navigation, route }) => {
   const { orderId } = route?.params || {};
 
-  const [phase, setPhase] = useState('searching'); // 'searching' | 'unmatched'
+  const [phase, setPhase] = useState('searching'); // searching | unmatched | driver_found | cancelled
   const [matchStatus, setMatchStatus] = useState('searching');
   const [driverEta, setDriverEta] = useState(null);
   const [foundDriverName, setFoundDriverName] = useState(null);
+  const [driverFoundPhoto, setDriverFoundPhoto] = useState(null);
+  const [driverFoundRating, setDriverFoundRating] = useState(null);
   const [searchSeconds, setSearchSeconds] = useState(0);
   const [cancelling, setCancelling] = useState(false);
 
   const pollRef = useRef(null);
   const searchTimerRef = useRef(null);
   const stoppedRef = useRef(false);
+  const navLockRef = useRef(false);
+  const driverFoundTimerRef = useRef(null);
   const pulseScale = useRef(new Animated.Value(1)).current;
 
   const clearPoll = useCallback(() => {
@@ -95,6 +141,7 @@ const DriverMatching = ({ navigation, route }) => {
 
   const pollOnce = useCallback(async () => {
     if (stoppedRef.current || !orderId) return;
+    if (navLockRef.current) return;
     const auth = getAuth();
     if (!auth?.token) return;
 
@@ -102,23 +149,35 @@ const DriverMatching = ({ navigation, route }) => {
       const order = await getJson(`/api/orders/${orderId}`, { token: auth.token });
       const st = String(order?.status || '');
 
-      if (order?.matching_status === 'searching') {
-        setMatchStatus('searching');
-        setDriverEta(null);
-        setFoundDriverName(null);
+      if (isSearchingStatus(st)) {
+        if (order?.matching_status === 'searching') {
+          setMatchStatus('searching');
+          setDriverEta(null);
+          setFoundDriverName(null);
+        }
+        if (order?.matching_status === 'offered') {
+          setMatchStatus('notified');
+          setDriverEta(null);
+          setFoundDriverName(null);
+        }
+        if (order?.matching_status === 'accepted') {
+          setMatchStatus('found');
+          setFoundDriverName(order?.driver_name || 'Your driver');
+          setDriverEta(order?.time_estimate || null);
+        }
       }
-      if (order?.matching_status === 'offered') {
-        setMatchStatus('notified');
-        setDriverEta(null);
-        setFoundDriverName(null);
-      }
-      if (order?.matching_status === 'accepted') {
-        setMatchStatus('found');
-        setFoundDriverName(order?.driver_name || 'Your driver');
-        setDriverEta(order?.time_estimate || null);
+
+      if (st === 'cancelled') {
+        navLockRef.current = true;
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        setPhase('cancelled');
+        return;
       }
 
       if (st === 'unmatched') {
+        navLockRef.current = true;
         stoppedRef.current = true;
         clearPoll();
         clearSearchTimer();
@@ -126,7 +185,17 @@ const DriverMatching = ({ navigation, route }) => {
         return;
       }
 
-      if (st === 'accepted' || isActiveDeliveryStatus(st)) {
+      if (st === 'delivered' || st === 'completed') {
+        navLockRef.current = true;
+        stoppedRef.current = true;
+        clearPoll();
+        clearSearchTimer();
+        navigation.replace('DeliveryConfirmed', deliveryConfirmedParams(order));
+        return;
+      }
+
+      if (TRACKING_NOW_STATUSES.includes(st)) {
+        navLockRef.current = true;
         stoppedRef.current = true;
         clearPoll();
         clearSearchTimer();
@@ -134,15 +203,31 @@ const DriverMatching = ({ navigation, route }) => {
         return;
       }
 
-      if (st === 'cancelled') {
+      const showDriverFoundPanel =
+        st === 'accepted' || (isSearchingStatus(st) && order?.matching_status === 'accepted');
+
+      if (showDriverFoundPanel) {
+        navLockRef.current = true;
         stoppedRef.current = true;
         clearPoll();
         clearSearchTimer();
-        navigation.replace('Home');
+        if (driverFoundTimerRef.current != null) {
+          clearTimeout(driverFoundTimerRef.current);
+          driverFoundTimerRef.current = null;
+        }
+        setDriverFoundPhoto(order?.driver_photo ?? null);
+        setDriverFoundRating(order?.driver_rating ?? null);
+        setFoundDriverName(order?.driver_name || 'Your driver');
+        setPhase('driver_found');
+        driverFoundTimerRef.current = setTimeout(() => {
+          driverFoundTimerRef.current = null;
+          navigation.replace('Tracking', { orderId });
+        }, 2000);
         return;
       }
 
       if (!isSearchingStatus(st)) {
+        navLockRef.current = true;
         stoppedRef.current = true;
         clearPoll();
         clearSearchTimer();
@@ -155,6 +240,8 @@ const DriverMatching = ({ navigation, route }) => {
 
   useEffect(() => {
     stoppedRef.current = false;
+    navLockRef.current = false;
+    setPhase('searching');
     if (!orderId) return undefined;
 
     void pollOnce();
@@ -162,6 +249,10 @@ const DriverMatching = ({ navigation, route }) => {
 
     return () => {
       stoppedRef.current = true;
+      if (driverFoundTimerRef.current != null) {
+        clearTimeout(driverFoundTimerRef.current);
+        driverFoundTimerRef.current = null;
+      }
       clearPoll();
       clearSearchTimer();
     };
@@ -216,6 +307,53 @@ const DriverMatching = ({ navigation, route }) => {
           <TouchableOpacity onPress={() => navigation.replace('Home')}>
             <Text style={styles.link}>Back to Home</Text>
           </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === 'cancelled') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.unmatchedWrap}>
+          <Text style={styles.unmatchedEmoji}>⊘</Text>
+          <Text style={styles.unmatchedHeading}>Order cancelled</Text>
+          <Text style={styles.unmatchedBody}>
+            This order is no longer active.
+          </Text>
+          <TouchableOpacity
+            style={styles.unmatchedBtn}
+            onPress={() => navigation.replace('Home')}
+            activeOpacity={0.88}
+          >
+            <Text style={styles.unmatchedBtnText}>Go home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === 'driver_found') {
+    const name = foundDriverName || 'Your driver';
+    const r = Number(driverFoundRating);
+    const ratingLine = Number.isFinite(r) ? `⭐ ${r.toFixed(1)}` : '⭐ —';
+    const photoOk = isPhotoUrl(driverFoundPhoto);
+
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.driverFoundWrap}>
+          <View style={styles.completeIcon}>
+            <Text style={styles.checkmark}>✓</Text>
+          </View>
+          {photoOk ? (
+            <Image source={{ uri: String(driverFoundPhoto).trim() }} style={styles.driverFoundAvatar} />
+          ) : (
+            <View style={styles.driverFoundAvatarPlaceholder}>
+              <Text style={styles.driverFoundInitials}>{initialsFromName(name)}</Text>
+            </View>
+          )}
+          <Text style={styles.driverFoundTitle}>{`${name} is on the way!`}</Text>
+          <Text style={styles.driverFoundRating}>{ratingLine}</Text>
         </View>
       </SafeAreaView>
     );
@@ -348,6 +486,59 @@ const styles = StyleSheet.create({
   },
   boxEmoji: {
     fontSize: 32,
+  },
+  driverFoundWrap: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  completeIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#00C853',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  checkmark: {
+    fontSize: 40,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  driverFoundAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginBottom: 20,
+  },
+  driverFoundAvatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#E0E0E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  driverFoundInitials: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#616161',
+  },
+  driverFoundTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  driverFoundRating: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
   },
   statusHeading: {
     fontSize: 22,

@@ -427,7 +427,8 @@ async function getOrderById(req, res) {
             OR o.status = 'matching'
           THEN 'searching'
           ELSE 'searching'
-        END AS matching_status
+        END AS matching_status,
+        o.delivery_otp AS dropoff_otp
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id
@@ -622,6 +623,11 @@ async function getPendingOffer(req, res) {
       distance_km: Math.round(dist * 10) / 10,
       zone,
       driver_earns: parseFloat(row.driver_earnings) || 0,
+      delivery_tier: row.delivery_tier,
+      pickup_lat: row.pickup_lat,
+      pickup_lng: row.pickup_lng,
+      dropoff_lat: row.dropoff_lat,
+      dropoff_lng: row.dropoff_lng,
       parcel_type: row.parcel_type || '',
       parcel_size: row.parcel_size || '',
       time_estimate: `${timeEstimateMinutes} min`,

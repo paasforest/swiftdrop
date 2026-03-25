@@ -74,6 +74,8 @@ const ActiveDelivery = ({ navigation, route }) => {
 
   const snapPoints = ['25%', '50%', '85%'];
 
+  const pollIntervalRef = useRef(null);
+
   // Poll order status
   useEffect(() => {
     let cancelled = false;
@@ -93,16 +95,46 @@ const ActiveDelivery = ({ navigation, route }) => {
     };
 
     poll();
-    const interval = setInterval(poll, 5000);
+    pollIntervalRef.current = setInterval(poll, 5000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
     };
   }, [orderId]);
 
   // Update phase based on order status
   useEffect(() => {
     if (!order) return;
+
+    if (order.status === 'cancelled' || order.status === 'disputed') {
+      // Stop polling
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+
+      // Show alert then go home
+      Alert.alert(
+        order.status === 'cancelled' ? 'Order Cancelled' : 'Order Disputed',
+        order.status === 'cancelled'
+          ? 'This order has been cancelled by the customer.'
+          : 'This order has been flagged as disputed. Please contact support.',
+        [
+          {
+            text: 'OK',
+            onPress: () =>
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'DriverHome' }],
+              }),
+          },
+        ]
+      );
+      return;
+    }
 
     if (order.status === 'accepted' || order.status === 'pickup_en_route') {
       setPhase('EN_ROUTE_PICKUP');
@@ -247,11 +279,15 @@ const ActiveDelivery = ({ navigation, route }) => {
       const timer = setTimeout(() => {
         // Check if driver is dedicated type - stay online
         const driverType = route.params?.driver_type;
-        if (driverType === 'dedicated') {
-          navigation.navigate('DriverHome', { stayOnline: true });
-        } else {
-          navigation.navigate('DriverHome');
-        }
+        navigation.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'DriverHome',
+              params: driverType === 'dedicated' ? { stayOnline: true } : undefined,
+            },
+          ],
+        });
       }, 4000);
       return () => clearTimeout(timer);
     }

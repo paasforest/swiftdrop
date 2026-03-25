@@ -80,6 +80,7 @@ const JobOffer = ({ navigation }) => {
   const [remainingSec, setRemainingSec] = useState(0);
   const [accepting, setAccepting] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [offerExpiredMessage, setOfferExpiredMessage] = useState(null);
 
   const initialTotalSecRef = useRef(15);
   const expiredHandledRef = useRef(false);
@@ -139,6 +140,7 @@ const JobOffer = ({ navigation }) => {
       }
       offerRef.current = data.offer;
       setOffer(data.offer);
+      setOfferExpiredMessage(null);
       const rem = Math.max(
         0,
         Math.ceil((new Date(data.offer.offer_expires_at).getTime() - Date.now()) / 1000)
@@ -168,9 +170,38 @@ const JobOffer = ({ navigation }) => {
         offerRef.current = null;
         setRemainingSec(0);
         progressAnim.setValue(0);
+        setOfferExpiredMessage(null);
       };
     }, [loadOffer, progressAnim])
   );
+
+  // Keep the offer screen from getting stuck if the customer cancels
+  // while the driver is viewing the offer.
+  useEffect(() => {
+    const currentOfferId = offer?.orderId;
+    if (!currentOfferId) return undefined;
+
+    const interval = setInterval(async () => {
+      try {
+        const auth = getAuth();
+        if (!auth?.token) return;
+
+        const data = await getJson('/api/orders/pending-offer', { token: auth.token });
+        const nextOffer = data?.offer;
+
+        if (!nextOffer || nextOffer.orderId !== currentOfferId) {
+          clearInterval(interval);
+          expiredHandledRef.current = true;
+          setOfferExpiredMessage('This offer is no longer available');
+          setTimeout(() => resetToDriverHome(navigation), 800);
+        }
+      } catch (e) {
+        // Network error — keep showing the offer, do not dismiss
+      }
+    }, 6000);
+
+    return () => clearInterval(interval);
+  }, [offer?.orderId, navigation]);
 
   useEffect(() => {
     if (!offer || loading) return;
@@ -345,6 +376,11 @@ const JobOffer = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <View style={styles.flex1}>
+        {offerExpiredMessage ? (
+          <View style={styles.offerExpiredBanner}>
+            <Text style={styles.offerExpiredBannerText}>{offerExpiredMessage}</Text>
+          </View>
+        ) : null}
         {/* Top — incoming-request header */}
         <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) }]}>
           <Animated.View
@@ -764,6 +800,20 @@ const styles = StyleSheet.create({
   noOfferSub: {
     fontSize: 15,
     color: colors.textLight,
+  },
+  offerExpiredBanner: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  offerExpiredBannerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
 });
 

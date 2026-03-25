@@ -66,8 +66,6 @@ const TrackingWithMap = ({ navigation, route }) => {
   const deliveredNavigatedRef = useRef(false);
 
   const [unmatchedModalVisible, setUnmatchedModalVisible] = useState(false);
-  const [pickupOTPModalVisible, setPickupOTPModalVisible] = useState(false);
-  const [deliveryOTPModalVisible, setDeliveryOTPModalVisible] = useState(false);
   const [stopPolling, setStopPolling] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -135,14 +133,6 @@ const TrackingWithMap = ({ navigation, route }) => {
             if (data?.status === 'unmatched') {
               setUnmatchedModalVisible(true);
               setStopPolling(true);
-            }
-
-            // If user opens tracking while driver is already waiting (OTP needed now)
-            if (data?.status === 'pickup_arrived') {
-              setPickupOTPModalVisible(true);
-            }
-            if (data?.status === 'delivery_arrived') {
-              setDeliveryOTPModalVisible(true);
             }
 
           // Delivered or completed → confirmation (photo URL usually set after completed).
@@ -533,6 +523,26 @@ const TrackingWithMap = ({ navigation, route }) => {
           </View>
         </View>
 
+        {(order.status === 'accepted' || order.status === 'pickup_arrived') &&
+          order.pickup_otp != null &&
+          String(order.pickup_otp).trim() !== '' && (
+            <View style={styles.otpPromoCard}>
+              <Text style={styles.otpPromoLabel}>Show this code to your driver</Text>
+              <Text style={styles.otpPromoValue}>{String(order.pickup_otp)}</Text>
+            </View>
+          )}
+
+        {order.status === 'delivery_arrived' &&
+          (order.dropoff_otp != null || order.delivery_otp != null) &&
+          String(order.dropoff_otp ?? order.delivery_otp ?? '').trim() !== '' && (
+            <View style={styles.otpPromoCard}>
+              <Text style={styles.otpPromoLabel}>Show this code to your driver</Text>
+              <Text style={styles.otpPromoValue}>
+                {String(order.dropoff_otp ?? order.delivery_otp)}
+              </Text>
+            </View>
+          )}
+
         {/* Driver Info */}
         {order.driver_name && (
           <View style={styles.driverInfo}>
@@ -619,63 +629,6 @@ const TrackingWithMap = ({ navigation, route }) => {
 
       {/* OTPs are shown to the customer who placed the order. The customer reads the code to
           the driver — driver cannot fake delivery without the real code from the real customer. */}
-      {pickupOTPModalVisible && (
-        <View style={styles.otpOverlay}>
-          <View style={styles.otpModal}>
-            <Text style={styles.otpTitle}>Driver Has Arrived!</Text>
-
-            <Text style={styles.otpSubtitle}>Read this code to your driver</Text>
-
-            <View style={styles.otpDigitsRow}>
-              {String(order?.pickup_otp ?? '')
-                .split('')
-                .map((digit, i) => (
-                  <View key={i} style={styles.otpDigitBox}>
-                    <Text style={styles.otpDigitText}>{digit}</Text>
-                  </View>
-                ))}
-            </View>
-
-            <Text style={styles.otpWarning}>Only share with your driver</Text>
-
-            <TouchableOpacity
-              style={styles.otpDismissButton}
-              onPress={() => setPickupOTPModalVisible(false)}
-            >
-              <Text style={styles.otpDismissText}>Code given</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {deliveryOTPModalVisible && (
-        <View style={styles.otpOverlay}>
-          <View style={styles.otpModal}>
-            <Text style={styles.otpTitle}>Driver Has Arrived to Deliver!</Text>
-
-            <Text style={styles.otpSubtitle}>Read this code to your driver</Text>
-
-            <View style={styles.otpDigitsRow}>
-              {String(order?.delivery_otp ?? '')
-                .split('')
-                .map((digit, i) => (
-                  <View key={i} style={styles.otpDigitBox}>
-                    <Text style={styles.otpDigitText}>{digit}</Text>
-                  </View>
-                ))}
-            </View>
-
-            <Text style={styles.otpWarning}>Only share with your driver</Text>
-
-            <TouchableOpacity
-              style={styles.otpDismissButton}
-              onPress={() => setDeliveryOTPModalVisible(false)}
-            >
-              <Text style={styles.otpDismissText}>Code given</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 };
@@ -882,80 +835,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  otpOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.overlayDark,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 999,
+  otpPromoCard: {
+    backgroundColor: '#000',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
   },
-  otpModal: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: 30,
-    width: '85%',
-    alignItems: 'center',
-    elevation: 10,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+  otpPromoLabel: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  otpTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  otpSubtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  otpDigitsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  otpDigitBox: {
-    width: 60,
-    height: 72,
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  otpDigitText: {
+  otpPromoValue: {
     fontSize: 36,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  otpWarning: {
-    fontSize: 13,
-    color: colors.textLight,
-    marginBottom: 24,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 8,
     textAlign: 'center',
-  },
-  otpDismissButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 40,
-    paddingVertical: 14,
-    borderRadius: radius.md,
-  },
-  otpDismissText: {
-    color: colors.textWhite,
-    fontSize: 18,
-    fontWeight: 'bold',
+    marginTop: 8,
   },
   emptyWrap: {
     flex: 1,

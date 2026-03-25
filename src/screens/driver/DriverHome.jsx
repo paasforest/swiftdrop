@@ -94,7 +94,7 @@ const DriverHome = ({ navigation }) => {
 
   const syncOnlineStatusFromServer = useCallback(async () => {
     const auth = getAuth();
-    if (!auth?.token) return;
+    if (!auth?.token) return false;
     try {
       const data = await getJson('/api/drivers/status', { token: auth.token });
       const online = Boolean(data.is_online);
@@ -103,6 +103,7 @@ const DriverHome = ({ navigation }) => {
         const perm = await Location.getForegroundPermissionsAsync();
         if (perm.status === 'granted') {
           await startLocationUpdates();
+          return true;
         } else {
           try {
             await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
@@ -111,12 +112,15 @@ const DriverHome = ({ navigation }) => {
           }
           setIsOnline(false);
           stopLocationUpdates();
+          return false;
         }
       } else {
         stopLocationUpdates();
+        return false;
       }
     } catch {
       /* keep local toggle; dashboard error handles API down */
+      return false;
     }
   }, [startLocationUpdates, stopLocationUpdates]);
 
@@ -232,7 +236,6 @@ const DriverHome = ({ navigation }) => {
     useCallback(() => {
       loadDashboard();
       loadRouteMatchBanner();
-      syncOnlineStatusFromServer();
       fetchTodayStats();
       const auth = getAuth();
       if (auth?.token) {
@@ -244,7 +247,23 @@ const DriverHome = ({ navigation }) => {
           }
         })();
       }
-    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats])
+
+      void (async () => {
+        const serverIsOnline = await syncOnlineStatusFromServer();
+        if (serverIsOnline && !locationIntervalRef.current) {
+          await startLocationUpdates();
+        }
+      })();
+    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats, startLocationUpdates])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Screen lost focus — stop REST interval to avoid conflict with Firebase tracking.
+        stopLocationUpdates();
+      };
+    }, [stopLocationUpdates])
   );
 
   useEffect(() => {
