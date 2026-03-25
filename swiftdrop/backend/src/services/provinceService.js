@@ -3,9 +3,10 @@ const SERVICE_AREAS = [
     key: 'western_cape',
     name: 'Western Cape',
     bounds: {
-      minLat: -34.9,
+      minLat: -34.95,
       maxLat: -31.5,
-      minLng: 18.0,
+      // West coast (e.g. Saldanha ~17.95°E) must be included; 18.0 was too tight.
+      minLng: 17.5,
       maxLng: 21.5,
     },
   },
@@ -13,10 +14,11 @@ const SERVICE_AREAS = [
     key: 'gauteng',
     name: 'Gauteng',
     bounds: {
-      minLat: -26.7,
+      minLat: -26.75,
       maxLat: -25.2,
-      minLng: 27.5,
-      maxLng: 28.8,
+      // Western Rand and eastern Ekurhuleni sit outside the old 27.5–28.8 box.
+      minLng: 27.25,
+      maxLng: 29.05,
     },
   },
 ];

@@ -8,6 +8,7 @@ import {
   ScrollView,
   Modal,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,7 @@ const Payment = ({ navigation, route }) => {
     return null;
   }, [delivery_total]);
 
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('payfast');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
   const auth = getAuth();
   const [payfastModalVisible, setPayfastModalVisible] = useState(false);
   const [payfastUrl, setPayfastUrl] = useState(null);
@@ -172,6 +173,12 @@ const Payment = ({ navigation, route }) => {
         description: '',
         isWallet: true,
       },
+      {
+        id: 'cash',
+        name: 'Pay on delivery (cash)',
+        ionicon: 'cash-outline',
+        description: 'Pay the driver when your parcel arrives',
+      },
     ],
     []
   );
@@ -189,7 +196,7 @@ const Payment = ({ navigation, route }) => {
 
   useEffect(() => {
     if (selectedPaymentMethod === 'wallet' && walletOptionDisabled) {
-      setSelectedPaymentMethod('payfast');
+      setSelectedPaymentMethod('cash');
     }
   }, [selectedPaymentMethod, walletOptionDisabled]);
 
@@ -242,27 +249,39 @@ const Payment = ({ navigation, route }) => {
         setPendingOrderId(orderId);
         setPayfastLoading(true);
 
-        const pay = await postJson(
-          '/api/payments/payfast/initiate',
-          {
-            order_id: orderId,
-            amount: res?.total_price ?? total,
-            item_name: `SwiftDrop ${res?.order_number ?? `Order ${orderId}`}`,
-          },
-          { token: auth.token }
-        );
+        try {
+          const pay = await postJson(
+            '/api/payments/payfast/initiate',
+            {
+              order_id: orderId,
+              amount: res?.total_price ?? total,
+              item_name: `SwiftDrop ${res?.order_number ?? `Order ${orderId}`}`,
+            },
+            { token: auth.token }
+          );
 
-        if (!pay?.payment_url) {
-          alert(pay?.error || 'Could not initiate PayFast');
+          if (!pay?.payment_url) {
+            alert(pay?.error || 'Could not initiate PayFast');
+            return;
+          }
+
+          setPayfastUrl(String(pay.payment_url));
+          setPayfastReturnUrl(pay.return_url ? String(pay.return_url) : null);
+          setPayfastCancelUrl(pay.cancel_url ? String(pay.cancel_url) : null);
+          setPayfastModalVisible(true);
+        } catch (e) {
+          if (e.code === 'PAYMENT_UNAVAILABLE' || e.status === 503) {
+            Alert.alert(
+              'Card payment coming soon',
+              'Card payments are not available yet in your area. Please use wallet or cash payment.',
+              [{ text: 'OK' }]
+            );
+            return;
+          }
+          throw e;
+        } finally {
           setPayfastLoading(false);
-          return;
         }
-
-        setPayfastUrl(String(pay.payment_url));
-        setPayfastReturnUrl(pay.return_url ? String(pay.return_url) : null);
-        setPayfastCancelUrl(pay.cancel_url ? String(pay.cancel_url) : null);
-        setPayfastModalVisible(true);
-        setPayfastLoading(false);
         return;
       }
 
@@ -273,9 +292,18 @@ const Payment = ({ navigation, route }) => {
         return;
       }
 
+      // Cash on delivery (and card/eft legacy): order already created — go to matching.
       navigateToDriverMatching(orderId, res?.total_price ?? total);
     } catch (e) {
       console.error('Pay error:', e.message);
+      if (e.code === 'PAYMENT_UNAVAILABLE' || e.status === 503) {
+        Alert.alert(
+          'Card payment coming soon',
+          'Card payments are not available yet in your area. Please use wallet or cash payment.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       alert(e.message || 'Payment failed');
     }
   };

@@ -233,7 +233,12 @@ const DriverMatching = ({ navigation, route }) => {
         clearSearchTimer();
         navigation.replace('Tracking', { orderId });
       }
-    } catch {
+    } catch (err) {
+      console.log('[Poll] Error details:', {
+        message: err?.message,
+        status: err?.status,
+        orderId: orderId,
+      });
       /* keep polling */
     }
   }, [orderId, navigation, clearPoll, clearSearchTimer]);
@@ -244,6 +249,7 @@ const DriverMatching = ({ navigation, route }) => {
     setPhase('searching');
     if (!orderId) return undefined;
 
+    console.log('[Poll] Starting poll for orderId:', orderId);
     void pollOnce();
     pollRef.current = setInterval(pollOnce, POLL_MS);
 

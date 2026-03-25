@@ -3,6 +3,13 @@ const { initiatePayFastPayment } = require('../services/payfastService');
 
 async function initiatePayFast(req, res) {
   try {
+    if (!process.env.PAYFAST_MERCHANT_ID || !process.env.PAYFAST_MERCHANT_KEY) {
+      return res.status(503).json({
+        error: 'Card payment is not available yet',
+        code: 'PAYMENT_UNAVAILABLE',
+      });
+    }
+
     const { order_id } = req.body;
     const amountFromClient = req.body?.amount;
     const item_name = req.body?.item_name || 'SwiftDrop delivery';

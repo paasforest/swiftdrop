@@ -9,6 +9,14 @@ function safeJsonParse(text) {
   }
 }
 
+/** Attach HTTP status and API `code` so callers can branch (e.g. PayFast unavailable). */
+function createHttpError(message, { code, status } = {}) {
+  const err = new Error(message);
+  if (code != null) err.code = code;
+  if (status != null) err.status = status;
+  return err;
+}
+
 /** Single-flight refresh so parallel 401s don't stampede the server. */
 let refreshInFlight = null;
 
@@ -201,7 +209,7 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: POST ${url}`;
       }
-      throw new Error(message);
+      throw createHttpError(message, { code: json?.code, status: res.status });
     }
 
     return json ?? {};

@@ -319,21 +319,26 @@ async function calculatePrice(req, res) {
     const { detectProvince } = require('../services/provinceService');
     const { findNearestDrivers } = require('../services/matchingService');
 
-    const priceProvince = detectProvince(parseFloat(pickup_lat), parseFloat(pickup_lng));
+    const pickupProvince = detectProvince(parseFloat(pickup_lat), parseFloat(pickup_lng));
+    const dropoffProvince = detectProvince(parseFloat(dropoff_lat), parseFloat(dropoff_lng));
     let driversNearby = [];
-    if (priceProvince) {
+    if (pickupProvince) {
       try {
         driversNearby = await findNearestDrivers({
           pickup_lat,
           pickup_lng,
-          province: priceProvince,
+          province: pickupProvince,
           declined_driver_ids: [],
         });
       } catch {
         driversNearby = [];
       }
     }
-    const hasDriverNearby = driversNearby.length > 0;
+    // Tier `available`: true only when the same rule as createOrder passes — both points
+    // in a served province and same province (not inter-provincial).
+    const tiersAvailable = Boolean(
+      pickupProvince && dropoffProvince && pickupProvince === dropoffProvince
+    );
 
     function roundToInt(n) {
       const x = Number(n);
@@ -370,9 +375,9 @@ async function calculatePrice(req, res) {
     return res.json({
       distance_km: roundMoney(dist),
       zone,
-      standard: buildTierResponse('standard', '2-5 hours', hasDriverNearby),
-      express: buildTierResponse('express', '1-2 hours', hasDriverNearby),
-      urgent: buildTierResponse('urgent', 'Under 1 hour', hasDriverNearby),
+      standard: buildTierResponse('standard', '2-5 hours', tiersAvailable),
+      express: buildTierResponse('express', '1-2 hours', tiersAvailable),
+      urgent: buildTierResponse('urgent', 'Under 1 hour', tiersAvailable),
       value_component: roundToInt(value_component),
       protection_included: 'R500 basic cover',
       upgrade_options: Number(parcel_value) > 500

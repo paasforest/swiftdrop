@@ -188,10 +188,11 @@ const DriverHome = ({ navigation }) => {
         });
         if (cancelled) return;
         const { latitude, longitude } = loc.coords;
+        // Keep aligned with swiftdrop/backend provinceService SERVICE_AREAS
         const inWC =
-          latitude >= -34.9 && latitude <= -31.5 && longitude >= 18.0 && longitude <= 21.5;
+          latitude >= -34.95 && latitude <= -31.5 && longitude >= 17.5 && longitude <= 21.5;
         const inGP =
-          latitude >= -26.7 && latitude <= -25.2 && longitude >= 27.5 && longitude <= 28.8;
+          latitude >= -26.75 && latitude <= -25.2 && longitude >= 27.25 && longitude <= 29.05;
         if (!inWC && !inGP) {
           navigation.replace('UnsupportedArea', { latitude, longitude });
         }
@@ -204,12 +205,13 @@ const DriverHome = ({ navigation }) => {
     };
   }, [navigation]);
 
-  // When opened with stayOnline (e.g. after delivery), reflect online for polling/location
+  // After a dedicated delivery, stack reset passes stayOnline — go online locally for polling.
+  // Depend only on the flag, not the whole params object, so we do not fight handleGoOffline
+  // or re-force "online" after setParams({ stayOnline: false }) in the same tick as patch.
   useEffect(() => {
-    if (route.params?.stayOnline) {
-      setIsOnline(true);
-    }
-  }, [route.params]);
+    if (route.params?.stayOnline !== true) return;
+    setIsOnline(true);
+  }, [route.params?.stayOnline]);
 
   // Pulsing animation for stay-online waiting UI
   useEffect(() => {
@@ -254,16 +256,11 @@ const DriverHome = ({ navigation }) => {
           await startLocationUpdates();
         }
       })();
-    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats, startLocationUpdates])
-  );
 
-  useFocusEffect(
-    useCallback(() => {
       return () => {
-        // Screen lost focus — stop REST interval to avoid conflict with Firebase tracking.
         stopLocationUpdates();
       };
-    }, [stopLocationUpdates])
+    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats, startLocationUpdates, stopLocationUpdates])
   );
 
   useEffect(() => {
@@ -325,11 +322,20 @@ const DriverHome = ({ navigation }) => {
   const totalDone = dashboard?.total_deliveries_completed ?? 0;
   const recent = Array.isArray(dashboard?.recent_orders) ? dashboard.recent_orders : [];
 
+  const clearStayOnlineParam = useCallback(() => {
+    try {
+      navigation.setParams({ stayOnline: false });
+    } catch {
+      /* ignore */
+    }
+  }, [navigation]);
+
   const handleGoOffline = async () => {
     if (statusBusy) return;
     const auth = getAuth();
     if (!auth?.token) return;
 
+    clearStayOnlineParam();
     setStatusBusy(true);
     try {
       await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
@@ -353,6 +359,7 @@ const DriverHome = ({ navigation }) => {
     if (isOnline) {
       setStatusBusy(true);
       try {
+        clearStayOnlineParam();
         await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
         stopLocationUpdates();
         setIsOnline(false);
@@ -513,7 +520,45 @@ const DriverHome = ({ navigation }) => {
         </View>
       </GradientHeader>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {stayOnline ? (
+          <View style={styles.stayOnlineBanner}>
+            <View style={styles.stayOnlineBannerInner}>
+              <Animated.View style={[styles.stayOnlinePulseWrap, { transform: [{ scale: pulseAnim }] }]}>
+                <View style={styles.stayOnlinePulseDot} />
+              </Animated.View>
+              <View style={styles.stayOnlineBannerTextWrap}>
+                <Text style={styles.stayOnlineBannerTitle}>You're still online</Text>
+                <Text style={styles.stayOnlineBannerSub}>
+                  Waiting for your next delivery. Scroll for stats and jobs, or go offline anytime.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.stayOnlineMiniStats}>
+              <View>
+                <Text style={styles.stayOnlineStatLabel}>TODAY</Text>
+                <Text style={styles.stayOnlineStatValue}>R{(todayStats?.total || 0).toFixed(2)}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.stayOnlineStatLabel}>DELIVERIES</Text>
+                <Text style={styles.stayOnlineStatValue}>{todayStats?.count || 0}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.stayOfflineBtn}
+              onPress={handleGoOffline}
+              disabled={statusBusy}
+              activeOpacity={0.85}
+            >
+              {statusBusy ? (
+                <ActivityIndicator color="#555" />
+              ) : (
+                <Text style={styles.stayOfflineBtnText}>Go offline</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.toggleSection}>
           <TouchableOpacity
             activeOpacity={0.88}
@@ -692,6 +737,87 @@ const styles = StyleSheet.create({
     width,
     minHeight: height,
     paddingBottom: 72,
+  },
+  stayOnlineBanner: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    ...shadows.card,
+  },
+  stayOnlineBannerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stayOnlinePulseWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.successLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  stayOnlinePulseDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.success,
+  },
+  stayOnlineBannerTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  stayOnlineBannerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  stayOnlineBannerSub: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  stayOnlineMiniStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  stayOnlineStatLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  stayOnlineStatValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginTop: 2,
+  },
+  stayOfflineBtn: {
+    marginTop: spacing.md,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    minWidth: 140,
+    alignItems: 'center',
+  },
+  stayOfflineBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   header: {
     flexDirection: 'row',
