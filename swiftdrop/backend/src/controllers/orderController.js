@@ -7,9 +7,6 @@ const { sendPushNotification } = require('../services/notificationService');
 const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 
-// Align with matchingService: drivers below this average rating are excluded (NULL = allowed).
-const MIN_DRIVER_RATING_FOR_MATCHING = 3.0;
-
 // Pricing model (April 2026 fuel-cost basis)
 const FUEL_COST_PER_KM = 1.88; // given (8L/100km, petrol 95 = R23.50/L)
 
@@ -271,19 +268,7 @@ async function createOrder(req, res) {
 
       await client.query('COMMIT');
 
-      const { findMatchingDrivers } = require('../services/routeMatchingService');
-      const { sendJobOfferToDriver } = require('../services/matchingService');
-
-      setImmediate(async () => {
-        try {
-          const matches = await findMatchingDrivers(order);
-          if (matches.length > 0) {
-            await sendJobOfferToDriver(order, matches[0]);
-          }
-        } catch (err) {
-          console.error('[Match]', err.message);
-        }
-      });
+      setImmediate(() => runMatching(order.id));
 
       const out = {
         ...order,
@@ -331,82 +316,24 @@ async function calculatePrice(req, res) {
     const floor = floorForZone(dist, zone);
     const value_component = valueComponentForParcelValue(parcel_value);
 
-    // Availability is best-effort; it uses the same driver eligibility rules
-    // as the matching engine (approved drivers, online, rating threshold).
-    const activeOrderStatuses = [
-      'matching',
-      'accepted',
-      'pickup_en_route',
-      'pickup_arrived',
-      'collected',
-      'delivery_en_route',
-      'delivery_arrived',
-    ];
+    const { detectProvince } = require('../services/provinceService');
+    const { findNearestDrivers } = require('../services/matchingService');
 
-    async function checkStandardAvailability() {
-      const threeHoursFromNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
-      const ROUTE_RADIUS_KM = 15;
-
-      const routesRes = await db.query(
-        `SELECT dr.*, dt.current_rating as current_rating
-         FROM driver_routes dr
-         JOIN driver_locations dl ON dl.driver_id = dr.driver_id AND dl.is_online = true
-         JOIN driver_profiles dp ON dp.user_id = dr.driver_id AND dp.verification_status = 'approved'
-         LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
-         JOIN users u ON u.id = dr.driver_id AND u.is_active = true
-         WHERE dr.status = 'active'
-           AND dr.departure_time >= NOW()
-           AND dr.departure_time <= $1
-           AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
-        [threeHoursFromNow, MIN_DRIVER_RATING_FOR_MATCHING]
-      );
-
-      const rows = routesRes.rows || [];
-      const pickupLat = parseFloat(pickup_lat);
-      const pickupLng = parseFloat(pickup_lng);
-      const dropoffLat = parseFloat(dropoff_lat);
-      const dropoffLng = parseFloat(dropoff_lng);
-
-      return rows.some((r) => {
-        const fromDist = haversineKm(pickupLat, pickupLng, parseFloat(r.from_lat), parseFloat(r.from_lng));
-        const toDist = haversineKm(dropoffLat, dropoffLng, parseFloat(r.to_lat), parseFloat(r.to_lng));
-        return fromDist <= ROUTE_RADIUS_KM && toDist <= ROUTE_RADIUS_KM;
-      });
+    const priceProvince = detectProvince(parseFloat(pickup_lat), parseFloat(pickup_lng));
+    let driversNearby = [];
+    if (priceProvince) {
+      try {
+        driversNearby = await findNearestDrivers({
+          pickup_lat,
+          pickup_lng,
+          province: priceProvince,
+          declined_driver_ids: [],
+        });
+      } catch {
+        driversNearby = [];
+      }
     }
-
-    async function checkExpressAvailability(radiusKm) {
-      const pickupLat = parseFloat(pickup_lat);
-      const pickupLng = parseFloat(pickup_lng);
-
-      const driversRes = await db.query(
-        `SELECT dl.driver_id, dl.lat, dl.lng, dt.current_rating as current_rating
-         FROM driver_locations dl
-         JOIN driver_profiles dp ON dp.user_id = dl.driver_id AND dp.verification_status = 'approved'
-         LEFT JOIN driver_tiers dt ON dt.driver_id = dl.driver_id
-         JOIN users u ON u.id = dl.driver_id AND u.is_active = true
-         WHERE dl.is_online = true AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
-           AND (dt.current_rating IS NULL OR dt.current_rating >= $2)
-           AND NOT EXISTS (
-             SELECT 1 FROM orders o
-               WHERE o.driver_id = dl.driver_id AND o.status = ANY($1)
-           )`,
-        [activeOrderStatuses, MIN_DRIVER_RATING_FOR_MATCHING]
-      );
-
-      const rows = driversRes.rows || [];
-      return rows.some((d) => {
-        const distToPickup = haversineKm(pickupLat, pickupLng, parseFloat(d.lat), parseFloat(d.lng));
-        return distToPickup <= radiusKm;
-      });
-    }
-
-    // Availability is best-effort in this prototype. To keep the pricing UI consistent
-    // with your expected pricing-model response, default to `true`.
-    await Promise.all([
-      checkStandardAvailability().catch(() => false),
-      checkExpressAvailability(25).catch(() => false),
-      checkExpressAvailability(60).catch(() => false),
-    ]);
+    const hasDriverNearby = driversNearby.length > 0;
 
     function roundToInt(n) {
       const x = Number(n);
@@ -443,9 +370,9 @@ async function calculatePrice(req, res) {
     return res.json({
       distance_km: roundMoney(dist),
       zone,
-      standard: buildTierResponse('standard', '2-5 hours', true),
-      express: buildTierResponse('express', '1-2 hours', true),
-      urgent: buildTierResponse('urgent', 'Under 1 hour', true),
+      standard: buildTierResponse('standard', '2-5 hours', hasDriverNearby),
+      express: buildTierResponse('express', '1-2 hours', hasDriverNearby),
+      urgent: buildTierResponse('urgent', 'Under 1 hour', hasDriverNearby),
       value_component: roundToInt(value_component),
       protection_included: 'R500 basic cover',
       upgrade_options: Number(parcel_value) > 500
@@ -771,9 +698,7 @@ async function declineOrder(req, res) {
       [driverId, id]
     );
 
-    // Try to find next matching driver
-    const { findMatchingDrivers } = require('../services/routeMatchingService');
-    const { sendJobOfferToDriver } = require('../services/matchingService');
+    const { findNearestDrivers, sendJobOfferToDriver, runMatching } = require('../services/matchingService');
 
     setImmediate(async () => {
       try {
@@ -781,12 +706,14 @@ async function declineOrder(req, res) {
         const order = orderRes.rows[0];
         if (!order || order.status !== 'matching') return;
 
-        const matches = await findMatchingDrivers(order);
-        if (matches.length > 0) {
-          await sendJobOfferToDriver(order, matches[0]);
+        const drivers = await findNearestDrivers(order);
+        const nextDrivers = drivers.filter((d) => d.driver_id !== driverId);
+        if (nextDrivers.length > 0) {
+          await sendJobOfferToDriver(order, nextDrivers[0]);
+          console.log(`[Match] Order ${order.id} cascaded to driver ${nextDrivers[0].driver_id}`);
         } else {
-          // No more matches - set back to pending
-          await db.query(`UPDATE orders SET status = 'pending' WHERE id = $1`, [id]);
+          // No other eligible driver right now — rerun nearest-driver loop (retries / unmatched).
+          runMatching(order.id);
         }
       } catch (err) {
         console.error('[Decline cascade]', err.message);

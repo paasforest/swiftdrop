@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS waitlist (
+  id SERIAL PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  lat NUMERIC(10,6),
+  lng NUMERIC(10,6),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);

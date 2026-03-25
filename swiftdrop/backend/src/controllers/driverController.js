@@ -50,6 +50,11 @@ async function patchStatus(req, res) {
       [driverId, is_online]
     );
 
+    await db.query(
+      `UPDATE users SET is_online = $1, updated_at = NOW() WHERE id = $2 AND user_type = 'driver'`,
+      [is_online, driverId]
+    );
+
     const r = await db.query(
       `SELECT is_online, updated_at FROM driver_locations WHERE driver_id = $1`,
       [driverId]
@@ -70,29 +75,39 @@ async function patchLocation(req, res) {
     if (req.user.user_type !== 'driver') {
       return res.status(403).json({ error: 'Drivers only' });
     }
-    const { lat, lng } = req.body;
-    if (lat == null || lng == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
-      return res.status(400).json({ error: 'lat and lng are required numbers' });
+    const rawLat = req.body.lat ?? req.body.latitude;
+    const rawLng = req.body.lng ?? req.body.longitude;
+    const { is_online: bodyOnline } = req.body;
+
+    if (rawLat == null || rawLng == null || Number.isNaN(Number(rawLat)) || Number.isNaN(Number(rawLng))) {
+      return res.status(400).json({ error: 'lat and lng (or latitude/longitude) are required numbers' });
     }
     const driverId = req.user.id;
-    const latN = Number(lat);
-    const lngN = Number(lng);
+    const latN = Number(rawLat);
+    const lngN = Number(rawLng);
+    const online =
+      typeof bodyOnline === 'boolean' ? bodyOnline : true;
 
     await db.query(
       `INSERT INTO driver_locations (driver_id, lat, lng, is_online, updated_at)
-       VALUES ($1, $2, $3, TRUE, NOW())
+       VALUES ($1, $2, $3, $4, NOW())
        ON CONFLICT (driver_id) DO UPDATE SET
          lat = EXCLUDED.lat,
          lng = EXCLUDED.lng,
-         is_online = TRUE,
+         is_online = EXCLUDED.is_online,
          updated_at = NOW()`,
-      [driverId, latN, lngN]
+      [driverId, latN, lngN, online]
     );
 
-    // Also update users table for smart matching
     await db.query(
-      `UPDATE users SET current_lat = $1, current_lng = $2, updated_at = NOW() WHERE id = $3`,
-      [latN, lngN, driverId]
+      `UPDATE users SET
+         current_lat = $1,
+         current_lng = $2,
+         last_seen_at = NOW(),
+         is_online = $4,
+         updated_at = NOW()
+       WHERE id = $3 AND user_type = 'driver'`,
+      [latN, lngN, driverId, online]
     );
 
     const rt = getRealtimeDb();

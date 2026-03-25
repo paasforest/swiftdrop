@@ -34,7 +34,8 @@ import Profile from './src/screens/customer/Profile';
 import DriverLogin from './src/screens/driver/DriverLogin';
 import DriverRegister from './src/screens/driver/DriverRegister';
 import DriverHome from './src/screens/driver/DriverHome';
-import PostRoute from './src/screens/driver/PostRoute';
+// import PostRoute from './src/screens/driver/PostRoute'; // Phase 2 — intercity corridor feature, not active at launch
+import UnsupportedAreaScreen from './src/screens/shared/UnsupportedAreaScreen';
 import JobOffer from './src/screens/driver/JobOffer';
 import ActiveDelivery from './src/screens/driver/ActiveDelivery';
 import EnRoutePickup from './src/screens/driver/EnRoutePickup';
@@ -112,6 +113,11 @@ export default function App() {
             }}
           >
             <Stack.Screen name="Loading" component={LoadingScreen} />
+            <Stack.Screen
+              name="UnsupportedArea"
+              component={UnsupportedAreaScreen}
+              options={{ headerShown: false, gestureEnabled: false }}
+            />
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             {/* Customer Flow */}
             <Stack.Screen name="Onboarding" component={Onboarding} />
@@ -134,7 +140,9 @@ export default function App() {
             <Stack.Screen name="DriverRegister" component={DriverRegister} />
             <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
             <Stack.Screen name="DriverHome" component={DriverHome} />
+            {/* Phase 2 — intercity corridor feature, not active at launch
             <Stack.Screen name="PostRoute" component={PostRoute} />
+            */}
             <Stack.Screen
               name="JobOffer"
               component={JobOffer}

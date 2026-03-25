@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../../components/GradientHeader';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
@@ -50,6 +51,33 @@ const Home = ({ navigation }) => {
   const [displayName, setDisplayName] = useState('there');
   const route = useRoute();
   const refundMessage = route?.params?.refundMessage;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const { latitude, longitude } = loc.coords;
+        const inWC =
+          latitude >= -34.9 && latitude <= -31.5 && longitude >= 18.0 && longitude <= 21.5;
+        const inGP =
+          latitude >= -26.7 && latitude <= -25.2 && longitude >= 27.5 && longitude <= 28.8;
+        if (!inWC && !inGP) {
+          navigation.replace('UnsupportedArea', { latitude, longitude });
+        }
+      } catch (err) {
+        console.log('[Province] Could not detect location:', err?.message || err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigation]);
 
   const deliveryTiers = [
     {

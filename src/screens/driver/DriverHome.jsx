@@ -16,7 +16,7 @@ import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
-import { getJson, patchJson, deleteJson } from '../../apiClient';
+import { getJson, patchJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
@@ -42,33 +42,6 @@ function tierLabel(tier) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/** First segment of address for compact "city" line. */
-function routeCityLine(addr) {
-  if (!addr) return '—';
-  const s = String(addr).split(',')[0].trim();
-  return s || addr;
-}
-
-function formatRouteDeparture(iso) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const isToday = d.toDateString() === now.toDateString();
-  const isTomorrow = d.toDateString() === tomorrow.toDateString();
-  const timeStr = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  if (isToday) return `Today ${timeStr}`;
-  if (isTomorrow) return `Tomorrow ${timeStr}`;
-  return d.toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
 const STATUS_ERR = 'Could not update status. Check connection.';
 
 const DriverHome = ({ navigation }) => {
@@ -78,12 +51,8 @@ const DriverHome = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [myRoutes, setMyRoutes] = useState([]);
-  const [routesLoading, setRoutesLoading] = useState(false);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
-  /** Mirrors intended PostRoute driver type when opening the posting flow from home. */
-  const [selectedMode, setSelectedMode] = useState('commuter');
 
   const locationIntervalRef = useRef(null);
   const lastJobOfferNavigatedOrderIdRef = useRef(null);
@@ -171,23 +140,6 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
-  const loadMyRoutes = useCallback(async () => {
-    const auth = getAuth();
-    if (!auth?.token) {
-      setMyRoutes([]);
-      return;
-    }
-    setRoutesLoading(true);
-    try {
-      const data = await getJson('/api/driver-routes/my', { token: auth.token });
-      setMyRoutes(Array.isArray(data.routes) ? data.routes : []);
-    } catch {
-      setMyRoutes([]);
-    } finally {
-      setRoutesLoading(false);
-    }
-  }, []);
-
   const loadRouteMatchBanner = useCallback(async () => {
     const auth = getAuth();
     if (!auth?.token) {
@@ -197,7 +149,7 @@ const DriverHome = ({ navigation }) => {
     try {
       const data = await getJson('/api/orders/pending-offer', { token: auth.token });
       const o = data?.offer;
-      if (o && o.matched_via === 'route' && o.dropoff_address) {
+      if (o && o.dropoff_address) {
         setRouteMatchBanner({ destination: o.dropoff_address });
       } else {
         setRouteMatchBanner(null);
@@ -219,6 +171,34 @@ const DriverHome = ({ navigation }) => {
   }, []);
 
   const stayOnline = route.params?.stayOnline === true;
+
+  /** Service area: Western Cape & Gauteng only (align with backend provinceService). */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const { latitude, longitude } = loc.coords;
+        const inWC =
+          latitude >= -34.9 && latitude <= -31.5 && longitude >= 18.0 && longitude <= 21.5;
+        const inGP =
+          latitude >= -26.7 && latitude <= -25.2 && longitude >= 27.5 && longitude <= 28.8;
+        if (!inWC && !inGP) {
+          navigation.replace('UnsupportedArea', { latitude, longitude });
+        }
+      } catch (err) {
+        console.log('[Province] Could not detect location:', err?.message || err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigation]);
 
   // When opened with stayOnline (e.g. after delivery), reflect online for polling/location
   useEffect(() => {
@@ -251,7 +231,6 @@ const DriverHome = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
-      loadMyRoutes();
       loadRouteMatchBanner();
       syncOnlineStatusFromServer();
       fetchTodayStats();
@@ -265,7 +244,7 @@ const DriverHome = ({ navigation }) => {
           }
         })();
       }
-    }, [loadDashboard, loadMyRoutes, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats])
+    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats])
   );
 
   useEffect(() => {
@@ -385,30 +364,6 @@ const DriverHome = ({ navigation }) => {
     } finally {
       setStatusBusy(false);
     }
-  };
-
-  const handleCancelPostedRoute = (postedRoute) => {
-    Alert.alert(
-      'Cancel this route?',
-      'You will no longer receive parcel offers for this trip.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes, cancel route',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const auth = getAuth();
-              if (!auth?.token) return;
-              await deleteJson(`/api/driver-routes/${postedRoute.id}`, { token: auth.token });
-              setMyRoutes((prev) => prev.filter((r) => Number(r.id) !== Number(postedRoute.id)));
-            } catch (e) {
-              Alert.alert('Could not cancel', e.message || 'Try again.');
-            }
-          },
-        },
-      ]
-    );
   };
 
   if (stayOnline) {
@@ -576,40 +531,12 @@ const DriverHome = ({ navigation }) => {
           </Text>
         </View>
 
-        <View style={styles.modeSelectorSection}>
-          <Text style={styles.modeSelectorTitle}>How do you want to work?</Text>
-          <View style={styles.modeCardsRow}>
-            <TouchableOpacity
-              style={[styles.modeCard, selectedMode === 'commuter' && styles.modeCardSelected]}
-              onPress={() => {
-                setSelectedMode('commuter');
-                navigation.navigate('PostRoute', { defaultDriverType: 'commuter' });
-              }}
-              activeOpacity={0.88}
-            >
-              <Text
-                style={[styles.modeCardTitle, selectedMode === 'commuter' && styles.modeCardTitleSelected]}
-              >
-                I am heading somewhere
-              </Text>
-              <Text style={styles.modeCardSub}>Post a route for your trip</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeCard, selectedMode === 'dedicated' && styles.modeCardSelected]}
-              onPress={() => {
-                setSelectedMode('dedicated');
-                navigation.navigate('PostRoute', { defaultDriverType: 'dedicated' });
-              }}
-              activeOpacity={0.88}
-            >
-              <Text
-                style={[styles.modeCardTitle, selectedMode === 'dedicated' && styles.modeCardTitleSelected]}
-              >
-                I am available to deliver
-              </Text>
-              <Text style={styles.modeCardSub}>Get orders near your GPS</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={styles.matchingInfoCard}>
+          <Text style={styles.matchingInfoTitle}>How matching works</Text>
+          <Text style={styles.matchingInfoBody}>
+            Go online and keep location on. We match you to the nearest pickup in Western Cape or Gauteng.
+            Posted routes are paused for launch (Phase 2).
+          </Text>
         </View>
 
         {todayStats && (
@@ -639,62 +566,17 @@ const DriverHome = ({ navigation }) => {
           >
             <Ionicons name="navigate-circle" size={22} color={colors.primary} style={{ marginRight: 10 }} />
             <Text style={styles.routeMatchBannerText}>
-              A parcel matches your route to{' '}
+              New delivery near{' '}
               <Text style={styles.routeMatchBannerBold}>
                 {routeMatchBanner.destination.length > 48
                   ? `${routeMatchBanner.destination.slice(0, 45)}…`
                   : routeMatchBanner.destination}
               </Text>
-              ! Check job offers.
+              {' — '}open job offer.
             </Text>
             <Ionicons name="chevron-forward" size={20} color={colors.primary} />
           </TouchableOpacity>
         ) : null}
-
-        <View style={styles.myRoutesSection}>
-          <Text style={styles.myRoutesTitle}>My Posted Routes</Text>
-          {routesLoading ? (
-            <ActivityIndicator style={{ marginVertical: 12 }} color={colors.primary} />
-          ) : myRoutes.length === 0 ? (
-            <View style={styles.myRoutesEmpty}>
-              <Text style={styles.myRoutesEmptyTitle}>No active routes posted</Text>
-              <Text style={styles.myRoutesEmptySub}>
-                Post a route to earn on your upcoming trips
-              </Text>
-              <TouchableOpacity
-                style={styles.myRoutesEmptyBtn}
-                onPress={() => navigation.navigate('PostRoute')}
-                activeOpacity={0.88}
-              >
-                <Text style={styles.myRoutesEmptyBtnText}>Post a Route</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.myRoutesList}>
-              {myRoutes.map((r) => (
-                <View key={String(r.id)} style={styles.routeCard}>
-                  <View style={styles.routeCardBody}>
-                    <Text style={styles.routeCardLine} numberOfLines={2}>
-                      {routeCityLine(r.from_address)} → {routeCityLine(r.to_address)}
-                    </Text>
-                    <Text style={styles.routeCardTime}>{formatRouteDeparture(r.departure_time)}</Text>
-                    <View style={styles.routeCardBadge}>
-                      <Text style={styles.routeCardBadgeText}>Max {r.max_parcels ?? 1} parcels</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.routeCardCancel}
-                    onPress={() => handleCancelPostedRoute(r)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Cancel route"
-                  >
-                    <Ionicons name="close-circle" size={28} color={colors.danger} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
 
         <View style={styles.earningsCard}>
           <Text style={styles.earningsLabel}>Today (completed)</Text>
@@ -704,20 +586,10 @@ const DriverHome = ({ navigation }) => {
 
         <View style={styles.actionButtons}>
           <TouchableOpacity
-            style={styles.postRouteButton}
-            onPress={() => {
-              setSelectedMode('commuter');
-              navigation.navigate('PostRoute', { defaultDriverType: 'commuter' });
-            }}
-          >
-            <Text style={styles.postRouteText}>Post a Route</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.viewJobsButton}
+            style={styles.viewJobsButtonSolo}
             onPress={() => navigation.navigate('JobOffer')}
           >
-            <Text style={styles.viewJobsText}>View Available Jobs</Text>
+            <Text style={styles.viewJobsText}>View available jobs</Text>
           </TouchableOpacity>
         </View>
 
@@ -751,7 +623,9 @@ const DriverHome = ({ navigation }) => {
           {loading ? (
             <ActivityIndicator style={{ marginVertical: 20 }} color={colors.primary} />
           ) : recent.length === 0 ? (
-            <Text style={styles.emptyText}>No assigned jobs yet. Check available jobs or post a route.</Text>
+            <Text style={styles.emptyText}>
+              No assigned jobs yet. Go online and check available jobs — we’ll offer nearest pickups.
+            </Text>
           ) : (
             <View style={styles.activityList}>
               {recent.map((o) => (
@@ -908,47 +782,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     lineHeight: 24,
   },
-  modeSelectorSection: {
-    paddingHorizontal: spacing.md,
+  matchingInfoCard: {
+    marginHorizontal: spacing.md,
     marginBottom: spacing.lg,
-  },
-  modeSelectorTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  modeCardsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  modeCard: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
+    padding: spacing.md,
     borderRadius: radius.md,
     backgroundColor: colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
     ...shadows.card,
   },
-  modeCardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  modeCardTitle: {
-    fontSize: 14,
+  matchingInfoTitle: {
+    fontSize: 16,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  modeCardTitleSelected: {
-    color: colors.primary,
-  },
-  modeCardSub: {
-    fontSize: 12,
+  matchingInfoBody: {
+    fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 21,
   },
   routeMatchBanner: {
     flexDirection: 'row',
@@ -970,90 +823,6 @@ const styles = StyleSheet.create({
   routeMatchBannerBold: {
     fontWeight: '800',
     color: colors.primary,
-  },
-  myRoutesSection: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  myRoutesTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  myRoutesEmpty: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    ...shadows.card,
-  },
-  myRoutesEmptyTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  myRoutesEmptySub: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    lineHeight: 20,
-  },
-  myRoutesEmptyBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: radius.md,
-  },
-  myRoutesEmptyBtnText: {
-    color: colors.textWhite,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  myRoutesList: {},
-  routeCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
-  },
-  routeCardBody: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  routeCardLine: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  routeCardTime: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  routeCardBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  routeCardBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  routeCardCancel: {
-    paddingTop: 2,
   },
   earningsCard: {
     backgroundColor: colors.surface,
@@ -1084,20 +853,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     gap: 12,
   },
-  postRouteButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
-  postRouteText: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  viewJobsButton: {
+  viewJobsButtonSolo: {
     backgroundColor: colors.primary,
     paddingVertical: 16,
     borderRadius: radius.md,

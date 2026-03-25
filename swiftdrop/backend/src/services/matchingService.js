@@ -1,19 +1,17 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const { sendPushNotification } = require('./notificationService');
+const { detectProvince } = require('./provinceService');
 
-/** Driver job-offer window (production). Do not raise for testing — use a branch or env if needed. */
-const OFFER_TIMEOUT_MS = 15000; // 15 seconds
-const ROUTE_RADIUS_KM = 15;
-/** Wider radii — 10/30km was too tight for sparse or misaligned GPS vs pickup. */
-const NEARBY_RADIUS_KM = 25;
-const INTERCITY_RADIUS_KM = 60;
+/** Driver job-offer window (production). */
+const OFFER_TIMEOUT_MS = 15000;
 const MAX_NEARBY_DRIVERS = 5;
-/** New / low-volume drivers: allow 3.0+ (still exclude very poor if rated). */
 const MIN_DRIVER_RATING = 3.0;
-const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_MATCH_DISTANCE_KM = 50;
+const LOCATION_MAX_AGE_MINUTES = 5;
+const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000;
 
-/** Full cascade retries before marking unmatched (6 × ~30s gaps + work ≈ up to ~3 min customer wait). */
+/** Full cascade retries before marking unmatched. */
 const MAX_MATCHING_ATTEMPTS = 6;
 const MATCHING_RETRY_DELAY_MS = 30000;
 
@@ -35,7 +33,6 @@ async function getOrder(orderId) {
   return r.rows[0];
 }
 
-/** Poll DB during offer window; true if driver assigned. */
 async function pollUntilMatchedOrTimeout(orderId, timeoutMs) {
   const pollInterval = 1000;
   const deadline = Date.now() + timeoutMs;
@@ -51,64 +48,68 @@ async function pollUntilMatchedOrTimeout(orderId, timeoutMs) {
   return !!(o && o.driver_id);
 }
 
-async function findRouteRiders(order) {
+/**
+ * Nearest online drivers to order pickup (same province, within MAX_MATCH_DISTANCE_KM).
+ * @param {object} order — needs pickup_lat, pickup_lng, province, declined_driver_ids (optional)
+ */
+async function findNearestDrivers(order) {
   const pickupLat = parseFloat(order.pickup_lat);
   const pickupLng = parseFloat(order.pickup_lng);
-  const dropoffLat = parseFloat(order.dropoff_lat);
-  const dropoffLng = parseFloat(order.dropoff_lng);
-  const threeHoursFromNow = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) return [];
+  const province = order.province;
+  if (!province) return [];
 
-  const routes = await db.query(
-    `SELECT dr.*, u.full_name, dt.current_rating
-     FROM driver_routes dr
-     JOIN driver_locations dl ON dl.driver_id = dr.driver_id AND dl.is_online = true
-     JOIN driver_profiles dp ON dp.user_id = dr.driver_id AND dp.verification_status = 'approved'
-     LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
-     JOIN users u ON u.id = dr.driver_id AND u.is_active = true
-     WHERE dr.status = 'active'
-       AND dr.departure_time >= NOW()
-       AND dr.departure_time <= $1
-       AND (dt.current_rating IS NULL OR dt.current_rating >= $2)`,
-    [threeHoursFromNow, MIN_DRIVER_RATING]
-  );
+  const declined = order.declined_driver_ids;
+  const excluded =
+    Array.isArray(declined) && declined.length > 0 ? declined : null;
 
-  const matching = routes.rows.filter((r) => {
-    const fromDist = haversineKm(pickupLat, pickupLng, parseFloat(r.from_lat), parseFloat(r.from_lng));
-    const toDist = haversineKm(dropoffLat, dropoffLng, parseFloat(r.to_lat), parseFloat(r.to_lng));
-    return fromDist <= ROUTE_RADIUS_KM && toDist <= ROUTE_RADIUS_KM;
-  });
-
-  return matching.map((r) => r.driver_id);
-}
-
-async function findNearbyDrivers(order, radiusKm) {
-  const pickupLat = parseFloat(order.pickup_lat);
-  const pickupLng = parseFloat(order.pickup_lng);
-
-  const drivers = await db.query(
-    `SELECT dl.driver_id, dl.lat, dl.lng, u.full_name, dt.current_rating
+  const { rows } = await db.query(
+    `SELECT dl.driver_id, dl.lat, dl.lng, u.full_name, u.phone, u.profile_photo_url,
+            dt.current_rating
      FROM driver_locations dl
+     JOIN users u ON u.id = dl.driver_id AND u.user_type = 'driver' AND u.is_active = true
      JOIN driver_profiles dp ON dp.user_id = dl.driver_id AND dp.verification_status = 'approved'
      LEFT JOIN driver_tiers dt ON dt.driver_id = dl.driver_id
-     JOIN users u ON u.id = dl.driver_id AND u.is_active = true
-     WHERE dl.is_online = true AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
-       AND (dt.current_rating IS NULL OR dt.current_rating >= $1)
+     WHERE dl.is_online = true
+       AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
+       AND dl.updated_at > NOW() - ($1::int * INTERVAL '1 minute')
+       AND (dt.current_rating IS NULL OR dt.current_rating >= $2)
        AND NOT EXISTS (
-         SELECT 1 FROM orders o WHERE o.driver_id = dl.driver_id
-           AND o.status IN ('matching','accepted','pickup_en_route','pickup_arrived','collected','delivery_en_route','delivery_arrived')
-       )`,
-    [MIN_DRIVER_RATING]
+         SELECT 1 FROM orders o
+         WHERE o.driver_id = dl.driver_id
+           AND o.status IN (
+             'accepted',
+             'pickup_en_route',
+             'pickup_arrived',
+             'collected',
+             'delivery_en_route',
+             'delivery_arrived'
+           )
+       )
+       AND ($3::integer[] IS NULL OR dl.driver_id != ALL($3::integer[]))`,
+    [LOCATION_MAX_AGE_MINUTES, MIN_DRIVER_RATING, excluded]
   );
 
-  const withDist = drivers.rows
-    .map((d) => ({
+  const withDist = [];
+  for (const d of rows) {
+    const lat = parseFloat(d.lat);
+    const lng = parseFloat(d.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (detectProvince(lat, lng) !== province) continue;
+    const distanceKm = haversineKm(pickupLat, pickupLng, lat, lng);
+    if (distanceKm > MAX_MATCH_DISTANCE_KM) continue;
+    withDist.push({
       driver_id: d.driver_id,
-      dist: haversineKm(pickupLat, pickupLng, parseFloat(d.lat), parseFloat(d.lng)),
-    }))
-    .filter((d) => d.dist <= radiusKm)
-    .sort((a, b) => a.dist - b.dist);
+      distanceKm,
+      full_name: d.full_name,
+      phone: d.phone,
+      profile_photo_url: d.profile_photo_url,
+      current_rating: d.current_rating,
+    });
+  }
 
-  return withDist.map((d) => d.driver_id);
+  withDist.sort((a, b) => a.distanceKm - b.distanceKm);
+  return withDist.slice(0, MAX_NEARBY_DRIVERS * 3);
 }
 
 async function createJobOffers(orderId, driverIds, { matchedVia = null } = {}) {
@@ -130,13 +131,6 @@ async function expireJobOffers(orderId) {
   );
 }
 
-/**
- * Whether to send a push for this order+driver. Call BEFORE inserting the new job_offer row.
- * - First-time offer: notify.
- * - Same matching run, new phase (e.g. route timed out → nearby): latest row is expired → notify.
- * - Matching retry (attemptIndex > 0) re-offering the same driver after expired: do not notify (stops push spam).
- * - Re-offer after declined: notify.
- */
 async function shouldNotifyDriverForOffer(orderId, driverId, attemptIndex) {
   const ai = Number.isFinite(attemptIndex) ? attemptIndex : 0;
   const r = await db.query(
@@ -193,11 +187,6 @@ async function notifyCustomerNoDriver(customerId, order) {
   );
 }
 
-/**
- * One full cascade: route → nearby → intercity, with awaited offer windows.
- * @param {number} attemptIndex 0-based retry index from runMatchingWithRetry (affects push dedupe).
- * @returns {Promise<boolean>} true if a driver accepted / assigned
- */
 async function runMatchingAttempt(orderId, attemptIndex = 0) {
   await expireJobOffers(orderId);
 
@@ -205,83 +194,26 @@ async function runMatchingAttempt(orderId, attemptIndex = 0) {
   if (!order || order.status !== 'matching') return !!order?.driver_id;
   if (order.driver_id) return true;
 
-  // Step 1: route riders
-  const riderIds = await findRouteRiders(order);
-  console.log('[Matching] Route riders found:', riderIds.length);
-  if (riderIds.length > 0) {
-    const toNotifyRoute = await filterDriversToNotify(orderId, riderIds, attemptIndex);
-    await createJobOffers(orderId, riderIds, { matchedVia: 'route' });
-    await notifyDriversNewOffer(toNotifyRoute, order);
-    if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
-    await expireJobOffers(orderId);
-  }
+  const drivers = await findNearestDrivers(order);
+  console.log('[Matching] Nearest drivers (candidates):', drivers.length);
+  if (drivers.length === 0) return false;
 
-  order = await getOrder(orderId);
-  if (!order || order.status !== 'matching') return !!order?.driver_id;
-  if (order.driver_id) return true;
-
-  // Step 2: nearby
-  await expireJobOffers(orderId);
-  const nearbyIds = await findNearbyDrivers(order, NEARBY_RADIUS_KM);
-  console.log('[Matching] Drivers found (nearby):', nearbyIds.length);
-  const toOffer2 = nearbyIds.slice(0, MAX_NEARBY_DRIVERS);
-
-  if (toOffer2.length > 0) {
-    for (const driverId of toOffer2) {
-      order = await getOrder(orderId);
-      if (!order || order.status !== 'matching') return !!order?.driver_id;
-      if (order.driver_id) return true;
-      const toNotifyNearby = await filterDriversToNotify(orderId, [driverId], attemptIndex);
-      await createJobOffers(orderId, [driverId]);
-      await notifyDriversNewOffer(toNotifyNearby, order);
-      if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
-      await expireJobOffers(orderId);
-    }
-  }
-
-  order = await getOrder(orderId);
-  if (!order || order.status !== 'matching') return !!order?.driver_id;
-  if (order.driver_id) return true;
-
-  // Step 3: intercity
-  await expireJobOffers(orderId);
-  const wideIds = await findNearbyDrivers(order, INTERCITY_RADIUS_KM);
-  console.log('[Matching] Drivers found (intercity):', wideIds.length);
-  const toOffer3 = wideIds.slice(0, MAX_NEARBY_DRIVERS);
-
-  if (toOffer3.length === 0) {
-    return false;
-  }
-
-  for (const driverId of toOffer3) {
-    order = await getOrder(orderId);
-    if (!order || order.status !== 'matching') return !!order?.driver_id;
-    if (order.driver_id) return true;
-    const toNotifyWide = await filterDriversToNotify(orderId, [driverId], attemptIndex);
-    await createJobOffers(orderId, [driverId]);
-    await notifyDriversNewOffer(toNotifyWide, order);
-    if (await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS)) return true;
-    await expireJobOffers(orderId);
-  }
-
-  order = await getOrder(orderId);
-  return !!(order && order.driver_id);
+  const d = drivers[0];
+  const toNotify = await filterDriversToNotify(orderId, [d.driver_id], attemptIndex);
+  await createJobOffers(orderId, [d.driver_id], { matchedVia: 'nearest' });
+  await notifyDriversNewOffer(toNotify, order);
+  return pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS);
 }
 
 async function tryStep4(orderId) {
   const order = await getOrder(orderId);
   if (!order || order.driver_id || order.status !== 'matching') return;
 
-  await db.query(
-    `UPDATE orders SET status = 'unmatched', updated_at = NOW() WHERE id = $1`,
-    [orderId]
-  );
+  await db.query(`UPDATE orders SET status = 'unmatched', updated_at = NOW() WHERE id = $1`, [orderId]);
   await notifyCustomerNoDriver(order.customer_id, order);
 }
 
 async function runMatchingWithRetry(orderId) {
-  await expireStaleRoutes();
-
   for (let attempt = 1; attempt <= MAX_MATCHING_ATTEMPTS; attempt++) {
     let order = await getOrder(orderId);
     if (!order || order.status !== 'matching') return;
@@ -302,15 +234,6 @@ async function runMatchingWithRetry(orderId) {
   }
 
   await tryStep4(orderId);
-}
-
-async function expireStaleRoutes() {
-  await db.query(`
-    UPDATE driver_routes
-    SET status = 'completed'
-    WHERE status = 'active'
-    AND departure_time < NOW() - INTERVAL '2 hours'
-  `);
 }
 
 function runMatching(orderId) {
@@ -336,7 +259,7 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
   const candidatesRes = await db.query(
     `SELECT id, order_number,
             pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
-            status, driver_earnings
+            status, driver_earnings, total_price
      FROM orders
      WHERE id != $1
        AND driver_id IS NULL
@@ -400,23 +323,19 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
   );
 }
 
-/**
- * Wrapper function for smart matching - creates job offer and notifies driver
- * @param {Object} order - The order object
- * @param {Object} driver - The matched driver/route object with driver_id
- */
 async function sendJobOfferToDriver(order, driver) {
   const driverId = driver.driver_id || driver.driver_user_id;
   if (!driverId) {
     throw new Error('Driver ID not found in matched driver object');
   }
-  
+
   const toNotify = await filterDriversToNotify(order.id, [driverId], 0);
-  await createJobOffers(order.id, [driverId], { matchedVia: 'smart_match' });
+  await createJobOffers(order.id, [driverId], { matchedVia: 'nearest' });
   await notifyDriversNewOffer(toNotify, order);
 }
 
 module.exports = {
+  findNearestDrivers,
   runMatching,
   runMatchingAttempt,
   runMatchingWithRetry,

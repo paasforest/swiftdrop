@@ -42,8 +42,7 @@ function isDriverMatchedStatus(status) {
 const STATUS_MESSAGES = [
   'Finding your driver...',
   'Checking nearby drivers...',
-  'Looking for route matches...',
-  'Expanding search area...',
+  'Searching in your area...',
   'Still searching — please wait...',
   'Almost there...',
 ];
@@ -433,10 +432,9 @@ const DriverMatching = ({ navigation, route }) => {
             </>
           ) : noDriverFound ? (
             <>
-              <Text style={styles.mainTitle}>No drivers available right now</Text>
+              <Text style={styles.mainTitle}>No drivers are available near your pickup right now.</Text>
               <Text style={styles.subtitle}>
-                All nearby drivers are busy. Try again in a few minutes or choose a different delivery
-                time.
+                {"We'll keep looking and notify you as soon as one becomes available."}
               </Text>
             </>
           ) : (
