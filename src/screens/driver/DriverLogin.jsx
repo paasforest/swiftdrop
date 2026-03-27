@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,28 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
-import { setAuth } from '../../authStore';
+import { clearAuth, setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
+import { normalizePhoneForApi, stripInvisible } from '../../utils/saPhoneNormalize';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import { AppText, AppButton, AppInput } from '../../components/ui';
 
 const { width, height } = Dimensions.get('window');
-
-function cleanLoginInput(value) {
-  return String(value ?? '')
-    .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
-    .trim();
-}
-
-function normalizePhoneForApi(phoneInput) {
-  let v = String(phoneInput ?? '').trim();
-  v = v.replace(/\s+/g, '');
-  if (v.startsWith('+')) v = v.slice(1);
-  if (v.startsWith('0')) v = `27${v.slice(1)}`;
-  if (v.startsWith('27')) return `+${v}`;
-  if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
-  return '';
-}
 
 export default function DriverLogin({ navigation }) {
   const [phone, setPhone] = useState('');
@@ -51,12 +36,16 @@ export default function DriverLogin({ navigation }) {
     <Text style={{ color: colors.accent, fontWeight: '700', fontSize: 15 }}>+27</Text>
   );
 
+  useEffect(() => {
+    void clearAuth();
+  }, []);
+
   const handleLogin = async () => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
       const phoneNorm = normalizePhoneForApi(phone);
-      const pwd = cleanLoginInput(password);
+      const pwd = stripInvisible(password).trim();
       if (!phoneNorm || !pwd) {
         setErrorMessage('Phone number and password are required.');
         return;
@@ -65,7 +54,7 @@ export default function DriverLogin({ navigation }) {
       const data = await postJson('/api/auth/login', {
         phone: phoneNorm,
         password: pwd,
-      });
+      }, { skipAuthRetry: true, omitAuthToken: true });
 
       setAuth({
         token: data.token,
@@ -75,7 +64,22 @@ export default function DriverLogin({ navigation }) {
 
       resetToRoleHome(navigation, data.user);
     } catch (err) {
-      setErrorMessage(err.message || 'Login failed.');
+      if (err.code === 'PHONE_NOT_VERIFIED') {
+        setErrorMessage(
+          'Verify your phone with the SMS code from registration, then sign in again.'
+        );
+      } else if (err.status === 403) {
+        setErrorMessage(
+          err.message ||
+            'Your driver application is still under review. You can sign in once an admin approves your account.'
+        );
+      } else if (err.status === 401 && err.message === 'Invalid credentials') {
+        setErrorMessage(
+          'Incorrect phone or password. Use the same number you registered with (e.g. 071… next to +27). If you just registered, your account may still be pending approval — try again after approval.'
+        );
+      } else {
+        setErrorMessage(err.message || 'Login failed.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -89,7 +93,7 @@ export default function DriverLogin({ navigation }) {
     }
     setForgotBusy(true);
     try {
-      await postJson('/api/auth/forgot-password', { phone: phoneNorm });
+      await postJson('/api/auth/forgot-password', { phone: phoneNorm }, { skipAuthRetry: true, omitAuthToken: true });
       setForgotModalVisible(false);
       setForgotPhone('');
       setErrorMessage(null);

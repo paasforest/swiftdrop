@@ -1,9 +1,15 @@
+function stripInvisible(s) {
+  return String(s ?? '')
+    .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
+    .trim();
+}
+
 /**
  * Canonical South African mobile for DB storage (E.164): +27XXXXXXXXX
- * Accepts common user inputs: +27..., 27..., 0..., or 9 digits starting with 7.
+ * Accepts common user inputs: +27..., 27..., 0..., or 9 digits starting with 6/7/8.
  */
 function normalizeSouthAfricaToE164(input) {
-  let value = String(input ?? '').trim().replace(/\s+/g, '');
+  let value = stripInvisible(input).replace(/\s+/g, '');
   if (!value) return null;
 
   if (value.startsWith('+')) value = value.slice(1);

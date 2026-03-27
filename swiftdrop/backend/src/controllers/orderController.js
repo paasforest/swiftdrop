@@ -407,16 +407,18 @@ async function getOrderById(req, res) {
         COALESCE(dt.current_rating, 0.0) AS driver_rating,
         CASE
           WHEN o.driver_id IS NOT NULL
-            AND u.current_lat IS NOT NULL
-            AND u.current_lng IS NOT NULL
+            AND COALESCE(o.driver_current_lat, u.current_lat) IS NOT NULL
+            AND COALESCE(o.driver_current_lng, u.current_lng) IS NOT NULL
           THEN ROUND(
-            (point(u.current_lng, u.current_lat) <->
+            (point(COALESCE(o.driver_current_lng, u.current_lng), COALESCE(o.driver_current_lat, u.current_lat)) <->
              point(o.pickup_lng, o.pickup_lat))
             * 111.0 / 50.0 * 60
           )::text || ' min'
           ELSE NULL
         END AS time_estimate,
         CASE
+          WHEN o.status = 'unmatched' THEN 'unmatched'
+          WHEN o.status = 'cancelled' THEN 'cancelled'
           WHEN o.status IN (
             'accepted','pickup_en_route','pickup_arrived',
             'collected','delivery_en_route',
@@ -545,7 +547,13 @@ async function retryMatching(req, res) {
 
     await db.query(`UPDATE job_offers SET status = 'expired' WHERE order_id = $1 AND status = 'pending'`, [id]);
     await db.query(
-      `UPDATE orders SET status = 'matching', driver_id = NULL, updated_at = NOW() WHERE id = $1`,
+      `UPDATE orders
+       SET status = 'matching',
+           driver_id = NULL,
+           declined_driver_ids = NULL,
+           match_attempted_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1`,
       [id]
     );
 
@@ -598,7 +606,10 @@ async function getPendingOffer(req, res) {
               o.driver_earnings, o.delivery_tier, o.status
        FROM job_offers jo
        INNER JOIN orders o ON o.id = jo.order_id
-       WHERE jo.driver_id = $1 AND jo.status = 'pending' AND o.status = 'matching'
+       WHERE jo.driver_id = $1
+         AND jo.status = 'pending'
+         AND jo.expires_at > NOW()
+         AND o.status = 'matching'
        ORDER BY jo.expires_at ASC
        LIMIT 1`,
       [driverId]
@@ -661,7 +672,12 @@ async function acceptOrder(req, res) {
     if (order.driver_id) return res.status(400).json({ error: 'Order already assigned' });
 
     const offerRes = await db.query(
-      `SELECT id FROM job_offers WHERE order_id = $1 AND driver_id = $2 AND status = 'pending'`,
+      `SELECT id
+       FROM job_offers
+       WHERE order_id = $1
+         AND driver_id = $2
+         AND status = 'pending'
+         AND expires_at > NOW()`,
       [id, driverId]
     );
     if (offerRes.rows.length === 0) return res.status(400).json({ error: 'No valid offer' });
@@ -724,7 +740,13 @@ async function declineOrder(req, res) {
     
     // Mark job offer as declined
     const result = await db.query(
-      `UPDATE job_offers SET status = 'declined' WHERE order_id = $1 AND driver_id = $2 AND status = 'pending' RETURNING id`,
+      `UPDATE job_offers
+       SET status = 'declined'
+       WHERE order_id = $1
+         AND driver_id = $2
+         AND status = 'pending'
+         AND expires_at > NOW()
+       RETURNING id`,
       [id, driverId]
     );
     if (result.rowCount === 0) {
@@ -745,15 +767,31 @@ async function declineOrder(req, res) {
         const order = orderRes.rows[0];
         if (!order || order.status !== 'matching') return;
 
+        const offeredRes = await db.query(
+          `SELECT DISTINCT driver_id
+           FROM job_offers
+           WHERE order_id = $1`,
+          [id]
+        );
+        const offeredDriverIds = new Set(
+          offeredRes.rows.map((row) => Number(row.driver_id)).filter(Number.isFinite)
+        );
         const drivers = await findNearestDrivers(order);
-        const nextDrivers = drivers.filter((d) => d.driver_id !== driverId);
+        const nextDrivers = drivers.filter((d) => {
+          const candidateId = Number(d.driver_id);
+          return candidateId !== driverId && !offeredDriverIds.has(candidateId);
+        });
         if (nextDrivers.length > 0) {
-          await sendJobOfferToDriver(order, nextDrivers[0]);
-          console.log(`[Match] Order ${order.id} cascaded to driver ${nextDrivers[0].driver_id}`);
+          const sent = await sendJobOfferToDriver(order, nextDrivers[0]);
+          if (sent) {
+            console.log(`[Match] Order ${order.id} cascaded to driver ${nextDrivers[0].driver_id}`);
+            return;
+          }
         } else {
-          // No other eligible driver right now — rerun nearest-driver loop (retries / unmatched).
-          runMatching(order.id);
+          // Fall through to the normal retry loop if nobody new can be notified immediately.
         }
+        // No other eligible driver right now — rerun nearest-driver loop (retries / unmatched).
+        runMatching(order.id);
       } catch (err) {
         console.error('[Decline cascade]', err.message);
       }

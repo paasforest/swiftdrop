@@ -10,6 +10,7 @@ const MIN_DRIVER_RATING = 3.0;
 const MAX_MATCH_DISTANCE_KM = 50;
 const LOCATION_MAX_AGE_MINUTES = 5;
 const RETURN_LOAD_OFFER_TIMEOUT_MS = 15 * 60 * 1000;
+const activeMatchingRuns = new Map();
 
 /** Full cascade retries before marking unmatched. */
 const MAX_MATCHING_ATTEMPTS = 6;
@@ -52,16 +53,20 @@ async function pollUntilMatchedOrTimeout(orderId, timeoutMs) {
  * Nearest online drivers to order pickup (same province, within MAX_MATCH_DISTANCE_KM).
  * @param {object} order — needs pickup_lat, pickup_lng, province, declined_driver_ids (optional)
  */
-async function findNearestDrivers(order) {
+async function findNearestDrivers(order, extraExcludedDriverIds = []) {
   const pickupLat = parseFloat(order.pickup_lat);
   const pickupLng = parseFloat(order.pickup_lng);
   if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) return [];
   const province = order.province;
   if (!province) return [];
 
-  const declined = order.declined_driver_ids;
-  const excluded =
-    Array.isArray(declined) && declined.length > 0 ? declined : null;
+  const excludedIds = [
+    ...(Array.isArray(order.declined_driver_ids) ? order.declined_driver_ids : []),
+    ...(Array.isArray(extraExcludedDriverIds) ? extraExcludedDriverIds : []),
+  ]
+    .map((id) => Number(id))
+    .filter(Number.isFinite);
+  const excluded = excludedIds.length > 0 ? [...new Set(excludedIds)] : null;
 
   const { rows } = await db.query(
     `SELECT dl.driver_id, dl.lat, dl.lng, u.full_name, u.phone, u.profile_photo_url,
@@ -86,6 +91,15 @@ async function findNearestDrivers(order) {
              'delivery_arrived'
            )
        )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM job_offers jo
+         INNER JOIN orders offer_order ON offer_order.id = jo.order_id
+         WHERE jo.driver_id = dl.driver_id
+           AND jo.status = 'pending'
+           AND jo.expires_at > NOW()
+           AND offer_order.status = 'matching'
+       )
        AND ($3::integer[] IS NULL OR dl.driver_id != ALL($3::integer[]))`,
     [LOCATION_MAX_AGE_MINUTES, MIN_DRIVER_RATING, excluded]
   );
@@ -109,7 +123,7 @@ async function findNearestDrivers(order) {
   }
 
   withDist.sort((a, b) => a.distanceKm - b.distanceKm);
-  return withDist.slice(0, MAX_NEARBY_DRIVERS * 3);
+  return withDist.slice(0, MAX_NEARBY_DRIVERS);
 }
 
 async function createJobOffers(orderId, driverIds, { matchedVia = null } = {}) {
@@ -145,7 +159,7 @@ async function shouldNotifyDriverForOffer(orderId, driverId, attemptIndex) {
   if (status === 'accepted') return false;
   if (status === 'declined') return true;
   if (status === 'pending') return false;
-  if (ai === 0 && status === 'expired') return true;
+  if (status === 'expired') return true;
   return false;
 }
 
@@ -187,22 +201,40 @@ async function notifyCustomerNoDriver(customerId, order) {
   );
 }
 
-async function runMatchingAttempt(orderId, attemptIndex = 0) {
+async function runMatchingAttempt(orderId, attemptIndex = 0, attemptedDriverIds = new Set()) {
   await expireJobOffers(orderId);
 
   let order = await getOrder(orderId);
   if (!order || order.status !== 'matching') return !!order?.driver_id;
   if (order.driver_id) return true;
 
-  const drivers = await findNearestDrivers(order);
-  console.log('[Matching] Nearest drivers (candidates):', drivers.length);
-  if (drivers.length === 0) return false;
+  while (true) {
+    order = await getOrder(orderId);
+    if (!order || order.status !== 'matching') return !!order?.driver_id;
+    if (order.driver_id) return true;
 
-  const d = drivers[0];
-  const toNotify = await filterDriversToNotify(orderId, [d.driver_id], attemptIndex);
-  await createJobOffers(orderId, [d.driver_id], { matchedVia: 'nearest' });
-  await notifyDriversNewOffer(toNotify, order);
-  return pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS);
+    const drivers = await findNearestDrivers(order, Array.from(attemptedDriverIds));
+    console.log('[Matching] Nearest drivers (candidates):', drivers.length);
+    if (drivers.length === 0) return false;
+
+    const candidate = drivers[0];
+    const toNotify = await filterDriversToNotify(orderId, [candidate.driver_id], attemptIndex);
+    if (toNotify.length === 0) {
+      attemptedDriverIds.add(Number(candidate.driver_id));
+      console.log('[Matching] Candidate already has an active offer:', candidate.driver_id);
+      continue;
+    }
+
+    await createJobOffers(orderId, [candidate.driver_id], { matchedVia: 'nearest' });
+    await notifyDriversNewOffer(toNotify, order);
+
+    const matched = await pollUntilMatchedOrTimeout(orderId, OFFER_TIMEOUT_MS);
+    if (matched) return true;
+
+    attemptedDriverIds.add(Number(candidate.driver_id));
+    await expireJobOffers(orderId);
+    console.log('[Matching] Offer timed out, cascading to next nearest driver');
+  }
 }
 
 async function tryStep4(orderId) {
@@ -217,6 +249,7 @@ async function tryStep4(orderId) {
 }
 
 async function runMatchingWithRetry(orderId) {
+  const attemptedDriverIds = new Set();
   for (let attempt = 1; attempt <= MAX_MATCHING_ATTEMPTS; attempt++) {
     let order = await getOrder(orderId);
     if (!order || order.status !== 'matching') return;
@@ -224,7 +257,7 @@ async function runMatchingWithRetry(orderId) {
 
     console.log(`[Matching] Attempt ${attempt} of ${MAX_MATCHING_ATTEMPTS} for order ${orderId}`);
 
-    const matched = await runMatchingAttempt(orderId, attempt - 1);
+    const matched = await runMatchingAttempt(orderId, attempt - 1, attemptedDriverIds);
     if (matched) return;
 
     order = await getOrder(orderId);
@@ -241,7 +274,22 @@ async function runMatchingWithRetry(orderId) {
 
 function runMatching(orderId) {
   console.log('[Matching] Starting for order:', orderId);
-  runMatchingWithRetry(orderId).catch((err) => console.error('[Matching] runMatchingWithRetry:', err));
+  const key = Number(orderId);
+  if (activeMatchingRuns.has(key)) {
+    return activeMatchingRuns.get(key);
+  }
+
+  const runPromise = runMatchingWithRetry(orderId)
+    .catch((err) => {
+      console.error('[Matching] runMatchingWithRetry:', err);
+      throw err;
+    })
+    .finally(() => {
+      activeMatchingRuns.delete(key);
+    });
+
+  activeMatchingRuns.set(key, runPromise);
+  return runPromise;
 }
 
 async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
@@ -333,8 +381,12 @@ async function sendJobOfferToDriver(order, driver) {
   }
 
   const toNotify = await filterDriversToNotify(order.id, [driverId], 0);
+  if (toNotify.length === 0) {
+    return false;
+  }
   await createJobOffers(order.id, [driverId], { matchedVia: 'nearest' });
   await notifyDriversNewOffer(toNotify, order);
+  return true;
 }
 
 module.exports = {

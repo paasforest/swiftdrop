@@ -86,7 +86,7 @@ export async function getJson(path, { token, quiet, _retryAfterRefresh } = {}) {
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: GET ${url}`;
       }
-      throw new Error(message);
+      throw createHttpError(message, { code: json?.code, status: res.status });
     }
     return json ?? {};
   } catch (err) {
@@ -122,7 +122,7 @@ export async function patchJson(path, body, { token, quiet, _retryAfterRefresh }
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: PATCH ${url}`;
       }
-      throw new Error(message);
+      throw createHttpError(message, { code: json?.code, status: res.status });
     }
     return json ?? {};
   } catch (err) {
@@ -157,7 +157,7 @@ export async function deleteJson(path, { token, quiet, _retryAfterRefresh } = {}
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: DELETE ${url}`;
       }
-      throw new Error(message);
+      throw createHttpError(message, { code: json?.code, status: res.status });
     }
     return json ?? {};
   } catch (err) {
@@ -166,8 +166,8 @@ export async function deleteJson(path, { token, quiet, _retryAfterRefresh } = {}
   }
 }
 
-export async function postJson(path, body, { token, quiet, _retryAfterRefresh, skipAuthRetry } = {}) {
-  const authToken = token ?? getAuth()?.token;
+export async function postJson(path, body, { token, quiet, _retryAfterRefresh, skipAuthRetry, omitAuthToken } = {}) {
+  const authToken = omitAuthToken ? null : token ?? getAuth()?.token;
   const url = `${API_BASE_URL}${path}`;
   console.log('[API] POST', url);
 
@@ -200,7 +200,13 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
     ) {
       const newTok = await refreshAccessToken();
       if (newTok) {
-        return postJson(path, body, { token: newTok, quiet, _retryAfterRefresh: true, skipAuthRetry });
+        return postJson(path, body, {
+          token: newTok,
+          quiet,
+          _retryAfterRefresh: true,
+          skipAuthRetry,
+          omitAuthToken,
+        });
       }
     }
 

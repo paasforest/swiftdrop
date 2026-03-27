@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { launchCameraImageOptions } from '../../utils/cameraPickerOptions';
 import polyline from '@mapbox/polyline';
 import { getAuth } from '../../authStore';
-import { getJson, postJson } from '../../apiClient';
+import { getJson, patchJson, postJson } from '../../apiClient';
 import { API_BASE_URL } from '../../apiConfig';
 import DriverLocationService from './DriverLocationService';
 
@@ -58,6 +58,7 @@ const ActiveDelivery = ({ navigation, route }) => {
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [otpError, setOtpError] = useState(null);
   const [focusedOtpIndex, setFocusedOtpIndex] = useState(null);
+  const [statusActionBusy, setStatusActionBusy] = useState(false);
 
   // Photo state - separate for pickup and delivery
   const [pickupPhoto, setPickupPhoto] = useState(null);
@@ -75,14 +76,20 @@ const ActiveDelivery = ({ navigation, route }) => {
   const snapPoints = ['25%', '50%', '85%'];
 
   const pollIntervalRef = useRef(null);
+  const pollInFlightRef = useRef(false);
+  const routeFetchInFlightRef = useRef(false);
+  const lastRouteFetchAtRef = useRef(0);
+  const lastRoutePhaseRef = useRef(null);
 
   // Poll order status
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
+      if (pollInFlightRef.current) return;
       try {
         const auth = getAuth();
         if (!auth?.token) return;
+        pollInFlightRef.current = true;
         const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
         if (!cancelled) {
           setOrder(data);
@@ -91,6 +98,8 @@ const ActiveDelivery = ({ navigation, route }) => {
       } catch (e) {
         console.error('[ActiveDelivery] Poll error:', e);
         if (!cancelled) setLoading(false);
+      } finally {
+        pollInFlightRef.current = false;
       }
     };
 
@@ -172,6 +181,7 @@ const ActiveDelivery = ({ navigation, route }) => {
     if (!driverCoords) return;
 
     const fetchRoute = async () => {
+      if (routeFetchInFlightRef.current) return;
       try {
         let origin, destination;
 
@@ -186,6 +196,15 @@ const ActiveDelivery = ({ navigation, route }) => {
           setEta(null);
           return;
         }
+
+        const now = Date.now();
+        const phaseChanged = lastRoutePhaseRef.current !== phase;
+        if (!phaseChanged && now - lastRouteFetchAtRef.current < 15000) {
+          return;
+        }
+        routeFetchInFlightRef.current = true;
+        lastRouteFetchAtRef.current = now;
+        lastRoutePhaseRef.current = phase;
 
         if (!GOOGLE_MAPS_API_KEY) {
           console.warn('[ActiveDelivery] No Google Maps API key configured');
@@ -209,6 +228,8 @@ const ActiveDelivery = ({ navigation, route }) => {
         }
       } catch (e) {
         console.error('[ActiveDelivery] Route fetch error:', e);
+      } finally {
+        routeFetchInFlightRef.current = false;
       }
     };
 
@@ -277,75 +298,50 @@ const ActiveDelivery = ({ navigation, route }) => {
   useEffect(() => {
     if (phase === 'COMPLETE') {
       const timer = setTimeout(() => {
-        // Check if driver is dedicated type - stay online
-        const driverType = route.params?.driver_type;
         navigation.reset({
           index: 0,
           routes: [
             {
               name: 'DriverHome',
-              params: driverType === 'dedicated' ? { stayOnline: true } : undefined,
             },
           ],
         });
       }, 4000);
       return () => clearTimeout(timer);
     }
-  }, [phase, navigation, route.params]);
+  }, [phase, navigation]);
 
   const handleLocationUpdate = useCallback((coords) => {
     setDriverCoords(coords);
   }, []);
 
   const handleArrivedAtPickup = async () => {
+    if (statusActionBusy) return;
+    setStatusActionBusy(true);
     try {
       const auth = getAuth();
       if (!auth?.token) throw new Error('Not signed in');
-      
-      const url = `${API_BASE_URL}/api/orders/${orderId}/status`;
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`,
-        },
-        body: JSON.stringify({ status: 'pickup_arrived' }),
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update status');
-      }
-      
+      await patchJson(`/api/orders/${orderId}/status`, { status: 'pickup_arrived' }, { token: auth.token });
       setPhase('PICKUP_ARRIVED');
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to update status');
+    } finally {
+      setStatusActionBusy(false);
     }
   };
 
   const handleArrivedAtDelivery = async () => {
+    if (statusActionBusy) return;
+    setStatusActionBusy(true);
     try {
       const auth = getAuth();
       if (!auth?.token) throw new Error('Not signed in');
-      
-      const url = `${API_BASE_URL}/api/orders/${orderId}/status`;
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`,
-        },
-        body: JSON.stringify({ status: 'delivery_arrived' }),
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update status');
-      }
-      
+      await patchJson(`/api/orders/${orderId}/status`, { status: 'delivery_arrived' }, { token: auth.token });
       setPhase('DELIVERY_ARRIVED');
     } catch (e) {
       Alert.alert('Error', e.message || 'Failed to update status');
+    } finally {
+      setStatusActionBusy(false);
     }
   };
 
@@ -609,8 +605,16 @@ const ActiveDelivery = ({ navigation, route }) => {
           </View>
           <Text style={styles.address}>{pickup_address}</Text>
           {eta && <View style={styles.etaChip}><Text style={styles.etaText}>⏱ ~{eta} min</Text></View>}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleArrivedAtPickup}>
-            <Text style={styles.primaryButtonText}>I've arrived at pickup</Text>
+          <TouchableOpacity
+            style={[styles.primaryButton, statusActionBusy && styles.buttonDisabled]}
+            onPress={handleArrivedAtPickup}
+            disabled={statusActionBusy}
+          >
+            {statusActionBusy ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>I've arrived at pickup</Text>
+            )}
           </TouchableOpacity>
         </View>
       );
@@ -706,8 +710,16 @@ const ActiveDelivery = ({ navigation, route }) => {
           </View>
           <Text style={styles.address}>{dropoff_address}</Text>
           {eta && <View style={styles.etaChip}><Text style={styles.etaText}>⏱ ~{eta} min</Text></View>}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleArrivedAtDelivery}>
-            <Text style={styles.primaryButtonText}>I've arrived at delivery</Text>
+          <TouchableOpacity
+            style={[styles.primaryButton, statusActionBusy && styles.buttonDisabled]}
+            onPress={handleArrivedAtDelivery}
+            disabled={statusActionBusy}
+          >
+            {statusActionBusy ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>I've arrived at delivery</Text>
+            )}
           </TouchableOpacity>
         </View>
       );

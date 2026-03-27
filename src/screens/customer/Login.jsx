@@ -18,6 +18,7 @@ import { resetToRoleHome } from '../../navigationHelpers';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
 import { AppText, AppButton, AppInput } from '../../components/ui';
 import ParcelLogoIcon from '../../components/auth/ParcelLogoIcon';
+import { normalizePhoneForApi } from '../../utils/saPhoneNormalize';
 
 const { width, height } = Dimensions.get('window');
 
@@ -25,16 +26,6 @@ function cleanLoginInput(value) {
   return String(value ?? '')
     .replace(/[\u200B-\u200D\uFEFF\u2060]/g, '')
     .trim();
-}
-
-function normalizePhoneForApi(phoneInput) {
-  let v = String(phoneInput ?? '').trim();
-  v = v.replace(/\s+/g, '');
-  if (v.startsWith('+')) v = v.slice(1);
-  if (v.startsWith('0')) v = `27${v.slice(1)}`;
-  if (v.startsWith('27')) return `+${v}`;
-  if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
-  return '';
 }
 
 function passwordStrengthLabel(pwd) {
@@ -88,7 +79,7 @@ const Login = ({ navigation }) => {
       const data = await postJson('/api/auth/login', {
         phone,
         password,
-      });
+      }, { skipAuthRetry: true, omitAuthToken: true });
 
       setAuth({
         token: data.token,
@@ -98,7 +89,13 @@ const Login = ({ navigation }) => {
 
       resetToRoleHome(navigation, data.user);
     } catch (err) {
-      setErrorMessage(err.message || 'Login failed.');
+      if (err.code === 'PHONE_NOT_VERIFIED') {
+        setErrorMessage(
+          'Verify your phone with the SMS code from registration, then sign in again.'
+        );
+      } else {
+        setErrorMessage(err.message || 'Login failed.');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -112,7 +109,7 @@ const Login = ({ navigation }) => {
     }
     setForgotBusy(true);
     try {
-      await postJson('/api/auth/forgot-password', { phone });
+      await postJson('/api/auth/forgot-password', { phone }, { skipAuthRetry: true, omitAuthToken: true });
       setForgotModalVisible(false);
       setForgotPhone('');
       setErrorMessage(null);
@@ -132,11 +129,11 @@ const Login = ({ navigation }) => {
         setErrorMessage('Please fill in all required fields.');
         return;
       }
-      if (registerPassword.length < 8) {
+      if (registerPassword.trim().length < 8) {
         setErrorMessage('Password must be at least 8 characters.');
         return;
       }
-      if (registerPassword !== confirmPassword) {
+      if (registerPassword.trim() !== confirmPassword.trim()) {
         setErrorMessage('Passwords do not match.');
         return;
       }
@@ -150,13 +147,13 @@ const Login = ({ navigation }) => {
       const body = {
         full_name: registerName,
         phone,
-        password: registerPassword,
+        password: registerPassword.trim(),
       };
       if (registerEmail.trim()) {
         body.email = registerEmail.trim();
       }
 
-      const data = await postJson('/api/auth/register-customer', body);
+      const data = await postJson('/api/auth/register-customer', body, { skipAuthRetry: true, omitAuthToken: true });
 
       if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
         setAuth({

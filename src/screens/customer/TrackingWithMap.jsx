@@ -143,7 +143,7 @@ const TrackingWithMap = ({ navigation, route }) => {
           ) {
             deliveredNavigatedRef.current = true;
             setStopPolling(true);
-            navigation.navigate('DeliveryConfirmed', {
+            navigation.replace('DeliveryConfirmed', {
               orderId: data.id,
               driverName: data.driver_name,
               driverRating: data.driver_rating,
@@ -238,7 +238,7 @@ const TrackingWithMap = ({ navigation, route }) => {
         if (becameDeliveredOrCompleted && !deliveredNavigatedRef.current) {
           deliveredNavigatedRef.current = true;
           setStopPolling(true);
-          navigation.navigate('DeliveryConfirmed', {
+          navigation.replace('DeliveryConfirmed', {
             orderId: data.id,
             driverName: data.driver_name,
             driverRating: data.driver_rating,

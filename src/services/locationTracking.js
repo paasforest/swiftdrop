@@ -1,9 +1,13 @@
 import * as Location from 'expo-location';
 import { ref, set, onValue, off } from 'firebase/database';
 import { database } from './firebaseConfig';
+import { patchJson } from '../apiClient';
+import { getAuth } from '../authStore';
 
 let locationSubscription = null;
 let locationUpdateCallback = null;
+let lastLocationBroadcastAt = 0;
+let lastBackendSyncAt = 0;
 
 /**
  * Start tracking driver location and update Firebase in real-time
@@ -13,6 +17,8 @@ let locationUpdateCallback = null;
  */
 export async function startDriverLocationTracking(driverId, orderId, onLocationUpdate = null) {
   locationUpdateCallback = onLocationUpdate;
+  lastLocationBroadcastAt = 0;
+  lastBackendSyncAt = 0;
   try {
     // Request location permissions
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -23,16 +29,21 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
     // Stop any existing tracking
     stopDriverLocationTracking();
 
-    // Start watching position with high accuracy
+    // Keep tracking light enough for smooth in-app driving screens.
     locationSubscription = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000, // Update every 5 seconds
-        distanceInterval: 10, // Or when moved 10 meters
+        accuracy: Location.Accuracy.Balanced,
+        timeInterval: 8000,
+        distanceInterval: 25,
       },
       (location) => {
         const { latitude, longitude, heading, speed } = location.coords;
-        
+        const now = Date.now();
+        if (now - lastLocationBroadcastAt < 7000) {
+          return;
+        }
+        lastLocationBroadcastAt = now;
+
         // Call the optional callback with coordinates
         if (locationUpdateCallback) {
           locationUpdateCallback({ latitude, longitude });
@@ -45,17 +56,27 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
           longitude,
           heading: heading || 0,
           speed: speed || 0,
-          timestamp: Date.now(),
+          timestamp: now,
           driverId,
         }).catch((error) => {
           console.error('[Location] Firebase update failed:', error);
         });
 
-        console.log('[Location] Driver position updated:', { latitude, longitude });
+        // Keep backend location truth reasonably fresh during active trips too.
+        const auth = getAuth();
+        if (auth?.token && now - lastBackendSyncAt >= 12000) {
+          lastBackendSyncAt = now;
+          patchJson(
+            '/api/drivers/location',
+            { lat: latitude, lng: longitude, is_online: true },
+            { token: auth.token, quiet: true }
+          ).catch((error) => {
+            console.error('[Location] Backend location sync failed:', error?.message || error);
+          });
+        }
       }
     );
 
-    console.log('[Location] Tracking started for driver:', driverId);
     return true;
   } catch (error) {
     console.error('[Location] Failed to start tracking:', error);
@@ -70,8 +91,10 @@ export function stopDriverLocationTracking() {
   if (locationSubscription) {
     locationSubscription.remove();
     locationSubscription = null;
-    console.log('[Location] Tracking stopped');
   }
+  lastLocationBroadcastAt = 0;
+  lastBackendSyncAt = 0;
+  locationUpdateCallback = null;
 }
 
 /**

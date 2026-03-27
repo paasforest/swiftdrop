@@ -32,6 +32,22 @@ export default function LoadingScreen() {
       const stored = await loadAuth();
 
       if (stored?.token) {
+        // Driver testing is frequently done on shared devices/builds, so require
+        // an explicit sign-in instead of silently restoring the last driver account.
+        if (stored?.user?.user_type === 'driver') {
+          await clearAuth();
+          await finish();
+          if (cancelled || doneRef.current) return;
+          doneRef.current = true;
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'Welcome' }],
+            })
+          );
+          return;
+        }
+
         setAuth(stored);
 
         try {

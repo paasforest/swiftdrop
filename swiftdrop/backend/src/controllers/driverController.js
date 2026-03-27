@@ -222,6 +222,24 @@ async function patchLocation(req, res) {
       [latN, lngN, driverId, online]
     );
 
+    await db.query(
+      `UPDATE orders
+       SET driver_current_lat = $1,
+           driver_current_lng = $2,
+           driver_last_seen_at = NOW(),
+           updated_at = NOW()
+       WHERE driver_id = $3
+         AND status IN (
+           'accepted',
+           'pickup_en_route',
+           'pickup_arrived',
+           'collected',
+           'delivery_en_route',
+           'delivery_arrived'
+         )`,
+      [latN, lngN, driverId]
+    );
+
     const rt = getRealtimeDb();
     if (rt) {
       try {

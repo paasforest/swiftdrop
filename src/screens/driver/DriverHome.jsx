@@ -8,13 +8,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
-import { useFocusEffect, useRoute } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson, patchJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
@@ -43,20 +42,23 @@ function tierLabel(tier) {
 }
 
 const STATUS_ERR = 'Could not update status. Check connection.';
+const LOCATION_PING_INTERVAL_MS = 15000;
+const OFFER_POLL_INTERVAL_MS = 5000;
 
 const DriverHome = ({ navigation }) => {
-  const route = useRoute();
   const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [statusNotice, setStatusNotice] = useState(null);
   const [routeMatchBanner, setRouteMatchBanner] = useState(null);
   const [todayStats, setTodayStats] = useState(null);
 
   const locationIntervalRef = useRef(null);
   const lastJobOfferNavigatedOrderIdRef = useRef(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const locationSyncInFlightRef = useRef(false);
+  const offerPollInFlightRef = useRef(false);
 
   const stopLocationUpdates = useCallback(() => {
     if (locationIntervalRef.current != null) {
@@ -65,32 +67,69 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  const forceOffline = useCallback(
+    async (reason) => {
+      const auth = getAuth();
+      stopLocationUpdates();
+      setIsOnline(false);
+      if (reason) setStatusNotice(reason);
+      if (!auth?.token) return;
+      try {
+        await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token, quiet: true });
+      } catch {
+        /* best-effort only */
+      }
+    },
+    [stopLocationUpdates]
+  );
+
   const sendLocationOnce = useCallback(async () => {
+    if (locationSyncInFlightRef.current) return false;
     const auth = getAuth();
     if (!auth?.token) return;
-    const perm = await Location.getForegroundPermissionsAsync();
-    if (perm.status !== 'granted') return;
-    const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-    await patchJson(
-      '/api/drivers/location',
-      { lat: pos.coords.latitude, lng: pos.coords.longitude },
-      { token: auth.token }
-    );
+    locationSyncInFlightRef.current = true;
+    try {
+      const perm = await Location.getForegroundPermissionsAsync();
+      if (perm.status !== 'granted') return false;
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      await patchJson(
+        '/api/drivers/location',
+        { lat: pos.coords.latitude, lng: pos.coords.longitude, is_online: true },
+        { token: auth.token }
+      );
+      return true;
+    } finally {
+      locationSyncInFlightRef.current = false;
+    }
   }, []);
 
-  const startLocationUpdates = useCallback(async () => {
+  const startLocationUpdates = useCallback(async ({ skipImmediate = false } = {}) => {
     stopLocationUpdates();
     try {
-      await sendLocationOnce();
+      if (!skipImmediate) {
+        const ok = await sendLocationOnce();
+        if (!ok) {
+          await forceOffline('Location permission is required to stay online.');
+          return;
+        }
+      }
     } catch {
-      /* network errors — interval will retry */
+      setStatusNotice('Live location sync is delayed. We will keep retrying.');
     }
     locationIntervalRef.current = setInterval(() => {
-      sendLocationOnce().catch(() => {});
-    }, 10000);
-  }, [sendLocationOnce, stopLocationUpdates]);
+      sendLocationOnce()
+        .then((ok) => {
+          if (ok === false) {
+            void forceOffline('Location permission is required to stay online.');
+          }
+        })
+        .catch(() => {
+          setStatusNotice('Live location sync is delayed. We will keep retrying.');
+        });
+    }, LOCATION_PING_INTERVAL_MS);
+  }, [forceOffline, sendLocationOnce, stopLocationUpdates]);
 
   const syncOnlineStatusFromServer = useCallback(async () => {
     const auth = getAuth();
@@ -98,6 +137,7 @@ const DriverHome = ({ navigation }) => {
     try {
       const data = await getJson('/api/drivers/status', { token: auth.token });
       const online = Boolean(data.is_online);
+      setStatusNotice(null);
       setIsOnline(online);
       if (online) {
         const perm = await Location.getForegroundPermissionsAsync();
@@ -105,13 +145,7 @@ const DriverHome = ({ navigation }) => {
           await startLocationUpdates();
           return true;
         } else {
-          try {
-            await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
-          } catch {
-            /* best-effort */
-          }
-          setIsOnline(false);
-          stopLocationUpdates();
+          await forceOffline('Location permission is required to stay online.');
           return false;
         }
       } else {
@@ -119,7 +153,10 @@ const DriverHome = ({ navigation }) => {
         return false;
       }
     } catch {
-      /* keep local toggle; dashboard error handles API down */
+      if (!locationIntervalRef.current) {
+        setIsOnline(false);
+      }
+      setStatusNotice('Could not verify live status from the server. Pull to refresh if this keeps happening.');
       return false;
     }
   }, [startLocationUpdates, stopLocationUpdates]);
@@ -163,6 +200,15 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!isOnline) {
+      setRouteMatchBanner(null);
+      lastJobOfferNavigatedOrderIdRef.current = null;
+      return;
+    }
+    void loadRouteMatchBanner();
+  }, [isOnline, loadRouteMatchBanner]);
+
   const fetchTodayStats = useCallback(async () => {
     try {
       const auth = getAuth();
@@ -174,70 +220,9 @@ const DriverHome = ({ navigation }) => {
     }
   }, []);
 
-  const stayOnline = route.params?.stayOnline === true;
-
-  /** Service area: Western Cape & Gauteng only (align with backend provinceService). */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (cancelled) return;
-        const { latitude, longitude } = loc.coords;
-        // Keep aligned with swiftdrop/backend provinceService SERVICE_AREAS
-        const inWC =
-          latitude >= -34.95 && latitude <= -31.5 && longitude >= 17.5 && longitude <= 21.5;
-        const inGP =
-          latitude >= -26.75 && latitude <= -25.2 && longitude >= 27.25 && longitude <= 29.05;
-        if (!inWC && !inGP) {
-          navigation.replace('UnsupportedArea', { latitude, longitude });
-        }
-      } catch (err) {
-        console.log('[Province] Could not detect location:', err?.message || err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [navigation]);
-
-  // After a dedicated delivery, stack reset passes stayOnline — go online locally for polling.
-  // Depend only on the flag, not the whole params object, so we do not fight handleGoOffline
-  // or re-force "online" after setParams({ stayOnline: false }) in the same tick as patch.
-  useEffect(() => {
-    if (route.params?.stayOnline !== true) return;
-    setIsOnline(true);
-  }, [route.params?.stayOnline]);
-
-  // Pulsing animation for stay-online waiting UI
-  useEffect(() => {
-    if (!stayOnline) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.4,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1.0,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [stayOnline, pulseAnim]);
-
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
-      loadRouteMatchBanner();
       fetchTodayStats();
       const auth = getAuth();
       if (auth?.token) {
@@ -257,10 +242,10 @@ const DriverHome = ({ navigation }) => {
         }
       })();
 
-      return () => {
-        stopLocationUpdates();
-      };
-    }, [loadDashboard, loadRouteMatchBanner, syncOnlineStatusFromServer, fetchTodayStats, startLocationUpdates, stopLocationUpdates])
+      // Keep location updates running while the driver navigates through the driver flow.
+      // We stop them only when going offline or when the screen unmounts completely.
+      return undefined;
+    }, [loadDashboard, syncOnlineStatusFromServer, fetchTodayStats, startLocationUpdates])
   );
 
   useEffect(() => {
@@ -274,6 +259,7 @@ const DriverHome = ({ navigation }) => {
     if (!isOnline) return undefined;
 
     const poll = async () => {
+      if (offerPollInFlightRef.current) return;
       try {
         const state = navigation.getState();
         const current = state?.routes?.[state.index]?.name;
@@ -292,6 +278,7 @@ const DriverHome = ({ navigation }) => {
 
         const auth = getAuth();
         if (!auth?.token) return;
+        offerPollInFlightRef.current = true;
         const data = await getJson('/api/orders/pending-offer', { token: auth.token });
         if (data?.offer) {
           const oid = data.offer.orderId;
@@ -304,11 +291,13 @@ const DriverHome = ({ navigation }) => {
         }
       } catch {
         /* keep polling silently */
+      } finally {
+        offerPollInFlightRef.current = false;
       }
     };
 
     poll();
-    const intervalId = setInterval(poll, 5000);
+    const intervalId = setInterval(poll, OFFER_POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
   }, [isOnline, navigation]);
 
@@ -321,26 +310,17 @@ const DriverHome = ({ navigation }) => {
   const todayDeliveries = dashboard?.today?.deliveries ?? 0;
   const totalDone = dashboard?.total_deliveries_completed ?? 0;
   const recent = Array.isArray(dashboard?.recent_orders) ? dashboard.recent_orders : [];
-
-  const clearStayOnlineParam = useCallback(() => {
-    try {
-      navigation.setParams({ stayOnline: false });
-    } catch {
-      /* ignore */
-    }
-  }, [navigation]);
+  const statusPillLabel = statusBusy
+    ? 'Syncing live status'
+    : isOnline
+      ? 'Online with live location'
+      : 'Offline';
 
   const handleGoOffline = async () => {
     if (statusBusy) return;
-    const auth = getAuth();
-    if (!auth?.token) return;
-
-    clearStayOnlineParam();
     setStatusBusy(true);
     try {
-      await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
-      stopLocationUpdates();
-      setIsOnline(false);
+      await forceOffline(null);
     } catch {
       Alert.alert('', STATUS_ERR);
     } finally {
@@ -359,7 +339,7 @@ const DriverHome = ({ navigation }) => {
     if (isOnline) {
       setStatusBusy(true);
       try {
-        clearStayOnlineParam();
+        setStatusNotice(null);
         await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
         stopLocationUpdates();
         setIsOnline(false);
@@ -382,115 +362,41 @@ const DriverHome = ({ navigation }) => {
 
     setStatusBusy(true);
     try {
-      await patchJson('/api/drivers/status', { is_online: true }, { token: auth.token });
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const inWC =
+        pos.coords.latitude >= -34.95 &&
+        pos.coords.latitude <= -31.5 &&
+        pos.coords.longitude >= 17.5 &&
+        pos.coords.longitude <= 21.5;
+      const inGP =
+        pos.coords.latitude >= -26.75 &&
+        pos.coords.latitude <= -25.2 &&
+        pos.coords.longitude >= 27.25 &&
+        pos.coords.longitude <= 29.05;
+      if (!inWC && !inGP) {
+        Alert.alert('Outside service area', 'Driver matching is currently available only in Western Cape and Gauteng.');
+        return;
+      }
+      await patchJson(
+        '/api/drivers/location',
+        {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          is_online: true,
+        },
+        { token: auth.token }
+      );
       setIsOnline(true);
-      await startLocationUpdates();
-    } catch {
-      Alert.alert('', STATUS_ERR);
+      setStatusNotice(null);
+      await startLocationUpdates({ skipImmediate: true });
+    } catch (e) {
+      Alert.alert('', e?.message || STATUS_ERR);
     } finally {
       setStatusBusy(false);
     }
   };
-
-  if (stayOnline) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: '#FFFFFF',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingHorizontal: 24,
-          }}
-        >
-          <View style={{ alignItems: 'center', marginBottom: 32 }}>
-            <Animated.View
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                backgroundColor: colors.successLight,
-                alignItems: 'center',
-                justifyContent: 'center',
-                transform: [{ scale: pulseAnim }],
-              }}
-            >
-              <View
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: colors.success,
-                }}
-              />
-            </Animated.View>
-          </View>
-
-          <Text style={{ fontSize: 22, fontWeight: '700', color: '#000' }}>Online</Text>
-          <Text
-            style={{
-              fontSize: 15,
-              color: '#9E9E9E',
-              marginTop: 8,
-              textAlign: 'center',
-              paddingHorizontal: 40,
-            }}
-          >
-            Waiting for your next delivery...
-          </Text>
-
-          <View
-            style={{
-              backgroundColor: '#F5F5F5',
-              borderRadius: 16,
-              padding: 20,
-              marginTop: 32,
-              width: '80%',
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-            }}
-          >
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>TODAY</Text>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
-                R{(todayStats?.total || 0).toFixed(2)}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ fontSize: 12, color: '#9E9E9E' }}>DELIVERIES</Text>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: '#000', marginTop: 4 }}>
-                {todayStats?.count || 0}
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            onPress={() => {
-              navigation.setParams({ stayOnline: false });
-              handleGoOffline();
-            }}
-            disabled={statusBusy}
-            style={{
-              position: 'absolute',
-              bottom: 48,
-              paddingHorizontal: 32,
-              paddingVertical: 14,
-              borderRadius: 30,
-              borderWidth: 1.5,
-              borderColor: '#E0E0E0',
-            }}
-          >
-            {statusBusy ? (
-              <ActivityIndicator color="#757575" />
-            ) : (
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#757575' }}>Go offline</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -505,7 +411,10 @@ const DriverHome = ({ navigation }) => {
           </View>
           <View style={styles.headerRight}>
             <TouchableOpacity
-              onPress={() => resetToLogin(navigation)}
+              onPress={async () => {
+                await forceOffline(null);
+                resetToLogin(navigation);
+              }}
               style={styles.logoutHeaderBtn}
               activeOpacity={0.85}
               accessibilityRole="button"
@@ -521,44 +430,6 @@ const DriverHome = ({ navigation }) => {
       </GradientHeader>
 
       <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {stayOnline ? (
-          <View style={styles.stayOnlineBanner}>
-            <View style={styles.stayOnlineBannerInner}>
-              <Animated.View style={[styles.stayOnlinePulseWrap, { transform: [{ scale: pulseAnim }] }]}>
-                <View style={styles.stayOnlinePulseDot} />
-              </Animated.View>
-              <View style={styles.stayOnlineBannerTextWrap}>
-                <Text style={styles.stayOnlineBannerTitle}>You're still online</Text>
-                <Text style={styles.stayOnlineBannerSub}>
-                  Waiting for your next delivery. Scroll for stats and jobs, or go offline anytime.
-                </Text>
-              </View>
-            </View>
-            <View style={styles.stayOnlineMiniStats}>
-              <View>
-                <Text style={styles.stayOnlineStatLabel}>TODAY</Text>
-                <Text style={styles.stayOnlineStatValue}>R{(todayStats?.total || 0).toFixed(2)}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.stayOnlineStatLabel}>DELIVERIES</Text>
-                <Text style={styles.stayOnlineStatValue}>{todayStats?.count || 0}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.stayOfflineBtn}
-              onPress={handleGoOffline}
-              disabled={statusBusy}
-              activeOpacity={0.85}
-            >
-              {statusBusy ? (
-                <ActivityIndicator color="#555" />
-              ) : (
-                <Text style={styles.stayOfflineBtnText}>Go offline</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         <View style={styles.toggleSection}>
           <TouchableOpacity
             activeOpacity={0.88}
@@ -593,6 +464,13 @@ const DriverHome = ({ navigation }) => {
                 ? 'You are live — waiting for jobs'
                 : 'Go online to start earning'}
           </Text>
+          <View style={[styles.statusPill, isOnline ? styles.statusPillOnline : styles.statusPillOffline]}>
+            <View style={[styles.statusPillDot, isOnline ? styles.statusPillDotOnline : styles.statusPillDotOffline]} />
+            <Text style={[styles.statusPillText, isOnline ? styles.statusPillTextOnline : styles.statusPillTextOffline]}>
+              {statusPillLabel}
+            </Text>
+          </View>
+          {statusNotice ? <Text style={styles.statusNotice}>{statusNotice}</Text> : null}
         </View>
 
         <View style={styles.matchingInfoCard}>
@@ -738,87 +616,6 @@ const styles = StyleSheet.create({
     minHeight: height,
     paddingBottom: 72,
   },
-  stayOnlineBanner: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    ...shadows.card,
-  },
-  stayOnlineBannerInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stayOnlinePulseWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.successLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  stayOnlinePulseDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.success,
-  },
-  stayOnlineBannerTextWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  stayOnlineBannerTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  stayOnlineBannerSub: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  stayOnlineMiniStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(16, 185, 129, 0.25)',
-  },
-  stayOnlineStatLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  stayOnlineStatValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginTop: 2,
-  },
-  stayOfflineBtn: {
-    marginTop: spacing.md,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 12,
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    minWidth: 140,
-    alignItems: 'center',
-  },
-  stayOfflineBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -926,6 +723,54 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     lineHeight: 24,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  statusPillOnline: {
+    backgroundColor: 'rgba(16,185,129,0.12)',
+    borderColor: 'rgba(16,185,129,0.25)',
+  },
+  statusPillOffline: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+  },
+  statusPillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusPillDotOnline: {
+    backgroundColor: colors.success,
+  },
+  statusPillDotOffline: {
+    backgroundColor: colors.textLight,
+  },
+  statusPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  statusPillTextOnline: {
+    color: '#047857',
+  },
+  statusPillTextOffline: {
+    color: colors.textSecondary,
+  },
+  statusNotice: {
+    marginTop: spacing.sm,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.accent,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
   },
   matchingInfoCard: {
     marginHorizontal: spacing.md,

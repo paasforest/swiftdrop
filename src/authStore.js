@@ -6,9 +6,14 @@ export const AUTH_STORAGE_KEY = 'swiftdrop_auth_token';
 // In-memory auth for the current app session (hydrated from AsyncStorage on bootstrap).
 let auth = null;
 
+function shouldPersistAuth(nextAuth) {
+  if (!nextAuth?.token) return false;
+  return nextAuth?.user?.user_type !== 'driver';
+}
+
 export function setAuth(nextAuth) {
   auth = nextAuth;
-  if (nextAuth && nextAuth.token) {
+  if (shouldPersistAuth(nextAuth)) {
     const payload = JSON.stringify({
       token: nextAuth.token,
       user: nextAuth.user,
@@ -26,7 +31,7 @@ export function getAuth() {
 
 export function clearAuth() {
   auth = null;
-  AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
+  return AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
 }
 
 /**

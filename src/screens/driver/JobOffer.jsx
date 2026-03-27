@@ -78,6 +78,7 @@ const JobOffer = ({ navigation }) => {
   const [loadError, setLoadError] = useState(null);
   const [offer, setOffer] = useState(null);
   const [remainingSec, setRemainingSec] = useState(0);
+  const [progressRatio, setProgressRatio] = useState(1);
   const [accepting, setAccepting] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [offerExpiredMessage, setOfferExpiredMessage] = useState(null);
@@ -85,7 +86,7 @@ const JobOffer = ({ navigation }) => {
   const initialTotalSecRef = useRef(15);
   const expiredHandledRef = useRef(false);
   const offerRef = useRef(null);
-  const progressAnim = useRef(new Animated.Value(1)).current;
+  const offerSyncInFlightRef = useRef(false);
   const headerPulse = useRef(new Animated.Value(1)).current;
   const dangerPulse = useRef(new Animated.Value(1)).current;
 
@@ -135,7 +136,7 @@ const JobOffer = ({ navigation }) => {
         setOffer(null);
         offerRef.current = null;
         setRemainingSec(0);
-        progressAnim.setValue(0);
+        setProgressRatio(0);
         return;
       }
       offerRef.current = data.offer;
@@ -147,7 +148,7 @@ const JobOffer = ({ navigation }) => {
       );
       initialTotalSecRef.current = rem > 0 ? rem : 15;
       setRemainingSec(rem);
-      progressAnim.setValue(rem > 0 ? 1 : 0);
+      setProgressRatio(rem > 0 ? 1 : 0);
       expiredHandledRef.current = false;
       if (rem <= 0) {
         setTimeout(() => runExpireFlow(), 0);
@@ -157,7 +158,7 @@ const JobOffer = ({ navigation }) => {
     } finally {
       if (!cancelRef?.current) setLoading(false);
     }
-  }, [progressAnim, runExpireFlow]);
+  }, [runExpireFlow]);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,10 +170,10 @@ const JobOffer = ({ navigation }) => {
         setOffer(null);
         offerRef.current = null;
         setRemainingSec(0);
-        progressAnim.setValue(0);
+        setProgressRatio(0);
         setOfferExpiredMessage(null);
       };
-    }, [loadOffer, progressAnim])
+    }, [loadOffer])
   );
 
   // Keep the offer screen from getting stuck if the customer cancels
@@ -182,6 +183,8 @@ const JobOffer = ({ navigation }) => {
     if (!currentOfferId) return undefined;
 
     const interval = setInterval(async () => {
+      if (offerSyncInFlightRef.current) return;
+      offerSyncInFlightRef.current = true;
       try {
         const auth = getAuth();
         if (!auth?.token) return;
@@ -197,6 +200,8 @@ const JobOffer = ({ navigation }) => {
         }
       } catch (e) {
         // Network error — keep showing the offer, do not dismiss
+      } finally {
+        offerSyncInFlightRef.current = false;
       }
     }, 6000);
 
@@ -258,18 +263,14 @@ const JobOffer = ({ navigation }) => {
       setRemainingSec(rem);
       const total = initialTotalSecRef.current || 15;
       const ratio = total > 0 ? Math.min(1, Math.max(0, rem / total)) : 0;
-      Animated.timing(progressAnim, {
-        toValue: ratio,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
+      setProgressRatio(ratio);
       if (rem <= 0) {
         clearInterval(id);
         runExpireFlow();
       }
     }, 1000);
     return () => clearInterval(id);
-  }, [offer, loading, tickOfferExpiry, runExpireFlow, progressAnim]);
+  }, [offer, loading, tickOfferExpiry, runExpireFlow]);
 
   useEffect(() => {
     if (loading) return;
@@ -280,11 +281,6 @@ const JobOffer = ({ navigation }) => {
     }, 2000);
     return () => clearTimeout(t);
   }, [loading, offer, loadError, navigation]);
-
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
 
   const handleAccept = async () => {
     if (!offer?.orderId || accepting || declining) return;
@@ -395,6 +391,7 @@ const JobOffer = ({ navigation }) => {
             <Ionicons name="cube" size={44} color="#FFFFFF" />
           </View>
           <Text style={styles.headerTitle}>New delivery request</Text>
+          <Text style={styles.headerSubtitle}>Reserved for the nearest available driver</Text>
         </View>
 
         <View style={styles.sheet}>
@@ -467,7 +464,15 @@ const JobOffer = ({ navigation }) => {
               <Text style={[styles.timerSeconds, { color: ringColor }]}>{remainingSec}</Text>
             </Animated.View>
             <View style={styles.progressTrack}>
-              <Animated.View style={[styles.progressFill, { width: progressWidth, backgroundColor: ringColor }]} />
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${Math.round(progressRatio * 100)}%`,
+                    backgroundColor: ringColor,
+                  },
+                ]}
+              />
             </View>
 
             <TouchableOpacity
@@ -555,6 +560,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
     letterSpacing: -0.3,
+    zIndex: 2,
+  },
+  headerSubtitle: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.78)',
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
     zIndex: 2,
   },
   sheet: {

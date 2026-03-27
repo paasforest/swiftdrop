@@ -72,7 +72,7 @@ const OTPScreen = ({ navigation, route }) => {
       const data = await postJson('/api/auth/verify-phone', {
         phone,
         otp,
-      });
+      }, { skipAuthRetry: true, omitAuthToken: true });
 
       setAuth({
         token: data.token,

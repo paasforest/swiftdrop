@@ -19,11 +19,12 @@ export function resetToRoleHome(navigation, user) {
 }
 
 export function resetToLogin(navigation) {
-  clearAuth();
-  navigation.dispatch(
-    CommonActions.reset({
-      index: 0,
-      routes: [{ name: 'Welcome' }],
-    })
-  );
+  Promise.resolve(clearAuth()).finally(() => {
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      })
+    );
+  });
 }
