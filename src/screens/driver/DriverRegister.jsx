@@ -22,6 +22,7 @@ import { getAuth, setAuth } from '../../authStore';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 import { AppButton, AppInput } from '../../components/ui';
 import { TERMS_PRIVACY_URL } from '../../config/legal';
+import { normalizePhoneForApi } from '../../utils/saPhoneNormalize';
 
 function normalizeAssetType(type) {
   if (type && typeof type === 'string' && type.startsWith('image/')) return type;
@@ -33,16 +34,6 @@ function fileNameFromUri(uri, fallback) {
   const last = parts[parts.length - 1];
   if (last && last.includes('.')) return last;
   return fallback;
-}
-
-function normalizePhoneForApi(phoneInput) {
-  let v = String(phoneInput ?? '').trim();
-  v = v.replace(/\s+/g, '');
-  if (v.startsWith('+')) v = v.slice(1);
-  if (v.startsWith('0')) v = `27${v.slice(1)}`;
-  if (v.startsWith('27')) return `+${v}`;
-  if (/^[678]\d{8}$/.test(v)) return `+27${v}`;
-  return '';
 }
 
 function ProgressHeader({ step, title }) {
@@ -325,8 +316,8 @@ export default function DriverRegister({ navigation }) {
         full_name: fullName.trim(),
         email: email.trim(),
         phone: phoneNorm,
-        password,
-      });
+        password: password.trim(),
+      }, { skipAuthRetry: true, omitAuthToken: true });
 
       if (data.phoneVerificationRequired === false && data.token && data.refreshToken) {
         setAuth({
