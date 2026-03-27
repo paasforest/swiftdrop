@@ -9,6 +9,10 @@ function normalizeEmailForDb(email) {
   return String(email ?? '').trim().toLowerCase();
 }
 
+function normalizePasswordForAuth(password) {
+  return String(password ?? '').trim();
+}
+
 /** PostgreSQL unique_violation: tell user whether email or phone collided. */
 function duplicateRegistrationMessage(err) {
   const c = (err.constraint || '').toLowerCase();
@@ -35,10 +39,32 @@ function requirePhoneVerificationForAuth() {
   return true;
 }
 
+function allowDriverAutoApprovalForTesting() {
+  return !requirePhoneVerificationForAuth();
+}
+
 function sanitizeUser(user) {
   if (!user) return null;
   const { password_hash, ...rest } = user;
   return rest;
+}
+
+/** Find active user by phone: exact E.164 first, then digits-only (handles legacy formatting). */
+async function findActiveUserByPhone(phoneE164) {
+  if (!phoneE164) return null;
+  const digits = String(phoneE164).replace(/\D/g, '');
+  let res = await db.query(
+    `SELECT * FROM users WHERE is_active = true AND phone = $1`,
+    [phoneE164]
+  );
+  if (res.rows[0]) return res.rows[0];
+  res = await db.query(
+    `SELECT * FROM users
+     WHERE is_active = true
+       AND REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1`,
+    [digits]
+  );
+  return res.rows[0] || null;
 }
 
 async function registerCustomer(req, res) {
@@ -47,7 +73,8 @@ async function registerCustomer(req, res) {
     if (!full_name || !phone || !password) {
       return res.status(400).json({ error: 'full_name, phone and password are required' });
     }
-    if (password.length < 8) {
+    const passwordNorm = normalizePasswordForAuth(password);
+    if (passwordNorm.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
@@ -67,12 +94,13 @@ async function registerCustomer(req, res) {
     } else {
       emailNorm = `phone_${phoneNorm.replace(/\D/g, '')}@customer.swiftdrop.app`;
     }
-    const passwordHash = await bcrypt.hash(password, 10);
+    const autoVerify = !requirePhoneVerificationForAuth();
+    const passwordHash = await bcrypt.hash(passwordNorm, 10);
     const result = await db.query(
-      `INSERT INTO users (full_name, email, phone, password_hash, user_type)
-       VALUES ($1, $2, $3, $4, 'customer')
+      `INSERT INTO users (full_name, email, phone, password_hash, user_type, is_verified)
+       VALUES ($1, $2, $3, $4, 'customer', $5)
        RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-      [full_name, emailNorm, phoneNorm, passwordHash]
+      [full_name, emailNorm, phoneNorm, passwordHash, autoVerify]
     );
     const user = result.rows[0];
 
@@ -120,7 +148,8 @@ async function registerDriver(req, res) {
     if (!full_name || !email || !phone || !password) {
       return res.status(400).json({ error: 'full_name, email, phone and password are required' });
     }
-    if (password.length < 8) {
+    const passwordNorm = normalizePasswordForAuth(password);
+    if (passwordNorm.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
@@ -135,20 +164,22 @@ async function registerDriver(req, res) {
       });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const autoVerify = !requirePhoneVerificationForAuth();
+    const driverVerificationStatus = allowDriverAutoApprovalForTesting() ? 'approved' : 'pending';
+    const passwordHash = await bcrypt.hash(passwordNorm, 10);
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
       const userResult = await client.query(
-        `INSERT INTO users (full_name, email, phone, password_hash, user_type)
-         VALUES ($1, $2, $3, $4, 'driver')
+        `INSERT INTO users (full_name, email, phone, password_hash, user_type, is_verified)
+         VALUES ($1, $2, $3, $4, 'driver', $5)
          RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-        [full_name, emailNorm, phoneNorm, passwordHash]
+        [full_name, emailNorm, phoneNorm, passwordHash, autoVerify]
       );
       const user = userResult.rows[0];
       await client.query(
-        `INSERT INTO driver_profiles (user_id, verification_status) VALUES ($1, 'pending')`,
-        [user.id]
+        `INSERT INTO driver_profiles (user_id, verification_status) VALUES ($1, $2)`,
+        [user.id, driverVerificationStatus]
       );
       await client.query(
         `INSERT INTO driver_tiers (driver_id, tier_name, deliveries_completed) VALUES ($1, 'new', 0)`,
@@ -254,41 +285,45 @@ async function login(req, res) {
   try {
     const { email, phone, password } = req.body;
     const identifier = email || phone;
-    if (!identifier || !password) {
+    const passwordNorm = normalizePasswordForAuth(password);
+    if (!identifier || !passwordNorm) {
       return res.status(400).json({ error: 'email or phone, and password are required' });
     }
 
-    const verifiedSql = requirePhoneVerificationForAuth() ? 'AND is_verified = true' : '';
     const trimmedId = String(identifier).trim();
     const isEmailLogin = trimmedId.includes('@');
 
-    let userResult;
+    let user;
     if (isEmailLogin) {
       const emailNorm = normalizeEmailForDb(trimmedId);
-      userResult = await db.query(
+      const userResult = await db.query(
         `SELECT * FROM users
          WHERE LOWER(TRIM(email)) = $1
-           AND is_active = true
-           ${verifiedSql}`,
+           AND is_active = true`,
         [emailNorm]
       );
+      user = userResult.rows[0];
     } else {
-      const phoneNorm = normalizeSouthAfricaToE164(trimmedId);
-      const variants = [...new Set([trimmedId, phoneNorm].filter(Boolean))];
-      userResult = await db.query(
-        `SELECT * FROM users
-         WHERE phone = ANY($1::text[])
-           AND is_active = true
-           ${verifiedSql}`,
-        [variants]
-      );
+      const phoneE164 = normalizeSouthAfricaToE164(trimmedId);
+      if (!phoneE164) {
+        return res.status(400).json({
+          error: 'Invalid phone number. Use a South African mobile (e.g. 071… or 82…).',
+        });
+      }
+      user = await findActiveUserByPhone(phoneE164);
     }
-    const user = userResult.rows[0];
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      const msg = requirePhoneVerificationForAuth()
-        ? 'Invalid credentials or phone not verified'
-        : 'Invalid credentials';
-      return res.status(401).json({ error: msg });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    if (requirePhoneVerificationForAuth() && !user.is_verified) {
+      return res.status(401).json({
+        error:
+          'Please verify your phone with the SMS code sent when you registered, then sign in.',
+        code: 'PHONE_NOT_VERIFIED',
+      });
+    }
+    if (!(await bcrypt.compare(passwordNorm, user.password_hash))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     let extra = {};
@@ -297,7 +332,19 @@ async function login(req, res) {
         `SELECT verification_status FROM driver_profiles WHERE user_id = $1`,
         [user.id]
       );
-      const verificationStatus = profile.rows[0]?.verification_status || 'pending';
+      let verificationStatus = profile.rows[0]?.verification_status || 'pending';
+
+      // Testing mode: drivers should be usable immediately without admin review.
+      if (allowDriverAutoApprovalForTesting() && verificationStatus !== 'approved') {
+        await db.query(
+          `UPDATE driver_profiles
+           SET verification_status = 'approved', updated_at = NOW()
+           WHERE user_id = $1`,
+          [user.id]
+        );
+        verificationStatus = 'approved';
+      }
+
       extra.verification_status = verificationStatus;
 
       // Drivers can only log in after admin approval.
@@ -342,11 +389,8 @@ async function forgotPassword(req, res) {
       if (!phoneNorm) {
         return res.status(400).json({ error: 'Invalid phone number' });
       }
-      const userResult = await db.query(
-        `SELECT id, phone FROM users WHERE phone = $1 AND is_active = true`,
-        [phoneNorm]
-      );
-      user = userResult.rows[0];
+      const row = await findActiveUserByPhone(phoneNorm);
+      user = row ? { id: row.id, phone: row.phone } : null;
     } else if (email) {
       const emailNorm = normalizeEmailForDb(email);
       const userResult = await db.query(
@@ -394,7 +438,8 @@ async function resetPassword(req, res) {
     if (!phone || !otp || !newPassword) {
       return res.status(400).json({ error: 'phone, otp and newPassword are required' });
     }
-    if (newPassword.length < 8) {
+    const newPassNorm = normalizePasswordForAuth(newPassword);
+    if (newPassNorm.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
@@ -408,7 +453,7 @@ async function resetPassword(req, res) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const passwordHash = await bcrypt.hash(newPassNorm, 10);
     await db.query(
       `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
       [passwordHash, userId]
