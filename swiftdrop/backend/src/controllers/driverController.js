@@ -1,6 +1,63 @@
 const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
 
+const LOCATION_MAX_AGE_MINUTES = 5;
+
+function hasUsableCoords(lat, lng) {
+  return Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+}
+
+async function rerunWaitingOrdersForProvince(province) {
+  if (!province) return;
+  const { runMatching } = require('../services/matchingService');
+  const waitingOrders = await db.query(
+    `SELECT o.id, o.status
+     FROM orders o
+     WHERE o.driver_id IS NULL
+       AND o.province = $1
+       AND o.created_at > NOW() - INTERVAL '2 hours'
+       AND (
+         o.status = 'matching'
+         OR (
+           o.status = 'unmatched'
+           AND (
+             o.match_attempted_at IS NULL
+             OR o.match_attempted_at < NOW() - INTERVAL '5 minutes'
+           )
+         )
+       )
+       AND NOT EXISTS (
+         SELECT 1
+         FROM job_offers jo
+         WHERE jo.order_id = o.id
+           AND jo.status = 'pending'
+       )
+     ORDER BY o.created_at ASC
+     LIMIT 10`,
+    [province]
+  );
+
+  for (const row of waitingOrders.rows) {
+    const oid = row.id;
+    setImmediate(() => {
+      const kickOffMatching =
+        row.status === 'matching'
+          ? Promise.resolve({ rowCount: 1 })
+          : db.query(
+              `UPDATE orders SET status = 'matching', driver_id = NULL, updated_at = NOW()
+               WHERE id = $1 AND status = 'unmatched'`,
+              [oid]
+            );
+
+      kickOffMatching
+        .then((r) => {
+          if (r.rowCount) runMatching(oid);
+        })
+        .catch((e) => console.error('rerunWaitingOrdersForProvince:', e));
+    });
+  }
+}
+
 /**
  * Driver availability and GPS live in `driver_locations` (used by the matching engine).
  * There is no separate `drivers` table — `is_online` is stored per driver_id here.
@@ -13,16 +70,22 @@ async function getStatus(req, res) {
     }
     const driverId = req.user.id;
     const r = await db.query(
-      `SELECT is_online, updated_at FROM driver_locations WHERE driver_id = $1`,
-      [driverId]
+      `SELECT is_online, lat, lng, updated_at,
+              updated_at > NOW() - ($2::int * INTERVAL '1 minute') AS has_fresh_location
+       FROM driver_locations
+       WHERE driver_id = $1`,
+      [driverId, LOCATION_MAX_AGE_MINUTES]
     );
     if (r.rows.length === 0) {
       return res.json({ is_online: false, updated_at: null });
     }
     const row = r.rows[0];
+    const hasCoords = hasUsableCoords(row.lat, row.lng);
+    const online = Boolean(row.is_online) && hasCoords && Boolean(row.has_fresh_location);
     return res.json({
-      is_online: Boolean(row.is_online),
+      is_online: online,
       updated_at: row.updated_at,
+      has_location: hasCoords,
     });
   } catch (err) {
     console.error('getDriverStatus:', err);
@@ -40,14 +103,44 @@ async function patchStatus(req, res) {
       return res.status(400).json({ error: 'is_online (boolean) is required' });
     }
     const driverId = req.user.id;
+    const existingRes = await db.query(
+      `SELECT dl.lat, dl.lng, u.current_lat, u.current_lng
+       FROM users u
+       LEFT JOIN driver_locations dl ON dl.driver_id = u.id
+       WHERE u.id = $1 AND u.user_type = 'driver'
+       LIMIT 1`,
+      [driverId]
+    );
+    const existing = existingRes.rows[0] || {};
+    const lat =
+      existing.lat != null && !Number.isNaN(Number(existing.lat))
+        ? Number(existing.lat)
+        : existing.current_lat != null && !Number.isNaN(Number(existing.current_lat))
+          ? Number(existing.current_lat)
+          : null;
+    const lng =
+      existing.lng != null && !Number.isNaN(Number(existing.lng))
+        ? Number(existing.lng)
+        : existing.current_lng != null && !Number.isNaN(Number(existing.current_lng))
+          ? Number(existing.current_lng)
+          : null;
+
+    if (is_online && (lat == null || lng == null)) {
+      return res.status(409).json({
+        error: 'Current location required before going online',
+        code: 'LOCATION_REQUIRED',
+      });
+    }
 
     await db.query(
       `INSERT INTO driver_locations (driver_id, lat, lng, is_online, updated_at)
-       VALUES ($1, NULL, NULL, $2, NOW())
+       VALUES ($1, $2, $3, $4, NOW())
        ON CONFLICT (driver_id) DO UPDATE SET
+         lat = COALESCE(EXCLUDED.lat, driver_locations.lat),
+         lng = COALESCE(EXCLUDED.lng, driver_locations.lng),
          is_online = EXCLUDED.is_online,
          updated_at = NOW()`,
-      [driverId, is_online]
+      [driverId, lat, lng, is_online]
     );
 
     await db.query(
@@ -60,9 +153,15 @@ async function patchStatus(req, res) {
       [driverId]
     );
     const row = r.rows[0];
+    if (Boolean(row.is_online) && hasUsableCoords(lat, lng)) {
+      const { detectProvince } = require('../services/provinceService');
+      const province = detectProvince(lat, lng);
+      void rerunWaitingOrdersForProvince(province);
+    }
     return res.json({
       is_online: Boolean(row.is_online),
       updated_at: row.updated_at,
+      has_location: hasUsableCoords(lat, lng),
     });
   } catch (err) {
     console.error('patchDriverStatus:', err);
@@ -87,6 +186,19 @@ async function patchLocation(req, res) {
     const lngN = Number(rawLng);
     const online =
       typeof bodyOnline === 'boolean' ? bodyOnline : true;
+    const previousRes = await db.query(
+      `SELECT is_online, lat, lng, updated_at
+       FROM driver_locations
+       WHERE driver_id = $1`,
+      [driverId]
+    );
+    const previous = previousRes.rows[0];
+    const previousTimestamp = previous?.updated_at ? new Date(previous.updated_at).getTime() : null;
+    const hadFreshLocation =
+      hasUsableCoords(previous?.lat, previous?.lng) &&
+      Number.isFinite(previousTimestamp) &&
+      Date.now() - previousTimestamp < LOCATION_MAX_AGE_MINUTES * 60 * 1000;
+    const shouldKickWaitingOrders = online && (!Boolean(previous?.is_online) || !hadFreshLocation);
 
     await db.query(
       `INSERT INTO driver_locations (driver_id, lat, lng, is_online, updated_at)
@@ -123,34 +235,10 @@ async function patchLocation(req, res) {
       }
     }
 
-    if (online) {
+    if (shouldKickWaitingOrders) {
       const { detectProvince } = require('../services/provinceService');
-      const { runMatching } = require('../services/matchingService');
       const province = detectProvince(latN, lngN);
-      if (province) {
-        const unmatched = await db.query(
-          `SELECT id FROM orders
-           WHERE status = 'unmatched'
-             AND province = $1
-             AND created_at > NOW() - INTERVAL '2 hours'
-             AND match_attempted_at < NOW() - INTERVAL '5 minutes'`,
-          [province]
-        );
-        for (const row of unmatched.rows) {
-          const oid = row.id;
-          setImmediate(() => {
-            db.query(
-              `UPDATE orders SET status = 'matching', driver_id = NULL, updated_at = NOW()
-               WHERE id = $1 AND status = 'unmatched'`,
-              [oid]
-            )
-              .then((r) => {
-                if (r.rowCount) runMatching(oid);
-              })
-              .catch((e) => console.error('rematch unmatched on driver location:', e));
-          });
-        }
-      }
+      void rerunWaitingOrdersForProvince(province);
     }
 
     return res.json({ updated: true });
