@@ -99,6 +99,7 @@ const DriverMatching = ({ navigation, route }) => {
   const navLockRef = useRef(false);
   const driverFoundTimerRef = useRef(null);
   const pulseScale = useRef(new Animated.Value(1)).current;
+  const pollInFlightRef = useRef(false);
 
   const clearPoll = useCallback(() => {
     if (pollRef.current != null) {
@@ -142,10 +143,12 @@ const DriverMatching = ({ navigation, route }) => {
   const pollOnce = useCallback(async () => {
     if (stoppedRef.current || !orderId) return;
     if (navLockRef.current) return;
+    if (pollInFlightRef.current) return;
     const auth = getAuth();
     if (!auth?.token) return;
 
     try {
+      pollInFlightRef.current = true;
       const order = await getJson(`/api/orders/${orderId}`, { token: auth.token });
       const st = String(order?.status || '');
 
@@ -240,6 +243,8 @@ const DriverMatching = ({ navigation, route }) => {
         orderId: orderId,
       });
       /* keep polling */
+    } finally {
+      pollInFlightRef.current = false;
     }
   }, [orderId, navigation, clearPoll, clearSearchTimer]);
 

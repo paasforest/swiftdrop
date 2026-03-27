@@ -71,6 +71,7 @@ const TrackingWithMap = ({ navigation, route }) => {
   const [cancelling, setCancelling] = useState(false);
   const pollingErrorRef = useRef(null);
   const mapRef = useRef(null);
+  const pollInFlightRef = useRef(false);
 
   function computeTimeTakenString(orderData) {
     try {
@@ -210,7 +211,9 @@ const TrackingWithMap = ({ navigation, route }) => {
     let cancelled = false;
 
     async function tick() {
+      if (pollInFlightRef.current) return;
       try {
+        pollInFlightRef.current = true;
         const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
         if (cancelled) return;
 
@@ -219,16 +222,6 @@ const TrackingWithMap = ({ navigation, route }) => {
 
         lastStatusRef.current = nextStatus;
         setOrder(data);
-
-        // Pickup OTP modal
-        if (nextStatus === 'pickup_arrived' && prevStatus !== 'pickup_arrived') {
-          setPickupOTPModalVisible(true);
-        }
-
-        // Delivery OTP modal
-        if (nextStatus === 'delivery_arrived' && prevStatus !== 'delivery_arrived') {
-          setDeliveryOTPModalVisible(true);
-        }
 
         // Gap 4: Unmatched -> stop polling + show modal overlay
         if (nextStatus === 'unmatched' && prevStatus !== 'unmatched') {
@@ -265,6 +258,8 @@ const TrackingWithMap = ({ navigation, route }) => {
       } catch (e) {
         // Polling shouldn't hard-crash the whole screen; store error for debugging UI if needed.
         pollingErrorRef.current = e?.message || 'Polling failed';
+      } finally {
+        pollInFlightRef.current = false;
       }
     }
 

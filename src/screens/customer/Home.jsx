@@ -64,9 +64,9 @@ const Home = ({ navigation }) => {
         if (cancelled) return;
         const { latitude, longitude } = loc.coords;
         const inWC =
-          latitude >= -34.9 && latitude <= -31.5 && longitude >= 18.0 && longitude <= 21.5;
+          latitude >= -34.95 && latitude <= -31.5 && longitude >= 17.5 && longitude <= 21.5;
         const inGP =
-          latitude >= -26.7 && latitude <= -25.2 && longitude >= 27.5 && longitude <= 28.8;
+          latitude >= -26.75 && latitude <= -25.2 && longitude >= 27.25 && longitude <= 29.05;
         if (!inWC && !inGP) {
           navigation.replace('UnsupportedArea', { latitude, longitude });
         }
