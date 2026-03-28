@@ -68,16 +68,23 @@ router.post('/create-test-users', async (req, res) => {
         } else throw e;
       }
 
-      // Upsert Postgres user
-      const userRes = await db.query(`
-        INSERT INTO users (firebase_uid, email, phone, password_hash, full_name,
-                           user_type, app_role, profile_completed, is_verified, is_active)
-        VALUES ($1,$2,$3,'firebase-auth',$4,$5,$6,true,true,true)
-        ON CONFLICT (firebase_uid) DO UPDATE
-          SET email=$2, phone=$3, full_name=$4, user_type=$5, app_role=$6,
-              profile_completed=true, is_verified=true, is_active=true, updated_at=NOW()
-        RETURNING id
-      `, [firebaseUid, u.email, u.phone, u.name, u.userType, u.role]);
+      // Upsert Postgres user — check first, then insert or update
+      const existing = await db.query(`SELECT id FROM users WHERE firebase_uid=$1 OR email=$2 LIMIT 1`, [firebaseUid, u.email]);
+      let userRes;
+      if (existing.rows.length > 0) {
+        userRes = await db.query(`
+          UPDATE users SET firebase_uid=$1, phone=$3, full_name=$4, user_type=$5, app_role=$6,
+            profile_completed=true, is_verified=true, is_active=true, updated_at=NOW()
+          WHERE id=$7 RETURNING id
+        `, [firebaseUid, u.email, u.phone, u.name, u.userType, u.role, existing.rows[0].id]);
+      } else {
+        userRes = await db.query(`
+          INSERT INTO users (firebase_uid, email, phone, password_hash, full_name,
+                             user_type, app_role, profile_completed, is_verified, is_active)
+          VALUES ($1,$2,$3,'firebase-auth',$4,$5,$6,true,true,true)
+          RETURNING id
+        `, [firebaseUid, u.email, u.phone, u.name, u.userType, u.role]);
+      }
 
       const userId = userRes.rows[0].id;
 
