@@ -89,6 +89,14 @@ export default function RoleSelectScreen({ navigation }) {
       >
         {loading ? <ActivityIndicator color={theme.colors.textLight} /> : <Text style={styles.ctaText}>Continue</Text>}
       </TouchableOpacity>
+
+      {/* Already have an account */}
+      <View style={styles.loginRow}>
+        <Text style={styles.loginText}>Already have an account? </Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+          <Text style={styles.loginLink}>Log in</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -120,4 +128,7 @@ const styles = StyleSheet.create({
   cta: { ...theme.components.ctaButton },
   ctaDisabled: { opacity: 0.4 },
   ctaText: { ...theme.components.ctaButtonText },
+  loginRow:  { flexDirection: 'row', justifyContent: 'center', marginTop: 20 },
+  loginText: { fontSize: 13, color: theme.colors.textMuted },
+  loginLink: { fontSize: 13, fontWeight: '700', color: theme.colors.obsidian },
 });

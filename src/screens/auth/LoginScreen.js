@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  SafeAreaView,
   View,
 } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -31,7 +32,8 @@ function friendlyError(code) {
   }
 }
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
+  const role = route?.params?.role ?? null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -61,13 +63,27 @@ export default function LoginScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Back */}
+        <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>←</Text>
+        </TouchableOpacity>
+
         <View style={styles.mark}>
           <Text style={styles.markText}>→</Text>
         </View>
 
         <View style={styles.header}>
+          {role && (
+            <View style={[styles.roleChip, role === 'driver' ? styles.roleChipDriver : styles.roleChipSender]}>
+              <Text style={styles.roleChipText}>{role.toUpperCase()}</Text>
+            </View>
+          )}
           <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to your SwiftDrop account</Text>
+          <Text style={styles.subtitle}>
+            {role === 'driver' ? 'Sign in to your driver account'
+              : role === 'sender' ? 'Sign in to your sender account'
+              : 'Sign in to your SwiftDrop account'}
+          </Text>
         </View>
 
         <View style={styles.fields}>
@@ -135,6 +151,35 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 40,
   },
+  back: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 24,
+  },
+  backText: { fontSize: 18, color: theme.colors.text },
+  back: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    borderWidth: 1, borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 24,
+  },
+  backText: { fontSize: 18, color: theme.colors.text },
+  roleChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 999, marginBottom: 12,
+  },
+  roleChipDriver: { backgroundColor: theme.colors.signalGreen },
+  roleChipSender: { backgroundColor: theme.colors.volt },
+  roleChipText: {
+    fontSize: 9, fontWeight: '700', letterSpacing: 1.5,
+    color: theme.colors.obsidian,
+  },
   mark: {
     width: 48,
     height: 48,
@@ -148,6 +193,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: theme.colors.volt,
+  },
+  roleChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 999, marginBottom: 10,
+  },
+  roleChipDriver: { backgroundColor: theme.colors.signalGreen },
+  roleChipSender: { backgroundColor: theme.colors.volt },
+  roleChipText: {
+    fontSize: 9, fontWeight: '700', letterSpacing: 1.5,
+    color: theme.colors.obsidian,
   },
   header: {
     marginBottom: 36,
