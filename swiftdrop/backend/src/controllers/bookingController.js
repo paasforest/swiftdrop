@@ -35,7 +35,7 @@ async function geocodeAddress(address) {
   return { lat: FALLBACK_LAT, lng: FALLBACK_LNG };
 }
 
-async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = 8) {
+async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = 50) {
   const rtdb = getRealtimeDb();
   if (!rtdb) return [];
 
@@ -60,14 +60,20 @@ async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = 8) {
 // ── POST /api/bookings/request ──────────────────────────────────────────────
 async function requestBooking(req, res) {
   const senderId = req.user.id;
-  const { pickupAddress, dropoffAddress, parcelSize } = req.body;
+  const { pickupAddress, dropoffAddress, parcelSize, pickupLat: clientLat, pickupLng: clientLng } = req.body;
 
   if (!pickupAddress || !dropoffAddress || !parcelSize) {
     return res.status(400).json({ error: 'pickupAddress, dropoffAddress and parcelSize are required' });
   }
 
-  // Geocode pickup
-  const { lat: pickupLat, lng: pickupLng } = await geocodeAddress(pickupAddress);
+  // Use client-provided coords if available, otherwise geocode (saves ~300ms)
+  let pickupLat, pickupLng;
+  if (clientLat && clientLng) {
+    pickupLat = parseFloat(clientLat);
+    pickupLng = parseFloat(clientLng);
+  } else {
+    ({ lat: pickupLat, lng: pickupLng } = await geocodeAddress(pickupAddress));
+  }
 
   // Find nearest online drivers
   const drivers = await getNearbyOnlineDrivers(pickupLat, pickupLng);

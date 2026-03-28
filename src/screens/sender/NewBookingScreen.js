@@ -4,7 +4,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -101,14 +100,10 @@ export default function NewBookingScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView
-          contentContainerStyle={styles.inner}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={styles.inner}>
           {/* Back + header */}
           <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Text style={styles.backArrow}>←</Text>
@@ -117,7 +112,7 @@ export default function NewBookingScreen({ navigation }) {
           <Text style={styles.title}>New delivery</Text>
           <Text style={styles.subtitle}>Gauteng &amp; Western Cape only</Text>
 
-          {/* Address card */}
+          {/* Address card — GooglePlacesAutocomplete must NOT be inside a ScrollView */}
           <View style={styles.addressCard}>
             <View style={styles.connectorLine} />
 
@@ -135,10 +130,7 @@ export default function NewBookingScreen({ navigation }) {
                   onPress={(data, details = null) => {
                     setPickupAddress(data.description);
                     if (details?.geometry?.location) {
-                      setPickupCoord({
-                        lat: details.geometry.location.lat,
-                        lng: details.geometry.location.lng,
-                      });
+                      setPickupCoord({ lat: details.geometry.location.lat, lng: details.geometry.location.lng });
                     }
                   }}
                   query={AUTOCOMPLETE_QUERY}
@@ -170,10 +162,7 @@ export default function NewBookingScreen({ navigation }) {
                   onPress={(data, details = null) => {
                     setDropoffAddress(data.description);
                     if (details?.geometry?.location) {
-                      setDropoffCoord({
-                        lat: details.geometry.location.lat,
-                        lng: details.geometry.location.lng,
-                      });
+                      setDropoffCoord({ lat: details.geometry.location.lat, lng: details.geometry.location.lng });
                     }
                   }}
                   query={AUTOCOMPLETE_QUERY}
@@ -212,15 +201,13 @@ export default function NewBookingScreen({ navigation }) {
           {/* Price estimate */}
           <View style={styles.estimateRow}>
             <Text style={styles.estimateLabel}>Estimated price</Text>
-            <Text style={styles.estimateAmount}>
-              {estimate ? `R ${estimate.price}` : 'R —'}
-            </Text>
+            <Text style={styles.estimateAmount}>{estimate ? `R ${estimate.price}` : 'R —'}</Text>
           </View>
 
           {/* Chips row */}
           <View style={styles.chipsRow}>
             {[
-              { value: estimate ? `~5` : '—', label: 'Pickup ETA (min)' },
+              { value: '~5', label: 'Pickup ETA (min)' },
               { value: estimate ? `${estimate.km} km` : '—', label: 'Distance' },
               { value: estimate ? `${estimate.mins} min` : '—', label: 'Delivery time' },
             ].map((c) => (
@@ -243,7 +230,7 @@ export default function NewBookingScreen({ navigation }) {
               : <Text style={styles.ctaText}>Find a driver</Text>
             }
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -286,7 +273,8 @@ const placesStyles = {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.colors.background },
-  inner: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 48 },
+  flex: { flex: 1 },
+  inner: { flex: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 32 },
 
   back: {
     width: 40, height: 40, borderRadius: 20,

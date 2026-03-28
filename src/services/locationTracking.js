@@ -15,9 +15,20 @@ export async function getFreshForegroundPosition({ requestPermission = true } = 
   if (permission.status !== 'granted') {
     throw new Error('Location permission not granted');
   }
-  return Location.getCurrentPositionAsync({
-    accuracy: Location.Accuracy.Balanced,
-  });
+
+  // Try last known position first — instant, no GPS wait
+  try {
+    const last = await Location.getLastKnownPositionAsync({ maxAge: 60000, requiredAccuracy: 500 });
+    if (last) return last;
+  } catch { /* ignore */ }
+
+  // Fall back to fresh fix with a hard 15-second timeout so the UI never hangs
+  return Promise.race([
+    Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Location timed out — GPS took too long')), 15000)
+    ),
+  ]);
 }
 
 export async function syncDriverLocationToBackend({

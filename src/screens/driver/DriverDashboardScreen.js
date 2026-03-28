@@ -124,14 +124,19 @@ export default function DriverDashboardScreen({ navigation }) {
         hideOffer();
       }
     } catch (err) {
-      Alert.alert(
-        'Location error',
-        'Could not get your location. Make sure location is enabled in Settings.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() },
-        ]
-      );
+      const msg = err?.message || String(err);
+      if (msg.includes('permission') || msg.includes('Location')) {
+        Alert.alert(
+          'Location required',
+          'Enable location in Settings to go online.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      } else {
+        Alert.alert('Could not go online', msg);
+      }
     } finally {
       setTogglingOnline(false);
     }
