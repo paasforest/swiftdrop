@@ -22,8 +22,6 @@
     "@mapbox/polyline": "^1.2.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
-    "@react-native-firebase/app": "^23.8.8",
-    "@react-native-firebase/database": "^23.8.8",
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/stack": "^6.3.20",

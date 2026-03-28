@@ -20,7 +20,6 @@
     },
     "android": {
       "package": "com.swiftdrop.app",
-      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
