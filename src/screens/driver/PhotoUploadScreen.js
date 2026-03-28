@@ -39,6 +39,16 @@ export default function PhotoUploadScreen({ route, navigation }) {
     }
   };
 
+  const proceedAfterPhoto = async (token) => {
+    const { postJson } = require('../../apiClient');
+    if (isPickup) {
+      navigation.replace('NavigateDropoff', { job: booking });
+    } else {
+      await postJson(`/api/bookings/${bookingId}/complete`, {}, { token });
+      navigation.replace('DriverJobComplete', { booking });
+    }
+  };
+
   const handleConfirm = async () => {
     if (!photoUri) return;
     setUploading(true);
@@ -54,32 +64,44 @@ export default function PhotoUploadScreen({ route, navigation }) {
       formData.append('stage', stage);
 
       const { API_BASE_URL } = require('../../apiConfig');
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      // Do NOT set Content-Type manually — fetch sets it automatically with the
+      // correct multipart boundary when body is FormData. Setting it manually
+      // strips the boundary and breaks multer on the backend.
       const res = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}/upload-photo`, {
         method: 'POST',
-        headers: {
-          Authorization: token ? `Bearer ${token}` : undefined,
-        },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || 'Upload failed');
+        throw new Error(err?.error || `Upload failed (${res.status})`);
       }
 
-      if (isPickup) {
-        // After pickup photo, driver navigates to dropoff address
-        navigation.replace('NavigateDropoff', { job: booking });
-      } else {
-        // Complete the booking
-        const { postJson } = require('../../apiClient');
-        await postJson(`/api/bookings/${bookingId}/complete`, {}, { token });
-        navigation.replace('DriverJobComplete', { booking });
-      }
+      await proceedAfterPhoto(token);
     } catch (err) {
-      Alert.alert('Upload failed', err.message || 'Please try again.');
+      if (err.name === 'AbortError') {
+        Alert.alert('Upload timed out', 'The photo upload took too long. Please try again.');
+      } else {
+        Alert.alert('Upload failed', err.message || 'Please try again.');
+      }
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleSkipDev = async () => {
+    try {
+      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      await proceedAfterPhoto(token);
+    } catch (err) {
+      Alert.alert('Error', err.message);
     }
   };
 
@@ -128,6 +150,12 @@ export default function PhotoUploadScreen({ route, navigation }) {
           : <Text style={styles.ctaText}>Confirm and continue</Text>
         }
       </TouchableOpacity>
+
+      {__DEV__ && (
+        <TouchableOpacity style={styles.devBtn} onPress={handleSkipDev}>
+          <Text style={styles.devBtnText}>⚡ DEV: Skip photo</Text>
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 }
@@ -208,8 +236,10 @@ const styles = StyleSheet.create({
 
   cta: {
     ...theme.components.ctaButton,
-    marginBottom: 32,
+    marginBottom: 12,
   },
   ctaDisabled: { opacity: 0.4 },
   ctaText: { ...theme.components.ctaButtonText },
+  devBtn: { alignItems: 'center', paddingVertical: 10, marginBottom: 20 },
+  devBtnText: { fontSize: 12, fontWeight: '600', color: theme.colors.volt },
 });
