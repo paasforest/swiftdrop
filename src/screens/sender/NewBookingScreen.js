@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -11,8 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import { auth } from '../../services/firebaseConfig';
-import { postJson } from '../../apiClient';
 import { theme } from '../../theme/theme';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
@@ -58,43 +55,27 @@ export default function NewBookingScreen({ navigation }) {
   const [pickupCoord, setPickupCoord] = useState(null);
   const [dropoffCoord, setDropoffCoord] = useState(null);
   const [parcelSize, setParcelSize] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const estimate = calcEstimate(pickupCoord, dropoffCoord);
-  const canSubmit = pickupAddress && dropoffAddress && parcelSize && !loading;
+  const canSubmit = pickupAddress && dropoffAddress && parcelSize;
 
-  const handleFindDriver = async () => {
+  const handleFindDriver = () => {
     if (!pickupAddress || !dropoffAddress || !parcelSize) {
       Alert.alert('Missing info', 'Please fill in pickup address, drop-off address and parcel size.');
       return;
     }
-    setLoading(true);
-    try {
-      const firebaseUser = auth.currentUser;
-      const token = firebaseUser ? await firebaseUser.getIdToken() : null;
-      const data = await postJson(
-        '/api/bookings/request',
-        {
-          pickupAddress,
-          dropoffAddress,
-          parcelSize,
-          pickupLat: pickupCoord?.lat,
-          pickupLng: pickupCoord?.lng,
-          dropoffLat: dropoffCoord?.lat,
-          dropoffLng: dropoffCoord?.lng,
-        },
-        { token }
-      );
-      navigation.navigate('FindingDriver', { booking: data });
-    } catch (err) {
-      if (err.status === 404 || err.message?.includes('NO_DRIVERS')) {
-        Alert.alert('No drivers nearby', 'No drivers available right now. Please try again shortly.');
-      } else {
-        Alert.alert('Request failed', err.message || 'Could not submit your request. Please try again.');
-      }
-    } finally {
-      setLoading(false);
-    }
+    navigation.navigate('Payment', {
+      bookingParams: {
+        pickupAddress,
+        dropoffAddress,
+        parcelSize,
+        pickupLat: pickupCoord?.lat,
+        pickupLng: pickupCoord?.lng,
+        dropoffLat: dropoffCoord?.lat,
+        dropoffLng: dropoffCoord?.lng,
+      },
+      estimate,
+    });
   };
 
   return (

@@ -10,6 +10,7 @@ import DriverProfileScreen from '../screens/onboarding/DriverProfileScreen';
 // ── Sender flow ────────────────────────────────────────────────────────────
 import SenderHomeScreen         from '../screens/sender/SenderHomeScreen';
 import NewBookingScreen         from '../screens/sender/NewBookingScreen';
+import PaymentScreen            from '../screens/sender/PaymentScreen';
 import FindingDriverScreen      from '../screens/sender/FindingDriverScreen';
 import TrackDriverScreen        from '../screens/sender/TrackDriverScreen';
 import SenderPickupOTPScreen    from '../screens/sender/PickupOTPScreen';
@@ -50,6 +51,7 @@ export default function RoleNavigator() {
       {/* ── Sender ─────────────────────────── */}
       <Stack.Screen name="SenderHome"       component={SenderHomeScreen} />
       <Stack.Screen name="NewBooking"       component={NewBookingScreen} />
+      <Stack.Screen name="Payment"          component={PaymentScreen} />
       <Stack.Screen name="FindingDriver"    component={FindingDriverScreen} />
       <Stack.Screen name="TrackDriver"      component={TrackDriverScreen} />
       <Stack.Screen name="PickupOTP"        component={SenderPickupOTPScreen} />
