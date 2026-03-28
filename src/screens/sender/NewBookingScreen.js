@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import GooglePlacesAutocomplete from 'react-native-google-places-autocomplete';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { auth } from '../../services/firebaseConfig';
 import { postJson } from '../../apiClient';
 import { theme } from '../../theme/theme';

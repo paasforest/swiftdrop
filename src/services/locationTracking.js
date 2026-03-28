@@ -1,8 +1,7 @@
 import * as Location from 'expo-location';
 import { ref, set, onValue } from 'firebase/database';
-import { database } from './firebaseConfig';
+import { database, auth as firebaseAuth } from './firebaseConfig';
 import { patchJson } from '../apiClient';
-import { getAuth } from '../authStore';
 
 let locationSubscription = null;
 let locationUpdateCallback = null;
@@ -27,14 +26,15 @@ export async function syncDriverLocationToBackend({
   isOnline = true,
   quiet = true,
 }) {
-  const auth = getAuth();
-  if (!auth?.token) {
+  const currentUser = firebaseAuth.currentUser;
+  if (!currentUser) {
     throw new Error('Driver not authenticated');
   }
+  const token = await currentUser.getIdToken();
   const response = await patchJson(
     '/api/drivers/location',
     { lat: latitude, lng: longitude, is_online: isOnline },
-    { token: auth.token, quiet }
+    { token, quiet }
   );
   lastBackendSyncAt = Date.now();
   return response;

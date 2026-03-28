@@ -202,13 +202,13 @@ const styles = StyleSheet.create({
   },
 
   // Off-white body overlaps header by 20px
+  // NOTE: overflow must stay 'visible' (default) on Android — 'hidden' blocks all touch events
   body: {
     flex: 1,
     backgroundColor: theme.colors.surfaceElevated,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     marginTop: -20,
-    overflow: 'hidden',
   },
   list: {
     paddingHorizontal: 20,

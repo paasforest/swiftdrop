@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const authRoutes    = require('./src/routes/authRoutes');
 const bookingRoutes = require('./src/routes/bookingRoutes');
+const driverRoutes  = require('./src/routes/driverRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -12,6 +13,7 @@ app.use(express.json());
 
 app.use('/api/auth',     authRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/drivers',  driverRoutes);
 
 app.get('/', (req, res) => {
   res.json({ name: 'SwiftDrop API', version: '2.0.2-seed', status: 'auth-foundation' });

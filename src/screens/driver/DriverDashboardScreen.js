@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
 import { ref, onValue, remove } from 'firebase/database';
@@ -90,8 +92,21 @@ export default function DriverDashboardScreen({ navigation }) {
     setTogglingOnline(true);
     try {
       if (value) {
-        // Get location first
-        const pos = await getFreshForegroundPosition({ requestPermission: true });
+        // Check / request location permission first
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Location required',
+            'SwiftDrop needs your location to show you nearby jobs. Please enable it in your device settings.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ]
+          );
+          return;
+        }
+
+        const pos = await getFreshForegroundPosition({ requestPermission: false });
         await syncDriverLocationToBackend({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -109,7 +124,14 @@ export default function DriverDashboardScreen({ navigation }) {
         hideOffer();
       }
     } catch (err) {
-      Alert.alert('Location required', 'Enable location permissions to go online.');
+      Alert.alert(
+        'Location error',
+        'Could not get your location. Make sure location is enabled in Settings.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
     } finally {
       setTogglingOnline(false);
     }
