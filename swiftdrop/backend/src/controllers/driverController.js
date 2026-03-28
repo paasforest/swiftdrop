@@ -47,18 +47,21 @@ async function patchLocation(req, res) {
     }
 
     const rtdb = getRealtimeDb();
-    if (rtdb) {
-      const payload = {
-        lat: parseFloat(lat),
-        lng: parseFloat(lng),
-        updatedAt: Date.now(),
-      };
-      if (is_online !== undefined) {
-        payload.status = is_online ? 'online' : 'offline';
-      }
-      await rtdb.ref(`drivers/${firebaseUid}`).update(payload);
+    if (!rtdb) {
+      console.error('[patchLocation] RTDB not initialized — driver location not written');
+      return res.status(503).json({ error: 'RTDB_UNAVAILABLE', message: 'Realtime database not configured on server' });
     }
 
+    const payload = {
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+      updatedAt: Date.now(),
+    };
+    if (is_online !== undefined) {
+      payload.status = is_online ? 'online' : 'offline';
+    }
+    await rtdb.ref(`drivers/${firebaseUid}`).update(payload);
+    console.log(`[patchLocation] Driver ${firebaseUid} → lat:${lat} lng:${lng} online:${is_online}`);
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });

@@ -9,7 +9,8 @@ let initialized = false;
 
 function init() {
   if (initialized) return;
-  const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  // Accept either env var name
+  const sa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT;
   const databaseURL =
     process.env.FIREBASE_DATABASE_URL ||
     'https://swiftdrop-c0110-default-rtdb.europe-west1.firebasedatabase.app';
@@ -17,18 +18,16 @@ function init() {
   if (sa) {
     try {
       const cred = typeof sa === 'string' ? JSON.parse(sa) : sa;
-      admin.initializeApp({
-        credential: admin.credential.cert(cred),
-        databaseURL,
-      });
+      if (!admin.apps.length) {
+        admin.initializeApp({ credential: admin.credential.cert(cred), databaseURL });
+        console.log('[firebaseAdmin] Initialized — project:', cred.project_id, '| RTDB:', databaseURL);
+      }
       initialized = true;
     } catch (e) {
-      console.error('[firebaseAdmin] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e.message);
+      console.error('[firebaseAdmin] Init failed:', e.message);
     }
   } else {
-    console.warn(
-      '[firebaseAdmin] FIREBASE_SERVICE_ACCOUNT_JSON not set — RTDB writes and FCM push are disabled. Set this env var on Railway (or locally) for driver job-offer notifications.'
-    );
+    console.warn('[firebaseAdmin] No service account env var found (FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_SERVICE_ACCOUNT) — RTDB and FCM disabled.');
   }
 }
 

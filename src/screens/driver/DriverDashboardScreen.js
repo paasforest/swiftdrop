@@ -125,6 +125,7 @@ export default function DriverDashboardScreen({ navigation }) {
       }
     } catch (err) {
       const msg = err?.message || String(err);
+      console.error('[DriverDashboard] Toggle online failed:', msg);
       if (msg.includes('permission') || msg.includes('Location')) {
         Alert.alert(
           'Location required',
@@ -135,7 +136,7 @@ export default function DriverDashboardScreen({ navigation }) {
           ]
         );
       } else {
-        Alert.alert('Could not go online', msg);
+        Alert.alert('Could not go online', `Error: ${msg}`);
       }
     } finally {
       setTogglingOnline(false);
