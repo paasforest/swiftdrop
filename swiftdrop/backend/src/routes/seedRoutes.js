@@ -68,9 +68,12 @@ router.post('/create-test-users', async (req, res) => {
         } else throw e;
       }
 
-      // Step 1: clear phone conflicts on OTHER rows so the upsert won't violate uniqueness
+      // Step 1: free phone conflicts on OTHER rows (phone is NOT NULL so use a placeholder)
       await db.query(
-        `UPDATE users SET phone=NULL WHERE phone=$1 AND (firebase_uid IS DISTINCT FROM $2) AND (email IS DISTINCT FROM $3)`,
+        `UPDATE users SET phone='freed_' || id::text
+         WHERE phone=$1
+           AND (firebase_uid IS DISTINCT FROM $2)
+           AND (email IS DISTINCT FROM $3)`,
         [u.phone, firebaseUid, u.email]
       );
 
