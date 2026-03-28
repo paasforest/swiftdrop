@@ -31,6 +31,7 @@ const USERS = [
     vehicleReg: 'CA 441 GP',
   },
 ];
+];
 
 router.post('/create-test-users', async (req, res) => {
   if (req.headers['x-seed-secret'] !== SEED_SECRET) {
@@ -68,13 +69,18 @@ router.post('/create-test-users', async (req, res) => {
         } else throw e;
       }
 
-      // Upsert Postgres user — check first, then insert or update
-      const existing = await db.query(`SELECT id FROM users WHERE firebase_uid=$1 OR email=$2 LIMIT 1`, [firebaseUid, u.email]);
+      // Upsert Postgres user — find any existing row by uid, email, OR phone
+      const existing = await db.query(
+        `SELECT id FROM users WHERE firebase_uid=$1 OR email=$2 OR phone=$3 LIMIT 1`,
+        [firebaseUid, u.email, u.phone]
+      );
       let userRes;
       if (existing.rows.length > 0) {
+        // Claim this row — update all fields including firebase_uid and email
         userRes = await db.query(`
-          UPDATE users SET firebase_uid=$1, phone=$3, full_name=$4, user_type=$5, app_role=$6,
-            profile_completed=true, is_verified=true, is_active=true, updated_at=NOW()
+          UPDATE users SET firebase_uid=$1, email=$2, phone=$3, full_name=$4,
+            user_type=$5, app_role=$6, profile_completed=true, is_verified=true,
+            is_active=true, updated_at=NOW()
           WHERE id=$7 RETURNING id
         `, [firebaseUid, u.email, u.phone, u.name, u.userType, u.role, existing.rows[0].id]);
       } else {
