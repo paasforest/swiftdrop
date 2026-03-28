@@ -206,10 +206,7 @@ export default function NewBookingScreen({ navigation }) {
             disabled={!canSubmit}
             activeOpacity={0.85}
           >
-            {loading
-              ? <ActivityIndicator color={theme.colors.textLight} />
-              : <Text style={styles.ctaText}>Find a driver</Text>
-            }
+            <Text style={styles.ctaText}>Find a driver</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
