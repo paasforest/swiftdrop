@@ -64,11 +64,11 @@ export default function TrackDriverScreen({ route, navigation }) {
       const status = snap.val();
       if (!status) return;
       setBookingStatus(status);
-      if (status === 'in_transit') {
-        // Pickup OTP was verified — update label but stay on map
-      }
       if (status === 'otp_pickup') {
         navigation.replace('PickupOTP', { booking });
+      }
+      if (status === 'otp_dropoff') {
+        navigation.replace('DropoffOTP', { booking });
       }
       if (status === 'delivered') {
         navigation.replace('DeliveryComplete', { booking });

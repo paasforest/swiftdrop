@@ -137,6 +137,13 @@ export default function NavigatePickupScreen({ route, navigation }) {
             : <Text style={styles.ctaText}>I've arrived at pickup</Text>
           }
         </TouchableOpacity>
+
+        {/* DEV-only shortcut — invisible in production */}
+        {__DEV__ && (
+          <TouchableOpacity style={styles.devBtn} onPress={handleArrived}>
+            <Text style={styles.devBtnText}>⚡ DEV: Simulate arrival</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -241,4 +248,6 @@ const styles = StyleSheet.create({
   cta: { ...theme.components.ctaButton },
   ctaDisabled: { opacity: 0.5 },
   ctaText: { ...theme.components.ctaButtonText },
+  devBtn: { marginTop: 10, alignItems: 'center', paddingVertical: 8 },
+  devBtnText: { fontSize: 12, color: theme.colors.volt, fontWeight: '600' },
 });
