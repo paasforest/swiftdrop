@@ -102,12 +102,18 @@ router.post('/create-test-users', async (req, res) => {
       const userId = userRes.rows[0].id;
 
       if (u.role === 'driver') {
-        await db.query(`
-          INSERT INTO driver_profiles (user_id, verification_status, vehicle_make, vehicle_plate)
-          VALUES ($1,'approved',$2,$3)
-          ON CONFLICT (user_id) DO UPDATE
-            SET verification_status='approved', vehicle_make=$2, vehicle_plate=$3
-        `, [userId, u.vehicleType, u.vehicleReg]);
+        const dp = await db.query(`SELECT id FROM driver_profiles WHERE user_id=$1`, [userId]);
+        if (dp.rows.length > 0) {
+          await db.query(
+            `UPDATE driver_profiles SET verification_status='approved', vehicle_make=$1, vehicle_plate=$2 WHERE user_id=$3`,
+            [u.vehicleType, u.vehicleReg, userId]
+          );
+        } else {
+          await db.query(
+            `INSERT INTO driver_profiles (user_id, verification_status, vehicle_make, vehicle_plate) VALUES ($1,'approved',$2,$3)`,
+            [userId, u.vehicleType, u.vehicleReg]
+          );
+        }
         await db.query(
           `UPDATE users SET sa_id_number=$1 WHERE id=$2`,
           [u.idNumber, userId]
