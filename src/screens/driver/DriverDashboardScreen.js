@@ -157,12 +157,13 @@ export default function DriverDashboardScreen({ navigation }) {
       }
 
       hideOffer();
-      navigation.navigate('DriverPickupOTP', {
-        booking: {
+      navigation.navigate('NavigatePickup', {
+        job: {
           bookingId: jobOffer.bookingId,
           pickupAddress: jobOffer.pickupAddress,
           dropoffAddress: jobOffer.dropoffAddress,
           driverPayout: jobOffer.driverPayout,
+          distanceKm: jobOffer.distanceKm,
         },
       });
     } catch (err) {
