@@ -228,3 +228,42 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
     throw err;
   }
 }
+
+function tokenFromConfig(config = {}) {
+  const headerToken = config?.headers?.Authorization;
+  if (!headerToken) return undefined;
+  return String(headerToken).replace(/^Bearer\s+/i, '');
+}
+
+export const apiClient = {
+  async get(path, config = {}) {
+    const data = await getJson(path, {
+      token: tokenFromConfig(config),
+      quiet: config?.quiet,
+    });
+    return { data };
+  },
+  async post(path, body, config = {}) {
+    const data = await postJson(path, body, {
+      token: tokenFromConfig(config),
+      quiet: config?.quiet,
+      skipAuthRetry: config?.skipAuthRetry,
+      omitAuthToken: config?.omitAuthToken,
+    });
+    return { data };
+  },
+  async patch(path, body, config = {}) {
+    const data = await patchJson(path, body, {
+      token: tokenFromConfig(config),
+      quiet: config?.quiet,
+    });
+    return { data };
+  },
+  async delete(path, config = {}) {
+    const data = await deleteJson(path, {
+      token: tokenFromConfig(config),
+      quiet: config?.quiet,
+    });
+    return { data };
+  },
+};

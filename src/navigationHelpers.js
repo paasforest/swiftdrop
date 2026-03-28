@@ -3,10 +3,9 @@ import { clearAuth } from './authStore';
 import { registerForPushNotificationsAsync } from './services/pushNotificationService';
 
 export function resetToRoleHome(navigation, user) {
-  const type = user?.user_type;
-  let name = 'Home';
+  const type = user?.role || user?.user_type;
+  let name = 'SenderHome';
   if (type === 'driver') name = 'DriverHome';
-  else if (type === 'admin') name = 'AdminTabs';
 
   navigation.dispatch(
     CommonActions.reset({
@@ -23,7 +22,7 @@ export function resetToLogin(navigation) {
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
-        routes: [{ name: 'Welcome' }],
+        routes: [{ name: 'Login' }],
       })
     );
   });

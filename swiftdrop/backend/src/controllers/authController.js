@@ -1,539 +1,280 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const db = require('../database/connection');
+const smsService = require('../services/smsService');
 const { generateOTP, storeOTP, validateOTP } = require('../utils/otpHelper');
-const { sendSMS } = require('../services/smsService');
 const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
 
-function normalizeEmailForDb(email) {
-  return String(email ?? '').trim().toLowerCase();
+function buildUserPayload(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    firebase_uid: row.firebase_uid || null,
+    full_name: row.full_name,
+    email: row.email,
+    phone: row.phone,
+    user_type: row.user_type,
+    role: row.app_role || (row.user_type === 'customer' ? 'sender' : row.user_type),
+    profile_complete: Boolean(row.profile_completed),
+    default_pickup_address: row.default_pickup_address || null,
+    is_verified: row.is_verified,
+    is_active: row.is_active,
+    profile_photo_url: row.profile_photo_url || null,
+    wallet_balance: row.wallet_balance,
+  };
 }
 
-function normalizePasswordForAuth(password) {
-  return String(password ?? '').trim();
+async function getMe(req, res) {
+  const user = buildUserPayload(req.user);
+  return res.json({
+    user,
+    role: user?.role ?? null,
+    profileComplete: user?.profile_complete ?? false,
+  });
 }
 
-/** PostgreSQL unique_violation: tell user whether email or phone collided. */
-function duplicateRegistrationMessage(err) {
-  const c = (err.constraint || '').toLowerCase();
-  const d = (err.detail || '').toLowerCase();
-  if (c.includes('email') || d.includes('(email)')) {
-    return 'This email is already registered';
+async function register(req, res) {
+  const firebaseUid = req.firebaseUser?.uid;
+  const firebaseEmail = req.firebaseUser?.email ? String(req.firebaseUser.email).trim().toLowerCase() : '';
+  const fullName = String(req.body?.name || req.body?.full_name || req.firebaseUser?.name || '').trim();
+  const normalizedPhone = normalizeSouthAfricaToE164(req.body?.phone);
+
+  if (!firebaseUid || !firebaseEmail) {
+    return res.status(400).json({ error: 'Firebase account must include an email address' });
   }
-  if (c.includes('phone') || d.includes('(phone)')) {
-    return 'This phone number is already registered';
+  if (!fullName) {
+    return res.status(400).json({ error: 'full_name is required' });
   }
-  return 'Email or phone already registered';
-}
+  if (!normalizedPhone) {
+    return res.status(400).json({ error: 'A valid South African phone number is required' });
+  }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
-const ACCESS_EXPIRY = '1h';
-const REFRESH_EXPIRY = '7d';
-
-/** If false, login/refresh work without phone OTP verification (testing only). Default: true. */
-function requirePhoneVerificationForAuth() {
-  const v = process.env.REQUIRE_PHONE_VERIFICATION;
-  if (v === undefined || v === null || String(v).trim() === '') return true;
-  const lowered = String(v).trim().toLowerCase();
-  if (lowered === 'false' || lowered === '0' || lowered === 'no') return false;
-  return true;
-}
-
-function allowDriverAutoApprovalForTesting() {
-  return !requirePhoneVerificationForAuth();
-}
-
-function sanitizeUser(user) {
-  if (!user) return null;
-  const { password_hash, ...rest } = user;
-  return rest;
-}
-
-/** Find active user by phone: exact E.164 first, then digits-only (handles legacy formatting). */
-async function findActiveUserByPhone(phoneE164) {
-  if (!phoneE164) return null;
-  const digits = String(phoneE164).replace(/\D/g, '');
-  let res = await db.query(
-    `SELECT * FROM users WHERE is_active = true AND phone = $1`,
-    [phoneE164]
-  );
-  if (res.rows[0]) return res.rows[0];
-  res = await db.query(
-    `SELECT * FROM users
-     WHERE is_active = true
-       AND REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1`,
-    [digits]
-  );
-  return res.rows[0] || null;
-}
-
-async function registerCustomer(req, res) {
+  const client = await db.pool.connect();
   try {
-    const { full_name, email, phone, password } = req.body;
-    if (!full_name || !phone || !password) {
-      return res.status(400).json({ error: 'full_name, phone and password are required' });
-    }
-    const passwordNorm = normalizePasswordForAuth(password);
-    if (passwordNorm.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    }
+    await client.query('BEGIN');
 
-    const phoneNorm = normalizeSouthAfricaToE164(phone);
-    if (!phoneNorm) {
-      return res.status(400).json({
-        error: 'Invalid phone number. Use a South African mobile (e.g. 082… or 82… after +27).',
-      });
-    }
-
-    let emailNorm;
-    if (email != null && String(email).trim() !== '') {
-      emailNorm = normalizeEmailForDb(email);
-      if (!emailNorm) {
-        return res.status(400).json({ error: 'Invalid email address' });
-      }
-    } else {
-      emailNorm = `phone_${phoneNorm.replace(/\D/g, '')}@customer.swiftdrop.app`;
-    }
-    const autoVerify = !requirePhoneVerificationForAuth();
-    const passwordHash = await bcrypt.hash(passwordNorm, 10);
-    const result = await db.query(
-      `INSERT INTO users (full_name, email, phone, password_hash, user_type, is_verified)
-       VALUES ($1, $2, $3, $4, 'customer', $5)
-       RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-      [full_name, emailNorm, phoneNorm, passwordHash, autoVerify]
+    const existingRes = await client.query(
+      `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+              full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance
+       FROM users
+       WHERE firebase_uid = $1
+          OR LOWER(email) = $2
+          OR phone = $3
+       ORDER BY CASE WHEN firebase_uid = $1 THEN 0 WHEN LOWER(email) = $2 THEN 1 ELSE 2 END
+       LIMIT 1
+       FOR UPDATE`,
+      [firebaseUid, firebaseEmail, normalizedPhone]
     );
-    const user = result.rows[0];
 
-    // Testing / relaxed mode: skip OTP SMS and return tokens so the client can go straight in.
-    if (!requirePhoneVerificationForAuth()) {
-      const accessToken = jwt.sign(
-        { userId: user.id, userType: user.user_type },
-        JWT_SECRET,
-        { expiresIn: ACCESS_EXPIRY }
+    let user;
+    if (existingRes.rows[0]) {
+      const updated = await client.query(
+        `UPDATE users
+         SET firebase_uid = $1,
+             email = $2,
+             phone = $3,
+             full_name = $4,
+             user_type = CASE WHEN user_type = 'admin' THEN user_type ELSE 'customer' END,
+             app_role = COALESCE(app_role, NULL),
+             profile_completed = COALESCE(profile_completed, false),
+             updated_at = NOW()
+         WHERE id = $5
+         RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                   full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
+        [firebaseUid, firebaseEmail, normalizedPhone, fullName, existingRes.rows[0].id]
       );
-      const refreshToken = jwt.sign(
-        { userId: user.id, type: 'refresh' },
-        JWT_SECRET,
-        { expiresIn: REFRESH_EXPIRY }
+      user = updated.rows[0];
+    } else {
+      const inserted = await client.query(
+        `INSERT INTO users (
+           firebase_uid,
+           email,
+           phone,
+           password_hash,
+           full_name,
+           user_type,
+           app_role,
+           profile_completed,
+           is_verified,
+           is_active
+         )
+         VALUES ($1, $2, $3, $4, $5, 'customer', NULL, false, false, true)
+         RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                   full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
+        [firebaseUid, firebaseEmail, normalizedPhone, 'firebase-auth', fullName]
       );
-      return res.status(201).json({
-        message: 'Registration successful.',
-        user: sanitizeUser(user),
-        phoneVerificationRequired: false,
-        token: accessToken,
-        refreshToken,
-      });
+      user = inserted.rows[0];
     }
 
-    const otp = generateOTP();
-    await storeOTP(user.id, phoneNorm, otp, 'verify_phone');
-    await sendSMS(phoneNorm, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
-    return res.status(201).json({
-      message: 'Registration successful. Please verify your phone with the OTP sent.',
-      user: sanitizeUser(user),
-      phoneVerificationRequired: true,
-    });
+    await client.query('COMMIT');
+    return res.status(existingRes.rows[0] ? 200 : 201).json({ user: buildUserPayload(user) });
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: duplicateRegistrationMessage(err) });
-    }
-    console.error('registerCustomer:', err);
-    return res.status(500).json({ error: 'Registration failed' });
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'Failed to register profile' });
+  } finally {
+    client.release();
   }
 }
 
-async function registerDriver(req, res) {
-  try {
-    const { full_name, email, phone, password } = req.body;
-    if (!full_name || !email || !phone || !password) {
-      return res.status(400).json({ error: 'full_name, email, phone and password are required' });
-    }
-    const passwordNorm = normalizePasswordForAuth(password);
-    if (passwordNorm.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    }
-
-    const emailNorm = normalizeEmailForDb(email);
-    const phoneNorm = normalizeSouthAfricaToE164(phone);
-    if (!emailNorm) {
-      return res.status(400).json({ error: 'Invalid email address' });
-    }
-    if (!phoneNorm) {
-      return res.status(400).json({
-        error: 'Invalid phone number. Use a South African mobile (e.g. 082… or 82… after +27).',
-      });
-    }
-
-    const autoVerify = !requirePhoneVerificationForAuth();
-    const driverVerificationStatus = allowDriverAutoApprovalForTesting() ? 'approved' : 'pending';
-    const passwordHash = await bcrypt.hash(passwordNorm, 10);
-    const client = await db.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const userResult = await client.query(
-        `INSERT INTO users (full_name, email, phone, password_hash, user_type, is_verified)
-         VALUES ($1, $2, $3, $4, 'driver', $5)
-         RETURNING id, full_name, email, phone, user_type, is_verified, created_at`,
-        [full_name, emailNorm, phoneNorm, passwordHash, autoVerify]
-      );
-      const user = userResult.rows[0];
-      await client.query(
-        `INSERT INTO driver_profiles (user_id, verification_status) VALUES ($1, $2)`,
-        [user.id, driverVerificationStatus]
-      );
-      await client.query(
-        `INSERT INTO driver_tiers (driver_id, tier_name, deliveries_completed) VALUES ($1, 'new', 0)`,
-        [user.id]
-      );
-      await client.query('COMMIT');
-      
-      // Testing / relaxed mode: skip OTP and return tokens.
-      if (!requirePhoneVerificationForAuth()) {
-        const accessToken = jwt.sign(
-          { userId: user.id, userType: user.user_type },
-          JWT_SECRET,
-          { expiresIn: ACCESS_EXPIRY }
-        );
-        const refreshToken = jwt.sign(
-          { userId: user.id, type: 'refresh' },
-          JWT_SECRET,
-          { expiresIn: REFRESH_EXPIRY }
-        );
-
-        return res.status(201).json({
-          message: 'Driver registration successful.',
-          user: sanitizeUser(user),
-          phoneVerificationRequired: false,
-          token: accessToken,
-          refreshToken,
-        });
-      }
-
-      const otp = generateOTP();
-      await storeOTP(user.id, phoneNorm, otp, 'verify_phone');
-      await sendSMS(phoneNorm, `Your SwiftDrop verification code is: ${otp}. Valid for 10 minutes.`);
-
-      return res.status(201).json({
-        message: 'Driver registration successful. Please verify your phone with the OTP sent.',
-        user: sanitizeUser(user),
-        phoneVerificationRequired: true,
-      });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: duplicateRegistrationMessage(err) });
-    }
-    console.error('registerDriver:', err);
-    return res.status(500).json({ error: 'Registration failed' });
+async function setRole(req, res) {
+  if (!req.user) {
+    return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
   }
+  const role = String(req.body?.role || '').trim().toLowerCase();
+  if (!['sender', 'driver'].includes(role)) {
+    return res.status(400).json({ error: 'role must be sender or driver' });
+  }
+  const userType = role === 'driver' ? 'driver' : 'customer';
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const updatedUser = await client.query(
+      `UPDATE users
+       SET app_role = $1,
+           user_type = CASE WHEN user_type = 'admin' THEN user_type ELSE $2 END,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                 full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
+      [role, userType, req.user.id]
+    );
+
+    if (role === 'driver') {
+      const existingDriverProfile = await client.query(
+        `SELECT id FROM driver_profiles WHERE user_id = $1 LIMIT 1`,
+        [req.user.id]
+      );
+      if (existingDriverProfile.rows.length === 0) {
+        await client.query(
+          `INSERT INTO driver_profiles (user_id, verification_status)
+           VALUES ($1, 'pending')`,
+          [req.user.id]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.json({ user: buildUserPayload(updatedUser.rows[0]) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'Failed to save role' });
+  } finally {
+    client.release();
+  }
+}
+
+async function completeProfile(req, res) {
+  if (!req.user) {
+    return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
+  }
+
+  const role = req.user.app_role || (req.user.user_type === 'driver' ? 'driver' : 'sender');
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    if (role === 'driver') {
+      const idNumber = String(req.body?.idNumber || '').trim();
+      const vehicleType = String(req.body?.vehicleType || '').trim();
+      const vehicleReg = String(req.body?.vehicleReg || '').trim().toUpperCase();
+      if (!idNumber || !vehicleType || !vehicleReg) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'idNumber, vehicleType and vehicleReg are required' });
+      }
+      await client.query(
+        `UPDATE users
+         SET sa_id_number = $1,
+             profile_completed = true,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [idNumber, req.user.id]
+      );
+      await client.query(
+        `UPDATE driver_profiles
+         SET vehicle_make = $1,
+             vehicle_plate = $2
+         WHERE user_id = $3`,
+        [vehicleType, vehicleReg, req.user.id]
+      );
+    } else {
+      const defaultAddress = String(req.body?.defaultAddress || '').trim();
+      if (!defaultAddress) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'defaultAddress is required' });
+      }
+      await client.query(
+        `UPDATE users
+         SET default_pickup_address = $1,
+             profile_completed = true,
+             updated_at = NOW()
+         WHERE id = $2`,
+        [defaultAddress, req.user.id]
+      );
+    }
+
+    const result = await client.query(
+      `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+              full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance
+       FROM users
+       WHERE id = $1`,
+      [req.user.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ user: buildUserPayload(result.rows[0]) });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: 'Failed to complete profile' });
+  } finally {
+    client.release();
+  }
+}
+
+async function requestPhoneVerification(req, res) {
+  if (!req.user) {
+    return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
+  }
+  if (!req.user.phone) {
+    return res.status(400).json({ error: 'Phone number required before verification' });
+  }
+
+  const code = generateOTP();
+  await storeOTP(req.user.id, req.user.phone, code, 'phone_verification');
+  const smsResult = await smsService.sendOTP(req.user.phone, code);
+  if (!smsResult.ok) {
+    return res.status(503).json({ error: 'Failed to send OTP', code: 'OTP_SEND_FAILED' });
+  }
+  return res.json({ ok: true });
 }
 
 async function verifyPhone(req, res) {
-  try {
-    const { phone, otp } = req.body;
-    if (!phone || !otp) {
-      return res.status(400).json({ error: 'phone and otp are required' });
-    }
-
-    const phoneNorm = normalizeSouthAfricaToE164(phone);
-    if (!phoneNorm) {
-      return res.status(400).json({ error: 'Invalid phone number' });
-    }
-
-    const userId = await validateOTP(phoneNorm, otp, 'verify_phone');
-    if (!userId) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
-    }
-
-    await db.query(
-      `UPDATE users SET is_verified = true, updated_at = NOW() WHERE id = $1`,
-      [userId]
-    );
-    const userResult = await db.query(
-      `SELECT id, full_name, email, phone, user_type, is_verified, profile_photo_url, wallet_balance
-       FROM users WHERE id = $1`,
-      [userId]
-    );
-    const user = userResult.rows[0];
-    const accessToken = jwt.sign(
-      { userId: user.id, userType: user.user_type },
-      JWT_SECRET,
-      { expiresIn: ACCESS_EXPIRY }
-    );
-    const refreshToken = jwt.sign(
-      { userId: user.id, type: 'refresh' },
-      JWT_SECRET,
-      { expiresIn: REFRESH_EXPIRY }
-    );
-    return res.json({
-      token: accessToken,
-      refreshToken,
-      user: sanitizeUser(user),
-    });
-  } catch (err) {
-    console.error('verifyPhone:', err);
-    return res.status(500).json({ error: 'Verification failed' });
+  if (!req.user) {
+    return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
   }
-}
-
-async function login(req, res) {
-  try {
-    const { email, phone, password } = req.body;
-    const identifier = email || phone;
-    const passwordNorm = normalizePasswordForAuth(password);
-    if (!identifier || !passwordNorm) {
-      return res.status(400).json({ error: 'email or phone, and password are required' });
-    }
-
-    const trimmedId = String(identifier).trim();
-    const isEmailLogin = trimmedId.includes('@');
-
-    let user;
-    if (isEmailLogin) {
-      const emailNorm = normalizeEmailForDb(trimmedId);
-      const userResult = await db.query(
-        `SELECT * FROM users
-         WHERE LOWER(TRIM(email)) = $1
-           AND is_active = true`,
-        [emailNorm]
-      );
-      user = userResult.rows[0];
-    } else {
-      const phoneE164 = normalizeSouthAfricaToE164(trimmedId);
-      if (!phoneE164) {
-        return res.status(400).json({
-          error: 'Invalid phone number. Use a South African mobile (e.g. 071… or 82…).',
-        });
-      }
-      user = await findActiveUserByPhone(phoneE164);
-    }
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    if (requirePhoneVerificationForAuth() && !user.is_verified) {
-      return res.status(401).json({
-        error:
-          'Please verify your phone with the SMS code sent when you registered, then sign in.',
-        code: 'PHONE_NOT_VERIFIED',
-      });
-    }
-    if (!(await bcrypt.compare(passwordNorm, user.password_hash))) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    let extra = {};
-    if (user.user_type === 'driver') {
-      const profile = await db.query(
-        `SELECT verification_status FROM driver_profiles WHERE user_id = $1`,
-        [user.id]
-      );
-      let verificationStatus = profile.rows[0]?.verification_status || 'pending';
-
-      // Testing mode: drivers should be usable immediately without admin review.
-      if (allowDriverAutoApprovalForTesting() && verificationStatus !== 'approved') {
-        await db.query(
-          `UPDATE driver_profiles
-           SET verification_status = 'approved', updated_at = NOW()
-           WHERE user_id = $1`,
-          [user.id]
-        );
-        verificationStatus = 'approved';
-      }
-
-      extra.verification_status = verificationStatus;
-
-      // Drivers can only log in after admin approval.
-      if (verificationStatus !== 'approved') {
-        return res.status(403).json({
-          error: 'Driver account is under review. Please try again later.',
-          verification_status: verificationStatus,
-        });
-      }
-    }
-
-    const accessToken = jwt.sign(
-      { userId: user.id, userType: user.user_type },
-      JWT_SECRET,
-      { expiresIn: ACCESS_EXPIRY }
-    );
-    const refreshToken = jwt.sign(
-      { userId: user.id, type: 'refresh' },
-      JWT_SECRET,
-      { expiresIn: REFRESH_EXPIRY }
-    );
-
-    return res.json({
-      token: accessToken,
-      refreshToken,
-      user: { ...sanitizeUser(user), ...extra },
-    });
-  } catch (err) {
-    console.error('login:', err);
-    return res.status(500).json({ error: 'Login failed' });
+  const code = String(req.body?.code || '').trim();
+  if (!code) {
+    return res.status(400).json({ error: 'code is required' });
   }
-}
-
-async function forgotPassword(req, res) {
-  try {
-    const { email, phone } = req.body;
-
-    let user = null;
-
-    if (phone) {
-      const phoneNorm = normalizeSouthAfricaToE164(phone);
-      if (!phoneNorm) {
-        return res.status(400).json({ error: 'Invalid phone number' });
-      }
-      const row = await findActiveUserByPhone(phoneNorm);
-      user = row ? { id: row.id, phone: row.phone } : null;
-    } else if (email) {
-      const emailNorm = normalizeEmailForDb(email);
-      const userResult = await db.query(
-        `SELECT id, phone FROM users WHERE LOWER(TRIM(email)) = $1 AND is_active = true`,
-        [emailNorm]
-      );
-      user = userResult.rows[0];
-    } else {
-      return res.status(400).json({ error: 'email or phone is required' });
-    }
-
-    if (!user) {
-      return res.json({ message: 'If an account exists, a reset code has been sent.' });
-    }
-
-    const { rows } = await db.query(
-      `SELECT created_at FROM otps
-       WHERE phone = $1
-       AND purpose = 'reset_password'
-       AND consumed_at IS NULL
-       AND created_at > NOW() - INTERVAL '60 seconds'
-       ORDER BY created_at DESC LIMIT 1`,
-      [user.phone]
-    );
-
-    if (rows.length > 0) {
-      return res.status(429).json({
-        error: 'Please wait 60 seconds before requesting another code.',
-      });
-    }
-
-    const otp = generateOTP();
-    await storeOTP(user.id, user.phone, otp, 'reset_password');
-    await sendSMS(user.phone, `Your SwiftDrop password reset code is: ${otp}. Valid for 10 minutes.`);
-    return res.json({ message: 'If an account exists, a reset code has been sent.' });
-  } catch (err) {
-    console.error('forgotPassword:', err);
-    return res.status(500).json({ error: 'Request failed' });
+  const verifiedUserId = await validateOTP(req.user.phone, code, 'phone_verification');
+  if (!verifiedUserId || Number(verifiedUserId) !== Number(req.user.id)) {
+    return res.status(400).json({ error: 'Invalid or expired OTP' });
   }
-}
 
-async function resetPassword(req, res) {
-  try {
-    const { phone, otp, newPassword } = req.body;
-    if (!phone || !otp || !newPassword) {
-      return res.status(400).json({ error: 'phone, otp and newPassword are required' });
-    }
-    const newPassNorm = normalizePasswordForAuth(newPassword);
-    if (newPassNorm.length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    }
-
-    const phoneNorm = normalizeSouthAfricaToE164(phone);
-    if (!phoneNorm) {
-      return res.status(400).json({ error: 'Invalid phone number' });
-    }
-
-    const userId = await validateOTP(phoneNorm, otp, 'reset_password');
-    if (!userId) {
-      return res.status(400).json({ error: 'Invalid or expired OTP' });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassNorm, 10);
-    await db.query(
-      `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
-      [passwordHash, userId]
-    );
-    return res.json({ message: 'Password reset successful' });
-  } catch (err) {
-    console.error('resetPassword:', err);
-    return res.status(500).json({ error: 'Reset failed' });
-  }
-}
-
-/** GET /api/auth/me — validate access token and return current user */
-async function getMe(req, res) {
-  try {
-    const u = req.user;
-    return res.json({
-      id: u.id,
-      email: u.email,
-      phone: u.phone,
-      full_name: u.full_name,
-      user_type: u.user_type,
-      profile_photo_url: u.profile_photo_url,
-      wallet_balance: u.wallet_balance != null ? Number(u.wallet_balance) : null,
-      is_verified: u.is_verified,
-    });
-  } catch (err) {
-    console.error('getMe:', err);
-    return res.status(500).json({ error: 'Failed to load user' });
-  }
-}
-
-async function refreshToken(req, res) {
-  try {
-    const { refreshToken: token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'refreshToken is required' });
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.type !== 'refresh') {
-      return res.status(401).json({ error: 'Invalid refresh token' });
-    }
-
-    const verifiedSql = requirePhoneVerificationForAuth() ? 'AND is_verified = true' : '';
-    const userResult = await db.query(
-      `SELECT id, full_name, email, phone, user_type, is_verified, profile_photo_url, wallet_balance
-       FROM users
-       WHERE id = $1 AND is_active = true ${verifiedSql}`,
-      [decoded.userId]
-    );
-    const user = userResult.rows[0];
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-
-    const accessToken = jwt.sign(
-      { userId: user.id, userType: user.user_type },
-      JWT_SECRET,
-      { expiresIn: ACCESS_EXPIRY }
-    );
-    return res.json({
-      token: accessToken,
-      user: sanitizeUser(user),
-    });
-  } catch (err) {
-    if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: 'Invalid or expired refresh token' });
-    }
-    console.error('refreshToken:', err);
-    return res.status(500).json({ error: 'Refresh failed' });
-  }
+  const result = await db.query(
+    `UPDATE users
+     SET is_verified = true,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, firebase_uid, full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
+    [req.user.id]
+  );
+  return res.json({ user: buildUserPayload(result.rows[0]) });
 }
 
 module.exports = {
-  registerCustomer,
-  registerDriver,
-  verifyPhone,
-  login,
-  forgotPassword,
-  resetPassword,
-  refreshToken,
   getMe,
+  register,
+  setRole,
+  completeProfile,
+  bootstrapProfile: register,
+  requestPhoneVerification,
+  verifyPhone,
 };

@@ -1,14 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSyncExternalStore } from 'react';
 
 /** Persisted session blob (token + user + optional refresh). */
 export const AUTH_STORAGE_KEY = 'swiftdrop_auth_token';
 
 // In-memory auth for the current app session (hydrated from AsyncStorage on bootstrap).
 let auth = null;
+const listeners = new Set();
+
+function emit() {
+  for (const listener of listeners) listener();
+}
 
 function shouldPersistAuth(nextAuth) {
-  if (!nextAuth?.token) return false;
-  return nextAuth?.user?.user_type !== 'driver';
+  return Boolean(nextAuth?.token);
 }
 
 export function setAuth(nextAuth) {
@@ -17,12 +22,15 @@ export function setAuth(nextAuth) {
     const payload = JSON.stringify({
       token: nextAuth.token,
       user: nextAuth.user,
+      role: nextAuth.role ?? nextAuth.user?.role ?? null,
+      firebaseUid: nextAuth.firebaseUid ?? null,
       refreshToken: nextAuth.refreshToken ?? null,
     });
     AsyncStorage.setItem(AUTH_STORAGE_KEY, payload).catch(() => {});
   } else {
     AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
   }
+  emit();
 }
 
 export function getAuth() {
@@ -31,6 +39,7 @@ export function getAuth() {
 
 export function clearAuth() {
   auth = null;
+  emit();
   return AsyncStorage.removeItem(AUTH_STORAGE_KEY).catch(() => {});
 }
 
@@ -48,4 +57,56 @@ export async function loadAuth() {
   } catch {
     return null;
   }
+}
+
+function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshot() {
+  return auth;
+}
+
+export function useAuthStore() {
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return {
+    user: snapshot?.user ?? null,
+    role: snapshot?.role ?? snapshot?.user?.role ?? null,
+    profileComplete:
+      snapshot?.profileComplete ??
+      snapshot?.user?.profile_complete ??
+      false,
+    token: snapshot?.token ?? null,
+    setUser(user) {
+      const current = getSnapshot();
+      setAuth({
+        ...(current || {}),
+        token: current?.token ?? null,
+        firebaseUid: current?.firebaseUid ?? null,
+        role: user?.role ?? current?.role ?? null,
+        profileComplete: user?.profileComplete ?? user?.profile_complete ?? current?.profileComplete ?? false,
+        user,
+      });
+    },
+    clearUser() {
+      clearAuth();
+    },
+    setRole(role) {
+      const current = getSnapshot();
+      setAuth({
+        ...(current || {}),
+        role,
+        user: current?.user ? { ...current.user, role } : current?.user ?? null,
+      });
+    },
+    setProfileComplete(profileComplete = true) {
+      const current = getSnapshot();
+      setAuth({
+        ...(current || {}),
+        profileComplete,
+        user: current?.user ? { ...current.user, profile_complete: profileComplete } : current?.user ?? null,
+      });
+    },
+  };
 }

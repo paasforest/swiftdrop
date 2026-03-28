@@ -50,4 +50,15 @@ function getMessaging() {
   }
 }
 
-module.exports = { getRealtimeDb, getMessaging };
+function getAdminAuth() {
+  init();
+  if (!admin.apps.length) return null;
+  try {
+    return admin.auth();
+  } catch (e) {
+    console.error('[firebaseAdmin] auth:', e.message);
+    return null;
+  }
+}
+
+module.exports = { getRealtimeDb, getMessaging, getAdminAuth };

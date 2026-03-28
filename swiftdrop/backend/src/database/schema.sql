@@ -2,12 +2,17 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
+  firebase_uid TEXT UNIQUE,
   email VARCHAR(255) UNIQUE NOT NULL,
   phone VARCHAR(20) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   full_name VARCHAR(255) NOT NULL,
   profile_photo_url TEXT,
   user_type VARCHAR(20) NOT NULL CHECK (user_type IN ('customer', 'driver', 'admin')),
+  app_role VARCHAR(20),
+  profile_completed BOOLEAN NOT NULL DEFAULT FALSE,
+  default_pickup_address TEXT,
+  sa_id_number VARCHAR(20),
   wallet_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
   is_verified BOOLEAN NOT NULL DEFAULT FALSE,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,

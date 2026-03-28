@@ -1,5 +1,7 @@
-import { initializeApp } from 'firebase/app';
+import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
 
 // Firebase configuration
 // TODO: Replace with your actual Firebase project credentials
@@ -27,10 +29,18 @@ const firebaseConfig = {
     '1:129983146930:web:68bfe3599931722d8ad2ab',
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+let auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage),
+  });
+} catch {
+  auth = getAuth(app);
+}
 
 // Initialize Realtime Database
 const database = getDatabase(app);
 
-export { app, database };
+export { app, auth, database };

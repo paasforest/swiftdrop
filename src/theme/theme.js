@@ -1,113 +1,159 @@
-/**
- * SwiftDrop unified design tokens.
- * Import from screens: import { colors, typography, spacing, radius, shadows } from '../theme/theme';
- */
-
-export const colors = {
-  // Primary
-  primary: '#1A73E8',
-  primaryLight: '#E8F4FF',
-  primaryDark: '#1557B0',
-
-  // Accent
-  accent: '#FF6B35',
-  accentLight: '#FFF0EB',
-  accentDark: '#E55A26',
-
-  // Semantic
-  success: '#00A86B',
-  successLight: '#E6F7F2',
-  warning: '#F59E0B',
-  warningLight: '#FFFBEB',
-  danger: '#EF4444',
-  dangerLight: '#FEF2F2',
-
-  // Neutrals
-  background: '#F8FAFC',
-  surface: '#FFFFFF',
-  border: '#E5E7EB',
-
-  // Text
-  textPrimary: '#1A1A2E',
-  textSecondary: '#6B7280',
-  textLight: '#9CA3AF',
-  textWhite: '#FFFFFF',
-
-  /** Shadows / overlays (RN shadowColor) */
-  black: '#000000',
-
-  /** Modal scrims */
-  overlayMedium: 'rgba(0,0,0,0.35)',
-  overlayDark: 'rgba(0,0,0,0.7)',
-
-  /** Header gradients */
-  gradientEnd: '#0D47A1',
-
-  /** Delivery tier selected card */
-  tierSelectedBg: '#EBF5FB',
-
-  /** Admin shell */
-  adminHeader: '#1E293B',
-  adminContent: '#FFFFFF',
+export const theme = {
+  colors: {
+    obsidian: '#0A0A0F',
+    volt: '#E8FF00',
+    signalGreen: '#4ADE80',
+    offWhite: '#F5F5F0',
+    background: '#FAFAFA',
+    backgroundDark: '#0A0A0F',
+    surface: '#FFFFFF',
+    surfaceDark: '#161620',
+    surfaceElevated: '#F5F5F0',
+    card: '#FFFFFF',
+    cardDark: '#1A1D27',
+    text: '#0A0A0F',
+    textLight: '#FFFFFF',
+    textMuted: '#888888',
+    textFaint: '#BBBBBB',
+    textOnDark: 'rgba(255,255,255,0.7)',
+    textOnDarkMuted: 'rgba(255,255,255,0.4)',
+    primary: '#0A0A0F',
+    accent: '#E8FF00',
+    success: '#4ADE80',
+    danger: '#FF4444',
+    warning: '#F59E0B',
+    border: '#E8E8E8',
+    borderDark: 'rgba(255,255,255,0.08)',
+    borderAccent: 'rgba(232,255,0,0.25)',
+    overlayMedium: 'rgba(10,10,15,0.45)',
+    overlayDark: 'rgba(10,10,15,0.72)',
+    black: '#000000',
+  },
+  typography: {
+    xs: 11,
+    sm: 12,
+    base: 14,
+    md: 15,
+    lg: 17,
+    xl: 20,
+    xxl: 24,
+    hero: 32,
+    regular: '400',
+    medium: '500',
+    semibold: '600',
+    bold: '700',
+    tight: -0.5,
+    normal: 0,
+    wide: 0.5,
+    wider: 1,
+    widest: 1.5,
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    xxxl: 32,
+  },
+  radius: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+    xxl: 24,
+    full: 999,
+  },
+  components: {
+    screenLight: {
+      flex: 1,
+      backgroundColor: '#FAFAFA',
+    },
+    screenDark: {
+      flex: 1,
+      backgroundColor: '#0A0A0F',
+    },
+    card: {
+      backgroundColor: '#FFFFFF',
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: '#E8E8E8',
+    },
+    cardDark: {
+      backgroundColor: '#161620',
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.08)',
+    },
+    ctaButton: {
+      height: 52,
+      backgroundColor: '#0A0A0F',
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    ctaButtonText: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '600',
+      letterSpacing: 0.2,
+    },
+    accentButton: {
+      height: 52,
+      backgroundColor: '#E8FF00',
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    accentButtonText: {
+      color: '#0A0A0F',
+      fontSize: 15,
+      fontWeight: '700',
+      letterSpacing: 0.2,
+    },
+    input: {
+      backgroundColor: '#FFFFFF',
+      borderWidth: 1,
+      borderColor: '#E8E8E8',
+      borderRadius: 12,
+      minHeight: 48,
+      paddingHorizontal: 16,
+      fontSize: 14,
+      color: '#0A0A0F',
+    },
+    inputDark: {
+      backgroundColor: 'rgba(255,255,255,0.06)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.1)',
+      borderRadius: 12,
+      minHeight: 48,
+      paddingHorizontal: 16,
+      fontSize: 14,
+      color: '#FFFFFF',
+    },
+  },
 };
 
-export const typography = {
-  h1: { fontSize: 28, fontWeight: '700' },
-  h2: { fontSize: 22, fontWeight: '700' },
-  h3: { fontSize: 18, fontWeight: '600' },
-  h4: { fontSize: 16, fontWeight: '600' },
-  body: { fontSize: 15, fontWeight: '400' },
-  small: { fontSize: 13, fontWeight: '400' },
-  label: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5 },
-};
-
-export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-};
-
-export const radius = {
-  sm: 8,
-  md: 12,
-  /** Admin cards */
-  adminCard: 10,
-  lg: 16,
-  xl: 24,
-  full: 999,
-};
-
-/** Admin typography (px) */
-export const adminType = {
-  title: { fontSize: 14, fontWeight: '700' },
-  body: { fontSize: 12, fontWeight: '400' },
-  label: { fontSize: 10, fontWeight: '500' },
-  badge: { fontSize: 9, fontWeight: '700' },
-};
-
+export const colors = theme.colors;
+export const typography = theme.typography;
+export const spacing = theme.spacing;
+export const radius = theme.radius;
 export const shadows = {
   card: {
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: theme.colors.black,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 6,
   },
   modal: {
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 10,
+    shadowColor: theme.colors.black,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 28,
+    elevation: 12,
   },
 };
-
-/** Resolve AppText color prop: theme key or raw hex */
-export function resolveColor(keyOrHex) {
-  if (!keyOrHex) return undefined;
-  if (typeof keyOrHex === 'string' && keyOrHex.startsWith('#')) return keyOrHex;
-  return colors[keyOrHex] ?? keyOrHex;
-}

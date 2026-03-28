@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { ref, set, onValue, off } from 'firebase/database';
+import { ref, set, onValue } from 'firebase/database';
 import { database } from './firebaseConfig';
 import { patchJson } from '../apiClient';
 import { getAuth } from '../authStore';
@@ -8,6 +8,37 @@ let locationSubscription = null;
 let locationUpdateCallback = null;
 let lastLocationBroadcastAt = 0;
 let lastBackendSyncAt = 0;
+
+export async function getFreshForegroundPosition({ requestPermission = true } = {}) {
+  const permission = requestPermission
+    ? await Location.requestForegroundPermissionsAsync()
+    : await Location.getForegroundPermissionsAsync();
+  if (permission.status !== 'granted') {
+    throw new Error('Location permission not granted');
+  }
+  return Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.Balanced,
+  });
+}
+
+export async function syncDriverLocationToBackend({
+  latitude,
+  longitude,
+  isOnline = true,
+  quiet = true,
+}) {
+  const auth = getAuth();
+  if (!auth?.token) {
+    throw new Error('Driver not authenticated');
+  }
+  const response = await patchJson(
+    '/api/drivers/location',
+    { lat: latitude, lng: longitude, is_online: isOnline },
+    { token: auth.token, quiet }
+  );
+  lastBackendSyncAt = Date.now();
+  return response;
+}
 
 /**
  * Start tracking driver location and update Firebase in real-time
@@ -20,14 +51,33 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
   lastLocationBroadcastAt = 0;
   lastBackendSyncAt = 0;
   try {
-    // Request location permissions
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      throw new Error('Location permission not granted');
-    }
+    const initialLocation = await getFreshForegroundPosition({ requestPermission: true });
+    const initialLatitude = initialLocation.coords.latitude;
+    const initialLongitude = initialLocation.coords.longitude;
 
     // Stop any existing tracking
     stopDriverLocationTracking();
+
+    if (locationUpdateCallback) {
+      locationUpdateCallback({ latitude: initialLatitude, longitude: initialLongitude });
+    }
+
+    const locationRef = ref(database, `active_deliveries/${orderId}/driver_location`);
+    await set(locationRef, {
+      latitude: initialLatitude,
+      longitude: initialLongitude,
+      heading: initialLocation.coords.heading || 0,
+      speed: initialLocation.coords.speed || 0,
+      timestamp: Date.now(),
+      driverId,
+    });
+
+    await syncDriverLocationToBackend({
+      latitude: initialLatitude,
+      longitude: initialLongitude,
+      isOnline: true,
+      quiet: true,
+    });
 
     // Keep tracking light enough for smooth in-app driving screens.
     locationSubscription = await Location.watchPositionAsync(
@@ -63,14 +113,13 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
         });
 
         // Keep backend location truth reasonably fresh during active trips too.
-        const auth = getAuth();
-        if (auth?.token && now - lastBackendSyncAt >= 12000) {
-          lastBackendSyncAt = now;
-          patchJson(
-            '/api/drivers/location',
-            { lat: latitude, lng: longitude, is_online: true },
-            { token: auth.token, quiet: true }
-          ).catch((error) => {
+        if (now - lastBackendSyncAt >= 12000) {
+          syncDriverLocationToBackend({
+            latitude,
+            longitude,
+            isOnline: true,
+            quiet: true,
+          }).catch((error) => {
             console.error('[Location] Backend location sync failed:', error?.message || error);
           });
         }
