@@ -35,7 +35,11 @@ async function geocodeAddress(address) {
   return { lat: FALLBACK_LAT, lng: FALLBACK_LNG };
 }
 
-async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = 500) {
+// TESTING MODE: radius is 2000km (whole of SA) so you can test from any location.
+// PRODUCTION: change this to 15 once real drivers are on the ground in the right cities.
+const DRIVER_SEARCH_RADIUS_KM = parseInt(process.env.DRIVER_SEARCH_RADIUS_KM || '2000', 10);
+
+async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = DRIVER_SEARCH_RADIUS_KM) {
   const rtdb = getRealtimeDb();
   if (!rtdb) return [];
 
