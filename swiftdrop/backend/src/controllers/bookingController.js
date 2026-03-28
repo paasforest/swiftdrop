@@ -433,11 +433,25 @@ async function uploadPhoto(req, res) {
   }
 
   try {
-    const { uploadImage } = require('../services/cloudinaryService');
-    const result = await uploadImage(file);
     const col = stage === 'pickup' ? 'pickup_photo_url' : 'dropoff_photo_url';
-    await db.query(`UPDATE bookings SET ${col} = $1 WHERE id = $2`, [result.secure_url, bookingId]);
-    return res.json({ success: true, url: result.secure_url });
+
+    // Try Cloudinary upload — if not configured, skip silently and still succeed.
+    // This allows the delivery flow to work even before Cloudinary is set up.
+    let photoUrl = null;
+    try {
+      const { uploadImage } = require('../services/cloudinaryService');
+      const result = await uploadImage(file);
+      photoUrl = result.secure_url;
+    } catch (cloudErr) {
+      // Cloudinary not configured or upload failed — log but don't block the flow
+      console.warn('[uploadPhoto] Cloudinary skipped:', cloudErr.message);
+    }
+
+    if (photoUrl) {
+      await db.query(`UPDATE bookings SET ${col} = $1 WHERE id = $2`, [photoUrl, bookingId]);
+    }
+
+    return res.json({ success: true, url: photoUrl });
   } catch (err) {
     return res.status(500).json({ error: 'Photo upload failed', detail: err.message });
   }
