@@ -16,7 +16,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/seed',     seedRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SwiftDrop API', version: '2.0.1-seed', status: 'auth-foundation' });
+  res.json({ name: 'SwiftDrop API', version: '2.0.2-seed', status: 'auth-foundation' });
 });
 
 app.get('/health', (req, res) => {

@@ -69,14 +69,19 @@ router.post('/create-test-users', async (req, res) => {
         } else throw e;
       }
 
-      // Upsert Postgres user — find any existing row by uid, email, OR phone
+      // Step 1: clear phone conflicts on OTHER rows so the upsert won't violate uniqueness
+      await db.query(
+        `UPDATE users SET phone=NULL WHERE phone=$1 AND (firebase_uid IS DISTINCT FROM $2) AND (email IS DISTINCT FROM $3)`,
+        [u.phone, firebaseUid, u.email]
+      );
+
+      // Step 2: find target row by uid or email
       const existing = await db.query(
-        `SELECT id FROM users WHERE firebase_uid=$1 OR email=$2 OR phone=$3 LIMIT 1`,
-        [firebaseUid, u.email, u.phone]
+        `SELECT id FROM users WHERE firebase_uid=$1 OR email=$2 LIMIT 1`,
+        [firebaseUid, u.email]
       );
       let userRes;
       if (existing.rows.length > 0) {
-        // Claim this row — update all fields including firebase_uid and email
         userRes = await db.query(`
           UPDATE users SET firebase_uid=$1, email=$2, phone=$3, full_name=$4,
             user_type=$5, app_role=$6, profile_completed=true, is_verified=true,
