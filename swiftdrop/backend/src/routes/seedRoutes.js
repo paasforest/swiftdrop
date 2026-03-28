@@ -31,7 +31,6 @@ const USERS = [
     vehicleReg: 'CA 441 GP',
   },
 ];
-];
 
 router.post('/create-test-users', async (req, res) => {
   if (req.headers['x-seed-secret'] !== SEED_SECRET) {
