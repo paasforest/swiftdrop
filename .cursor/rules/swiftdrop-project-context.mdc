@@ -1,0 +1,89 @@
+---
+description: SwiftDrop project context — always apply to all sessions
+alwaysApply: true
+---
+
+# SwiftDrop Project Context
+
+React Native + Expo managed workflow. Backend on Railway (Node/Express + Postgres). Firebase for Auth, RTDB, and FCM.
+
+## Core file locations — never recreate, always import
+
+| What | Path |
+|---|---|
+| Theme / design tokens | `src/theme/theme.js` |
+| Firebase (app, auth, database) | `src/services/firebaseConfig.js` |
+| API client (base URL already set) | `src/apiClient.js` — use `getJson`, `postJson`, `patchJson`, `deleteJson` |
+| Auth store hook | `src/authStore.js` — use `useAuthStore()` |
+| Navigation ref | `src/navigationRef.js` |
+| Firebase Admin (backend) | `swiftdrop/backend/src/services/firebaseAdmin.js` |
+| Auth middleware (backend) | `swiftdrop/backend/src/middleware/auth.js` |
+| Notification service (backend) | `swiftdrop/backend/src/services/notificationService.js` |
+
+## Design system — Obsidian + Volt
+
+Always import from `../../theme/theme`. Never hardcode colours.
+
+```js
+theme.colors.obsidian      // #0A0A0F  — primary dark background
+theme.colors.volt          // #E8FF00  — accent, CTAs on dark
+theme.colors.signalGreen   // #4ADE80  — driver online, success
+theme.colors.offWhite      // #F5F5F0  — light surface
+theme.colors.background    // #FAFAFA
+theme.colors.textLight     // #FFFFFF
+theme.colors.textOnDark    // rgba(255,255,255,0.7)
+theme.colors.textOnDarkMuted // rgba(255,255,255,0.4)
+theme.components.ctaButton     // obsidian CTA style
+theme.components.ctaButtonText
+theme.components.accentButton  // volt CTA style (driver screens)
+theme.components.input
+```
+
+## Navigation
+
+- Stack navigation only — `@react-navigation/stack`
+- `@react-navigation/bottom-tabs` is NOT installed
+- All screens registered in `src/navigation/RoleNavigator.js`
+- Never use `navigation.navigate` to a screen not registered there
+
+## Screen rules
+
+- Use `SafeAreaView` from `react-native-safe-area-context` with `edges={['top']}`
+- Wrap any screen with inputs in `KeyboardAvoidingView`
+- Never use `position: fixed` or `position: absolute` for full-screen overlays — use flex layout
+- Bottom sheets: use `Modal` + `Animated` slide, not absolute positioning
+
+## Address / map inputs
+
+- Plain `TextInput` for address fields unless Google Maps autocomplete is explicitly requested
+- `react-native-maps` is installed — use `PROVIDER_GOOGLE` on Android
+- `MapView` must have `style={{ flex: 1 }}` not a fixed height
+
+## Photo upload
+
+- `expo-image-picker` is installed
+- Never call Cloudinary directly from frontend
+- Upload via `POST /api/bookings/{bookingId}/upload-photo` as `multipart/form-data`
+
+## Backend conventions
+
+- Check existing files before creating: `firebaseAdmin.js`, `auth.js`, `notificationService.js`, `provinceService.js`
+- Add new utils to `swiftdrop/backend/src/utils/`
+- Wire new routes in `server.js` with a single `app.use()` line — never touch other parts
+- Use `verifyFirebaseToken` for driver-only routes, `auth` for routes that need a Postgres user row
+
+## Build discipline — run order
+
+1. Write screen → `expo start` → confirm it renders without errors
+2. Write backend → deploy → Postman test → confirm response correct
+3. Only move to next screen after current one is clean
+
+## Bookings RTDB structure
+
+```
+jobOffers/{driverFirebaseUid}/   — pending job offer for driver
+driverActiveJob/{driverFirebaseUid}/  — active job during delivery
+bookings/{bookingId}/status      — status string listened to by frontend
+drivers/{driverFirebaseUid}/status   — "online" | "busy" | "offline"
+active_deliveries/{bookingId}/driver_location  — live GPS from locationTracking.js
+```
