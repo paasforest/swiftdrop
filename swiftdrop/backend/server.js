@@ -5,6 +5,7 @@ const authRoutes          = require('./src/routes/authRoutes');
 const bookingRoutes       = require('./src/routes/bookingRoutes');
 const driverRoutes        = require('./src/routes/driverRoutes');
 const notificationRoutes  = require('./src/routes/notificationRoutes');
+const seedRoutes          = require('./src/routes/seedRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -16,6 +17,7 @@ app.use('/api/auth',          authRoutes);
 app.use('/api/bookings',      bookingRoutes);
 app.use('/api/drivers',       driverRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/seed', seedRoutes);
 
 app.get('/', (req, res) => {
   res.json({ name: 'SwiftDrop API', version: '2.0.5-pricing', status: 'auth-foundation' });

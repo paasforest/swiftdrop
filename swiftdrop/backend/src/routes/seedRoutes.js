@@ -5,28 +5,7 @@ const db = require('../database/connection');
 
 const SEED_SECRET = process.env.SEED_SECRET || 'swiftdrop-seed-2026';
 
-const USERS = [
-  {
-    email: 'sender@swiftdroptest.com',
-    password: 'Test1234',
-    phone: '+27774388845',
-    name: 'Test Sender',
-    role: 'sender',
-    userType: 'customer',
-    defaultAddress: '12 Bree Street, Cape Town, 8001',
-  },
-  {
-    email: 'driver@swiftdroptest.com',
-    password: 'Test1234',
-    phone: '+27679518124',
-    name: 'Test Driver',
-    role: 'driver',
-    userType: 'driver',
-    idNumber: '9001015009087',
-    vehicleType: 'Car',
-    vehicleReg: 'CA 441 GP',
-  },
-];
+const USERS = require('./seedTestUsers.json');
 
 router.post('/create-test-users', async (req, res) => {
   if (req.headers['x-seed-secret'] !== SEED_SECRET) {
