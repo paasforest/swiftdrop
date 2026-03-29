@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { theme } from '../../theme/theme';
+import { customerFareZar } from '../../utils/customerFare';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -29,13 +30,13 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function calcEstimate(pickupCoord, dropoffCoord) {
-  if (!pickupCoord || !dropoffCoord) return null;
+function calcEstimate(pickupCoord, dropoffCoord, parcelSize) {
+  if (!pickupCoord || !dropoffCoord || !parcelSize) return null;
   const km = haversineKm(
     pickupCoord.lat, pickupCoord.lng,
     dropoffCoord.lat, dropoffCoord.lng
   );
-  const price = Math.round(30 + 8 * km);
+  const price = customerFareZar(km, parcelSize);
   const mins = Math.max(5, Math.round((km / 40) * 60));
   return { km: Math.round(km * 10) / 10, price, mins };
 }
@@ -56,7 +57,7 @@ export default function NewBookingScreen({ navigation }) {
   const [dropoffCoord, setDropoffCoord] = useState(null);
   const [parcelSize, setParcelSize] = useState('');
 
-  const estimate = calcEstimate(pickupCoord, dropoffCoord);
+  const estimate = calcEstimate(pickupCoord, dropoffCoord, parcelSize);
   const canSubmit = pickupAddress && dropoffAddress && parcelSize;
 
   const handleFindDriver = () => {

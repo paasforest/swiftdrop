@@ -18,7 +18,7 @@ app.use('/api/drivers',       driverRoutes);
 app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SwiftDrop API', version: '2.0.4-earnings', status: 'auth-foundation' });
+  res.json({ name: 'SwiftDrop API', version: '2.0.5-pricing', status: 'auth-foundation' });
 });
 
 app.get('/health', (req, res) => {

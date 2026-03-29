@@ -2,36 +2,37 @@ const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
 const { sendPushNotification } = require('../services/notificationService');
 const { haversineKm } = require('../utils/haversine');
+const { tripFareBreakdown } = require('../utils/pricing');
 
 // Default Cape Town centre — used as geocode fallback
 const FALLBACK_LAT = -33.9249;
 const FALLBACK_LNG = 18.4241;
-
-// Minimum payout: R30 base + R8/km
-function calcPayout(distanceKm) {
-  return Math.round(30 + 8 * distanceKm);
-}
 
 // Estimated minutes: assume 40 km/h average city speed
 function calcMins(distanceKm) {
   return Math.max(5, Math.round((distanceKm / 40) * 60));
 }
 
-/** Trip payout: pickup→dropoff when coords exist; else fallbackKm (e.g. driver→pickup). */
-function tripKmAndDriverPayout(pickupLat, pickupLng, dropoffLat, dropoffLng, fallbackKm) {
+/**
+ * Trip km from pickup→dropoff when coords exist; else fallbackKm (e.g. driver→pickup).
+ * Returns customer fare (rounded R5) + driver 80% payout + platform fee.
+ */
+function tripKmThenFare(pickupLat, pickupLng, dropoffLat, dropoffLng, fallbackKm, parcelSize) {
   const pl = pickupLat != null ? Number(pickupLat) : NaN;
   const pg = pickupLng != null ? Number(pickupLng) : NaN;
   const dl = dropoffLat != null ? Number(dropoffLat) : NaN;
   const dg = dropoffLng != null ? Number(dropoffLng) : NaN;
+  let tripKm;
   if ([pl, pg, dl, dg].every(Number.isFinite)) {
     const km = haversineKm(pl, pg, dl, dg);
-    const tripKm = Math.round(km * 10) / 10;
-    return { tripKm, driverPayout: calcPayout(km) };
+    tripKm = Math.round(km * 10) / 10;
+  } else {
+    const fb = Number(fallbackKm);
+    const km = Number.isFinite(fb) ? fb : 0;
+    tripKm = Math.round(km * 10) / 10;
   }
-  const fb = Number(fallbackKm);
-  const km = Number.isFinite(fb) ? fb : 0;
-  const tripKm = Math.round(km * 10) / 10;
-  return { tripKm, driverPayout: calcPayout(km) };
+  const { customerFare, driverPayout, platformFee } = tripFareBreakdown(tripKm, parcelSize);
+  return { tripKm, customerFare, driverPayout, platformFee };
 }
 
 async function geocodeAddress(address) {
@@ -129,24 +130,29 @@ async function requestBooking(req, res) {
 
   const nearestDriver = drivers[0];
   const driverToPickupKm = Math.round(nearestDriver.distKm * 10) / 10;
-  const { tripKm, driverPayout } = tripKmAndDriverPayout(
+  const {
+    tripKm,
+    customerFare,
+    driverPayout,
+  } = tripKmThenFare(
     pickupLat,
     pickupLng,
     dropoffLatDb,
     dropoffLngDb,
-    driverToPickupKm
+    driverToPickupKm,
+    parcelSize
   );
   const estimatedMins = calcMins(tripKm);
   const distanceKm = tripKm;
 
-  // Create booking row in Postgres (driver_payout = trip-based R30 + R8/km)
+  // Create booking row (customer_fare = sender total; driver_payout = 80%)
   let bookingId;
   try {
     const result = await db.query(
       `INSERT INTO bookings
          (sender_id, pickup_address, dropoff_address, parcel_size, status,
-          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, driver_payout)
-       VALUES ($1, $2, $3, $4, 'searching', $5, $6, $7, $8, $9)
+          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, driver_payout, customer_fare)
+       VALUES ($1, $2, $3, $4, 'searching', $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         senderId,
@@ -158,6 +164,7 @@ async function requestBooking(req, res) {
         dropoffLatDb,
         dropoffLngDb,
         driverPayout,
+        customerFare,
       ]
     );
     bookingId = result.rows[0].id;
@@ -218,6 +225,7 @@ async function requestBooking(req, res) {
       : {}),
     distanceKm,
     estimatedMins,
+    customerFare,
     driverPayout,
   });
 }
@@ -254,13 +262,25 @@ async function acceptBooking(req, res) {
     driverRow = r.rows[0];
   } catch { /* ignore */ }
 
-  // Update booking status
+  // Update booking status; backfill fare columns on legacy rows
   try {
+    const { driverPayout: fillDriver, customerFare: fillCustomer } = tripKmThenFare(
+      booking.pickup_lat,
+      booking.pickup_lng,
+      booking.dropoff_lat,
+      booking.dropoff_lng,
+      5,
+      booking.parcel_size
+    );
     await db.query(
       `UPDATE bookings
-       SET status = 'active', driver_firebase_uid = $1, accepted_at = NOW()
+       SET status = 'active',
+           driver_firebase_uid = $1,
+           accepted_at = NOW(),
+           driver_payout = COALESCE(driver_payout, $3),
+           customer_fare = COALESCE(customer_fare, $4)
        WHERE id = $2`,
-      [driverFirebaseUid, bookingId]
+      [driverFirebaseUid, bookingId, fillDriver, fillCustomer]
     );
   } catch (err) {
     return res.status(500).json({ error: 'Failed to accept booking' });
@@ -357,23 +377,24 @@ async function declineBooking(req, res) {
   }
 
   const driverToPickupKm = Math.round(next.distKm * 10) / 10;
-  const { tripKm, driverPayout } = tripKmAndDriverPayout(
+  const { tripKm, customerFare, driverPayout } = tripKmThenFare(
     booking.pickup_lat,
     booking.pickup_lng,
     booking.dropoff_lat,
     booking.dropoff_lng,
-    driverToPickupKm
+    driverToPickupKm,
+    booking.parcel_size
   );
   const distanceKm = tripKm;
   const estimatedMins = calcMins(tripKm);
 
   try {
     await db.query(
-      `UPDATE bookings SET driver_payout = $1, updated_at = NOW() WHERE id = $2`,
-      [driverPayout, bookingId]
+      `UPDATE bookings SET driver_payout = $1, customer_fare = $2, updated_at = NOW() WHERE id = $3`,
+      [driverPayout, customerFare, bookingId]
     );
   } catch (e) {
-    console.warn('[booking] decline driver_payout update:', e.message);
+    console.warn('[booking] decline fare update:', e.message);
   }
 
   if (rtdb) {
@@ -538,9 +559,9 @@ async function completeBooking(req, res) {
   try {
     const result = await db.query(
       `UPDATE bookings SET status = 'delivered', delivered_at = NOW()
-       WHERE id = $1
-       RETURNING sender_id`,
-      [bookingId]
+       WHERE id = $1 AND driver_firebase_uid = $2
+       RETURNING sender_id, driver_payout, customer_fare`,
+      [bookingId, driverFirebaseUid]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Booking not found' });
 
@@ -560,10 +581,13 @@ async function completeBooking(req, res) {
       { type: 'delivered', bookingId: String(bookingId) }
     ).catch(() => {});
 
-    const driverPayout = result.rows[0].driver_payout;
+    const row = result.rows[0];
+    const driverPayout = row.driver_payout;
+    const customerFare = row.customer_fare;
     return res.json({
       success: true,
       driver_payout: driverPayout != null ? Number(driverPayout) : null,
+      customer_fare: customerFare != null ? Number(customerFare) : null,
     });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to complete booking' });
