@@ -1,5 +1,5 @@
 import { CommonActions } from '@react-navigation/native';
-import { clearAuth } from './authStore';
+import { clearAuth, getAuth } from './authStore';
 import { registerForPushNotificationsAsync } from './services/pushNotificationService';
 
 export function resetToRoleHome(navigation, user) {
@@ -14,7 +14,7 @@ export function resetToRoleHome(navigation, user) {
     })
   );
 
-  registerForPushNotificationsAsync().catch(() => {});
+  registerForPushNotificationsAsync({ bearerToken: getAuth()?.token }).catch(() => {});
 }
 
 export function resetToLogin(navigation) {

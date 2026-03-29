@@ -36,9 +36,11 @@ export async function getFCMToken() {
 
 /**
  * Request permissions, obtain native push token, register with backend.
+ * @param {{ bearerToken?: string }} [options] — pass Firebase ID token from App after login so registration
+ *   is not racy with authStore hydration.
  * @returns {Promise<string|null>}
  */
-export async function registerForPushNotificationsAsync() {
+export async function registerForPushNotificationsAsync(options = {}) {
   try {
     if (!Device.isDevice) {
       console.warn('[push] Notifications require a physical device.');
@@ -56,23 +58,30 @@ export async function registerForPushNotificationsAsync() {
       return null;
     }
 
-    const token = await getFCMToken();
-    if (!token) {
+    const deviceToken = await getFCMToken();
+    if (!deviceToken) {
       console.warn('[push] No native device push token (FCM). Check EAS projectId / google-services.');
       return null;
     }
 
-    const auth = getAuth();
-    if (auth?.token) {
-      try {
-        await postJson('/api/notifications/fcm-token', { fcm_token: token }, { token: auth.token });
-        console.log('[push] Registered native push token with backend');
-      } catch (e) {
-        console.warn('[push] Failed to register token on server:', e?.message || e);
-      }
+    const bearerToken = options.bearerToken ?? getAuth()?.token;
+    if (!bearerToken) {
+      console.warn('[push] No session token yet — skipping FCM registration (will retry on next login).');
+      return deviceToken;
     }
 
-    return token;
+    try {
+      await postJson(
+        '/api/notifications/fcm-token',
+        { fcm_token: deviceToken },
+        { token: bearerToken, skipAuthRetry: true }
+      );
+      console.log('[push] Registered native push token with backend');
+    } catch (e) {
+      console.warn('[push] Failed to register token on server:', e?.message || e);
+    }
+
+    return deviceToken;
   } catch (e) {
     console.log('[Push] Not available in Expo Go — using polling fallback');
     return null;

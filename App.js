@@ -11,6 +11,7 @@ import { navigationRef } from './src/navigationRef';
 import RoleNavigator from './src/navigation/RoleNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import SplashScreen from './src/screens/shared/SplashScreen';
+import { registerForPushNotificationsAsync } from './src/services/pushNotificationService';
 
 export default function App() {
   const [initializing, setInitializing] = useState(true);
@@ -37,6 +38,7 @@ export default function App() {
             user: nextUser,
           });
           setUser(nextUser);
+          registerForPushNotificationsAsync({ bearerToken: token }).catch(() => {});
         } catch {
           const fallbackUser = {
             firebase_uid: firebaseUser.uid,
@@ -45,14 +47,16 @@ export default function App() {
             role: null,
             profile_complete: false,
           };
+          const fbToken = await firebaseUser.getIdToken();
           setAuth({
-            token: await firebaseUser.getIdToken(),
+            token: fbToken,
             firebaseUid: firebaseUser.uid,
             role: null,
             profileComplete: false,
             user: fallbackUser,
           });
           setUser(fallbackUser);
+          registerForPushNotificationsAsync({ bearerToken: fbToken }).catch(() => {});
         }
       } else {
         clearAuth();
