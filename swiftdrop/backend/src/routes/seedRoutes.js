@@ -1,3 +1,4 @@
+// seedRoutes.js — test-user seeding endpoint (protected by SEED_SECRET)
 const express = require('express');
 const router = express.Router();
 const { getAdminAuth } = require('../services/firebaseAdmin');
