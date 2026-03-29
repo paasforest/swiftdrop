@@ -57,7 +57,9 @@ export default function PaymentScreen({ route, navigation }) {
       );
       navigation.replace('FindingDriver', { booking: data });
     } catch (err) {
-      if (err.status === 404 || err.message?.includes('NO_DRIVERS')) {
+      if (err.code === 'OUT_OF_SERVICE_AREA') {
+        Alert.alert('Outside service area', err.message);
+      } else if (err.status === 404 || err.message?.includes('NO_DRIVERS')) {
         Alert.alert(
           'No drivers nearby',
           'No drivers are available right now. Please try again shortly.'

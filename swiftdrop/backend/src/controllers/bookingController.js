@@ -3,6 +3,7 @@ const { getRealtimeDb } = require('../services/firebaseAdmin');
 const { sendPushNotification } = require('../services/notificationService');
 const { haversineKm } = require('../utils/haversine');
 const { tripFareBreakdown } = require('../utils/pricing');
+const { detectProvince } = require('../services/provinceService');
 
 // Default Cape Town centre — used as geocode fallback
 const FALLBACK_LAT = -33.9249;
@@ -121,6 +122,32 @@ async function requestBooking(req, res) {
     clientDropLng !== undefined && clientDropLng !== null ? parseFloat(clientDropLng) : null;
   const dropoffLatDb = Number.isFinite(dropoffLatRaw) ? dropoffLatRaw : null;
   const dropoffLngDb = Number.isFinite(dropoffLngRaw) ? dropoffLngRaw : null;
+
+  const OUT_OF_AREA_MSG =
+    'This location is outside SwiftDrop service areas (Western Cape and Gauteng only).';
+
+  if (!detectProvince(pickupLat, pickupLng)) {
+    return res.status(400).json({
+      error: OUT_OF_AREA_MSG,
+      code: 'OUT_OF_SERVICE_AREA',
+      field: 'pickup',
+    });
+  }
+
+  let dropoffLatForProvince = dropoffLatDb;
+  let dropoffLngForProvince = dropoffLngDb;
+  if (dropoffLatForProvince == null || dropoffLngForProvince == null) {
+    const geo = await geocodeAddress(dropoffAddress);
+    dropoffLatForProvince = geo.lat;
+    dropoffLngForProvince = geo.lng;
+  }
+  if (!detectProvince(dropoffLatForProvince, dropoffLngForProvince)) {
+    return res.status(400).json({
+      error: OUT_OF_AREA_MSG,
+      code: 'OUT_OF_SERVICE_AREA',
+      field: 'dropoff',
+    });
+  }
 
   // Find nearest online drivers
   const drivers = await getNearbyOnlineDrivers(pickupLat, pickupLng);
