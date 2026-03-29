@@ -1,7 +1,20 @@
 const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
 
-const TOKEN_RE = /^[a-f0-9]{32,64}$/i;
+const TOKEN_RE = /^[a-f0-9]{32,64}$/;
+
+/** Strip whitespace, zero-width chars, decode URI — paste from SQL often breaks the hex string. */
+function normalizeTrackToken(raw) {
+  if (raw == null) return '';
+  let s = String(raw).trim();
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    /* ignore */
+  }
+  s = s.replace(/[\s\u200b-\u200d\ufeff]/g, '').toLowerCase();
+  return s;
+}
 
 function shortenAddress(s) {
   if (!s) return '';
@@ -28,10 +41,13 @@ function statusLabel(status) {
  * GET /api/public/track/:token — JSON for map page (no auth).
  */
 async function getPublicTrackJson(req, res) {
-  const raw = req.params.token;
-  const token = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  const token = normalizeTrackToken(req.params.token);
   if (!TOKEN_RE.test(token)) {
-    return res.status(400).json({ error: 'Invalid link' });
+    return res.status(400).json({
+      error: 'Invalid link',
+      hint:
+        'Use the full tracking token (40-character hex from the app or public_track_token column), not the booking id.',
+    });
   }
 
   let row;
@@ -101,11 +117,23 @@ async function getPublicTrackJson(req, res) {
 /**
  * GET /track/:token — minimal Leaflet map (no app required).
  */
+function invalidTrackHtml(looksLikeBookingId) {
+  const extra = looksLikeBookingId
+    ? '<p>You may have used the <strong>booking number</strong> (e.g. 2841). Open the <strong>full URL</strong> from the app — tap <strong>Share live tracking link</strong> — or paste the whole <code>public_track_token</code> value (40 letters and numbers), not the <code>id</code>.</p>'
+    : '<p>Copy the token with no spaces or line breaks, or open the link from the SwiftDrop app.</p>';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Invalid link</title>
+<style>body{font-family:system-ui,sans-serif;padding:24px;max-width:520px;margin:0 auto;line-height:1.5;color:#0A0A0F}a{color:#2563eb}</style></head><body>
+<h1>Invalid tracking link</h1>
+${extra}
+<p><a href="/">SwiftDrop API</a></p></body></html>`;
+}
+
 function serveTrackPage(req, res) {
-  const raw = req.params.token;
-  const token = typeof raw === 'string' ? raw.trim() : '';
+  const token = normalizeTrackToken(req.params.token);
+  const looksLikeBookingId = /^\d{1,12}$/.test(token);
   if (!TOKEN_RE.test(token)) {
-    return res.status(400).send('Invalid tracking link.');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(400).send(invalidTrackHtml(looksLikeBookingId));
   }
 
   const apiBase =
