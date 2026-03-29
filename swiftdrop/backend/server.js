@@ -20,24 +20,11 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/seed', seedRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SwiftDrop API', version: '2.0.5-pricing', status: 'auth-foundation' });
+  res.json({ name: 'SwiftDrop API', version: '2.0.6-service-area', status: 'auth-foundation' });
 });
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', app: 'SwiftDrop' });
-});
-
-// Debug — shows live RTDB drivers node (remove after testing)
-app.get('/debug/rtdb-drivers', async (req, res) => {
-  const { getRealtimeDb } = require('./src/services/firebaseAdmin');
-  const rtdb = getRealtimeDb();
-  if (!rtdb) return res.json({ rtdb: 'NOT_INITIALIZED', drivers: null });
-  try {
-    const snap = await rtdb.ref('drivers').once('value');
-    return res.json({ rtdb: 'OK', drivers: snap.val() });
-  } catch (e) {
-    return res.json({ rtdb: 'ERROR', error: e.message });
-  }
 });
 
 app.use((req, res) => {

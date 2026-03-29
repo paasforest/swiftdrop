@@ -66,22 +66,16 @@ async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = DRIVER_SE
   const val = snap.val();
   if (!val) return [];
 
-  console.log('[matching] RTDB drivers snapshot:', JSON.stringify(val));
-  console.log('[matching] Pickup coords:', pickupLat, pickupLng, '| Radius:', radiusKm, 'km');
-
   const nearby = [];
   for (const [uid, entry] of Object.entries(val)) {
     if (entry?.status !== 'online') {
-      console.log(`[matching] Skip ${uid} — status: ${entry?.status}`);
       continue;
     }
     const { lat, lng } = entry;
     if (typeof lat !== 'number' || typeof lng !== 'number') {
-      console.log(`[matching] Skip ${uid} — missing lat/lng`);
       continue;
     }
     const distKm = haversineKm(pickupLat, pickupLng, lat, lng);
-    console.log(`[matching] Driver ${uid} — dist: ${distKm.toFixed(1)}km, within radius: ${distKm <= radiusKm}`);
     if (distKm <= radiusKm) {
       nearby.push({ uid, lat, lng, distKm, ...entry });
     }

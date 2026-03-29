@@ -9,11 +9,12 @@ function safeJsonParse(text) {
   }
 }
 
-/** Attach HTTP status and API `code` so callers can branch (e.g. PayFast unavailable). */
-function createHttpError(message, { code, status } = {}) {
+/** Attach HTTP status and API `code` / `field` so callers can branch (e.g. out of service area). */
+function createHttpError(message, { code, status, field } = {}) {
   const err = new Error(message);
   if (code != null) err.code = code;
   if (status != null) err.status = status;
+  if (field != null) err.field = field;
   return err;
 }
 
@@ -86,7 +87,11 @@ export async function getJson(path, { token, quiet, _retryAfterRefresh } = {}) {
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: GET ${url}`;
       }
-      throw createHttpError(message, { code: json?.code, status: res.status });
+      throw createHttpError(message, {
+        code: json?.code,
+        status: res.status,
+        field: json?.field,
+      });
     }
     return json ?? {};
   } catch (err) {
@@ -157,7 +162,11 @@ export async function deleteJson(path, { token, quiet, _retryAfterRefresh } = {}
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: DELETE ${url}`;
       }
-      throw createHttpError(message, { code: json?.code, status: res.status });
+      throw createHttpError(message, {
+        code: json?.code,
+        status: res.status,
+        field: json?.field,
+      });
     }
     return json ?? {};
   } catch (err) {
@@ -215,7 +224,11 @@ export async function postJson(path, body, { token, quiet, _retryAfterRefresh, s
       if (res.status === 404 && message === 'Application not found') {
         message = `Server not reachable (Railway: no app at this URL). Check API_BASE_URL and deployment. Request: POST ${url}`;
       }
-      throw createHttpError(message, { code: json?.code, status: res.status });
+      throw createHttpError(message, {
+        code: json?.code,
+        status: res.status,
+        field: json?.field,
+      });
     }
 
     return json ?? {};

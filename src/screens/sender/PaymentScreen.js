@@ -58,7 +58,14 @@ export default function PaymentScreen({ route, navigation }) {
       navigation.replace('FindingDriver', { booking: data });
     } catch (err) {
       if (err.code === 'OUT_OF_SERVICE_AREA') {
-        Alert.alert('Outside service area', err.message);
+        let body =
+          err.field === 'pickup'
+            ? 'Your pickup must be in the Western Cape or Gauteng. Go back and edit the pickup address, then try again.'
+            : err.field === 'dropoff'
+              ? 'Your delivery address must be in the Western Cape or Gauteng. Go back and edit the drop-off, then try again.'
+              : err.message ||
+                'SwiftDrop currently serves the Western Cape and Gauteng only. Please adjust your addresses and try again.';
+        Alert.alert('Outside service area', body);
       } else if (err.status === 404 || err.message?.includes('NO_DRIVERS')) {
         Alert.alert(
           'No drivers nearby',
