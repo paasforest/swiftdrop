@@ -64,15 +64,17 @@ export default function App() {
     return unsubscribe;
   }, [clearUser, setUser]);
 
-  if (initializing) return <SplashScreen />;
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer ref={navigationRef}>
-          <StatusBar style="auto" />
-          {user ? <RoleNavigator /> : <AuthNavigator />}
-        </NavigationContainer>
+        {initializing ? (
+          <SplashScreen />
+        ) : (
+          <NavigationContainer ref={navigationRef}>
+            <StatusBar style="auto" />
+            {user ? <RoleNavigator /> : <AuthNavigator />}
+          </NavigationContainer>
+        )}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
