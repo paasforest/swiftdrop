@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Alert,
   Animated,
@@ -16,8 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
 import { ref, onValue, remove } from 'firebase/database';
 import { database, auth } from '../../services/firebaseConfig';
-import { useAuthStore } from '../../authStore';
-import { clearAuth, postJson } from '../../apiClient';
+import { useAuthStore, clearAuth } from '../../authStore';
+import { getJson, postJson } from '../../apiClient';
 import {
   getFreshForegroundPosition,
   syncDriverLocationToBackend,
@@ -197,21 +198,37 @@ export default function DriverDashboardScreen({ navigation }) {
     clearAuth();
   };
 
+  const confirmSignOut = () => {
+    Alert.alert(
+      'Sign out',
+      'You’ll need to sign in again to receive delivery jobs.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: handleSignOut },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerLeft}>
           <Text style={styles.headerGreeting}>{greeting()},</Text>
           <Text style={styles.headerName}>{displayName.split(' ')[0]}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.avatar}
-          onLongPress={handleSignOut}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.avatarText}>{firstInitial(displayName)}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.avatar} activeOpacity={0.8}>
+            <Text style={styles.avatarText}>{firstInitial(displayName)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={confirmSignOut}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.signOutText}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Online toggle card ── */}
@@ -241,11 +258,12 @@ export default function DriverDashboardScreen({ navigation }) {
         contentContainerStyle={styles.bodyContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Earnings placeholder card */}
         <View style={styles.earningsCard}>
-          <Text style={styles.earningsLabel}>TODAY'S EARNINGS</Text>
-          <Text style={styles.earningsAmount}>R 0.00</Text>
-          <Text style={styles.earningsSub}>0 deliveries completed</Text>
+          <Text style={styles.earningsLabel}>TODAY&apos;S EARNINGS</Text>
+          <Text style={styles.earningsAmount}>R {todayEarnings.total.toFixed(2)}</Text>
+          <Text style={styles.earningsSub}>
+            {todayEarnings.deliveries} delivery{todayEarnings.deliveries === 1 ? '' : 'ies'} completed today
+          </Text>
         </View>
 
         {/* Status tip */}
@@ -351,11 +369,26 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 20,
+  },
+  headerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  signOutText: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.textOnDarkMuted,
+    letterSpacing: 0.4,
+    textDecorationLine: 'underline',
   },
   headerGreeting: {
     fontSize: 13,

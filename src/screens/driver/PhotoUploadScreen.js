@@ -44,8 +44,11 @@ export default function PhotoUploadScreen({ route, navigation }) {
     if (isPickup) {
       navigation.replace('NavigateDropoff', { job: booking });
     } else {
-      await postJson(`/api/bookings/${bookingId}/complete`, {}, { token });
-      navigation.replace('DriverJobComplete', { booking });
+      const data = await postJson(`/api/bookings/${bookingId}/complete`, {}, { token });
+      const payout = data?.driver_payout ?? booking?.driverPayout ?? booking?.driver_payout;
+      navigation.replace('DriverJobComplete', {
+        booking: { ...booking, bookingId, driverPayout: payout, driver_payout: payout },
+      });
     }
   };
 

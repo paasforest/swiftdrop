@@ -72,16 +72,22 @@ async function getTodayEarnings(req, res) {
   try {
     const firebaseUid = req.user?.firebase_uid;
     const result = await db.query(
-      `SELECT COUNT(*) AS deliveries
+      `SELECT
+         COUNT(*)::int AS deliveries,
+         COALESCE(SUM(driver_payout), 0)::numeric AS total
        FROM bookings
        WHERE driver_firebase_uid = $1
          AND status = 'delivered'
-         AND delivered_at >= CURRENT_DATE`,
+         AND delivered_at IS NOT NULL
+         AND (delivered_at AT TIME ZONE 'Africa/Johannesburg')::date
+             = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Johannesburg')::date`,
       [firebaseUid]
     );
-    const deliveries = parseInt(result.rows[0]?.deliveries, 10) || 0;
+    const row = result.rows[0] || {};
+    const deliveries = parseInt(row.deliveries, 10) || 0;
+    const total = row.total != null ? Number(row.total) : 0;
     return res.json({
-      total: 0,
+      total: Math.round(total * 100) / 100,
       deliveries,
     });
   } catch (err) {

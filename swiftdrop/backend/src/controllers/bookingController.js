@@ -17,6 +17,23 @@ function calcMins(distanceKm) {
   return Math.max(5, Math.round((distanceKm / 40) * 60));
 }
 
+/** Trip payout: pickup→dropoff when coords exist; else fallbackKm (e.g. driver→pickup). */
+function tripKmAndDriverPayout(pickupLat, pickupLng, dropoffLat, dropoffLng, fallbackKm) {
+  const pl = pickupLat != null ? Number(pickupLat) : NaN;
+  const pg = pickupLng != null ? Number(pickupLng) : NaN;
+  const dl = dropoffLat != null ? Number(dropoffLat) : NaN;
+  const dg = dropoffLng != null ? Number(dropoffLng) : NaN;
+  if ([pl, pg, dl, dg].every(Number.isFinite)) {
+    const km = haversineKm(pl, pg, dl, dg);
+    const tripKm = Math.round(km * 10) / 10;
+    return { tripKm, driverPayout: calcPayout(km) };
+  }
+  const fb = Number(fallbackKm);
+  const km = Number.isFinite(fb) ? fb : 0;
+  const tripKm = Math.round(km * 10) / 10;
+  return { tripKm, driverPayout: calcPayout(km) };
+}
+
 async function geocodeAddress(address) {
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) return { lat: FALLBACK_LAT, lng: FALLBACK_LNG };
@@ -97,6 +114,13 @@ async function requestBooking(req, res) {
     ({ lat: pickupLat, lng: pickupLng } = await geocodeAddress(pickupAddress));
   }
 
+  const dropoffLatRaw =
+    clientDropLat !== undefined && clientDropLat !== null ? parseFloat(clientDropLat) : null;
+  const dropoffLngRaw =
+    clientDropLng !== undefined && clientDropLng !== null ? parseFloat(clientDropLng) : null;
+  const dropoffLatDb = Number.isFinite(dropoffLatRaw) ? dropoffLatRaw : null;
+  const dropoffLngDb = Number.isFinite(dropoffLngRaw) ? dropoffLngRaw : null;
+
   // Find nearest online drivers
   const drivers = await getNearbyOnlineDrivers(pickupLat, pickupLng);
   if (drivers.length === 0) {
@@ -104,19 +128,37 @@ async function requestBooking(req, res) {
   }
 
   const nearestDriver = drivers[0];
-  const distanceKm = Math.round(nearestDriver.distKm * 10) / 10;
-  const driverPayout = calcPayout(distanceKm);
-  const estimatedMins = calcMins(distanceKm);
+  const driverToPickupKm = Math.round(nearestDriver.distKm * 10) / 10;
+  const { tripKm, driverPayout } = tripKmAndDriverPayout(
+    pickupLat,
+    pickupLng,
+    dropoffLatDb,
+    dropoffLngDb,
+    driverToPickupKm
+  );
+  const estimatedMins = calcMins(tripKm);
+  const distanceKm = tripKm;
 
-  // Create booking row in Postgres
+  // Create booking row in Postgres (driver_payout = trip-based R30 + R8/km)
   let bookingId;
   try {
     const result = await db.query(
       `INSERT INTO bookings
-         (sender_id, pickup_address, dropoff_address, parcel_size, status, pickup_lat, pickup_lng)
-       VALUES ($1, $2, $3, $4, 'searching', $5, $6)
+         (sender_id, pickup_address, dropoff_address, parcel_size, status,
+          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, driver_payout)
+       VALUES ($1, $2, $3, $4, 'searching', $5, $6, $7, $8, $9)
        RETURNING id`,
-      [senderId, pickupAddress, dropoffAddress, parcelSize, pickupLat, pickupLng]
+      [
+        senderId,
+        pickupAddress,
+        dropoffAddress,
+        parcelSize,
+        pickupLat,
+        pickupLng,
+        dropoffLatDb,
+        dropoffLngDb,
+        driverPayout,
+      ]
     );
     bookingId = result.rows[0].id;
   } catch (err) {
@@ -135,6 +177,7 @@ async function requestBooking(req, res) {
         parcelSize,
         driverPayout,
         distanceKm,
+        driverToPickupKm,
         estimatedMins,
         status: 'pending',
         createdAt: Date.now(),
@@ -162,11 +205,6 @@ async function requestBooking(req, res) {
     console.error('[booking] FCM notify error:', err.message);
   }
 
-  const dropoffLat =
-    clientDropLat !== undefined && clientDropLat !== null ? parseFloat(clientDropLat) : null;
-  const dropoffLng =
-    clientDropLng !== undefined && clientDropLng !== null ? parseFloat(clientDropLng) : null;
-
   return res.status(201).json({
     bookingId,
     status: 'searching',
@@ -175,8 +213,8 @@ async function requestBooking(req, res) {
     parcelSize,
     pickupLat,
     pickupLng,
-    ...(Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)
-      ? { dropoffLat, dropoffLng }
+    ...(dropoffLatDb != null && dropoffLngDb != null
+      ? { dropoffLat: dropoffLatDb, dropoffLng: dropoffLngDb }
       : {}),
     distanceKm,
     estimatedMins,
@@ -318,10 +356,25 @@ async function declineBooking(req, res) {
     return res.json({ success: true, status: 'no_drivers' });
   }
 
-  // Offer to next driver
-  const distanceKm = Math.round(next.distKm * 10) / 10;
-  const driverPayout = calcPayout(distanceKm);
-  const estimatedMins = calcMins(distanceKm);
+  const driverToPickupKm = Math.round(next.distKm * 10) / 10;
+  const { tripKm, driverPayout } = tripKmAndDriverPayout(
+    booking.pickup_lat,
+    booking.pickup_lng,
+    booking.dropoff_lat,
+    booking.dropoff_lng,
+    driverToPickupKm
+  );
+  const distanceKm = tripKm;
+  const estimatedMins = calcMins(tripKm);
+
+  try {
+    await db.query(
+      `UPDATE bookings SET driver_payout = $1, updated_at = NOW() WHERE id = $2`,
+      [driverPayout, bookingId]
+    );
+  } catch (e) {
+    console.warn('[booking] decline driver_payout update:', e.message);
+  }
 
   if (rtdb) {
     try {
@@ -332,6 +385,7 @@ async function declineBooking(req, res) {
         parcelSize: booking.parcel_size,
         driverPayout,
         distanceKm,
+        driverToPickupKm,
         estimatedMins,
         status: 'pending',
         createdAt: Date.now(),
@@ -506,7 +560,11 @@ async function completeBooking(req, res) {
       { type: 'delivered', bookingId: String(bookingId) }
     ).catch(() => {});
 
-    return res.json({ success: true });
+    const driverPayout = result.rows[0].driver_payout;
+    return res.json({
+      success: true,
+      driver_payout: driverPayout != null ? Number(driverPayout) : null,
+    });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to complete booking' });
   }
