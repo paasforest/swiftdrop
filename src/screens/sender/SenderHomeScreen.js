@@ -12,8 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
 import { auth } from '../../services/firebaseConfig';
-import { useAuthStore } from '../../authStore';
-import { getJson, clearAuth } from '../../apiClient';
+import { useAuthStore, clearAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 import { theme } from '../../theme/theme';
 
 function greeting() {
@@ -29,6 +29,12 @@ function firstInitial(name) {
 
 function firstName(name) {
   return (name || '').split(' ')[0] || 'there';
+}
+
+function formatZar(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 'R 0.00';
+  return `R ${x.toFixed(2)}`;
 }
 
 function StatusPill({ status }) {
@@ -77,6 +83,13 @@ export default function SenderHomeScreen({ navigation }) {
     clearAuth();
   };
 
+  const confirmSignOut = () => {
+    Alert.alert('Sign out', 'You will need to sign in again to book deliveries.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: handleSignOut },
+    ]);
+  };
+
   const renderBooking = ({ item }) => (
     <TouchableOpacity
       style={styles.bookingCard}
@@ -111,6 +124,25 @@ export default function SenderHomeScreen({ navigation }) {
         <Text style={styles.heroChevron}>›</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={styles.walletCard}
+        activeOpacity={0.85}
+        onPress={() =>
+          Alert.alert(
+            'Wallet',
+            'Top-ups and paying for deliveries from your wallet are coming soon. Cash on delivery stays available.',
+            [{ text: 'OK' }]
+          )
+        }
+      >
+        <View style={styles.walletLeft}>
+          <Text style={styles.walletLabel}>WALLET BALANCE</Text>
+          <Text style={styles.walletAmount}>{formatZar(user?.wallet_balance)}</Text>
+          <Text style={styles.walletHint}>Tap for info · top-up soon</Text>
+        </View>
+        <Text style={styles.walletChevron}>›</Text>
+      </TouchableOpacity>
+
       {/* Section label */}
       <Text style={styles.sectionLabel}>RECENT DELIVERIES</Text>
     </>
@@ -128,13 +160,22 @@ export default function SenderHomeScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Dark header */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerLeft}>
           <Text style={styles.headerGreeting}>{greeting()},</Text>
           <Text style={styles.headerName}>{firstName(displayName)}</Text>
         </View>
-        <TouchableOpacity style={styles.avatar} onLongPress={handleSignOut} activeOpacity={0.8}>
-          <Text style={styles.avatarText}>{firstInitial(displayName)}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.avatar} activeOpacity={0.8}>
+            <Text style={styles.avatarText}>{firstInitial(displayName)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={confirmSignOut}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.signOutText}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Off-white body panel overlapping header */}
@@ -167,12 +208,27 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 12,
     paddingBottom: 36,
     backgroundColor: theme.colors.obsidian,
+  },
+  headerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  signOutText: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.textOnDarkMuted,
+    letterSpacing: 0.4,
+    textDecorationLine: 'underline',
   },
   headerGreeting: {
     fontSize: 13,
@@ -257,6 +313,42 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: theme.colors.textOnDarkMuted,
     fontWeight: '300',
+  },
+
+  walletCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 16,
+    marginBottom: 24,
+  },
+  walletLeft: { flex: 1 },
+  walletLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: theme.colors.textMuted,
+    marginBottom: 4,
+  },
+  walletAmount: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: theme.colors.obsidian,
+    letterSpacing: -0.5,
+  },
+  walletHint: {
+    marginTop: 4,
+    fontSize: 11,
+    color: theme.colors.textMuted,
+  },
+  walletChevron: {
+    fontSize: 22,
+    color: theme.colors.textMuted,
+    marginLeft: 8,
   },
 
   sectionLabel: {
