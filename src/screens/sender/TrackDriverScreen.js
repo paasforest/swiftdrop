@@ -1,12 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { ref, onValue } from 'firebase/database';
 import { database } from '../../services/firebaseConfig';
 import { subscribeToDriverLocation, calculateETA } from '../../services/locationTracking';
@@ -16,6 +16,41 @@ function firstInitial(name) {
   return (name || 'D').trim()[0].toUpperCase();
 }
 
+function coordPickup(booking) {
+  const lat = Number(booking?.pickupLat ?? booking?.pickup_lat);
+  const lng = Number(booking?.pickupLng ?? booking?.pickup_lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { latitude: lat, longitude: lng };
+  }
+  return null;
+}
+
+function coordDropoff(booking) {
+  const lat = Number(booking?.dropoffLat ?? booking?.dropoff_lat);
+  const lng = Number(booking?.dropoffLng ?? booking?.dropoff_lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { latitude: lat, longitude: lng };
+  }
+  return null;
+}
+
+function headingToDropoff(status) {
+  return status === 'in_transit' || status === 'delivering' || status === 'otp_dropoff';
+}
+
+function formatUpdatedAt(timestampMs, nowTick) {
+  if (timestampMs == null || !Number.isFinite(timestampMs)) {
+    return 'Waiting for driver GPS…';
+  }
+  const s = Math.floor((nowTick - timestampMs) / 1000);
+  if (s < 0) return 'Updated just now';
+  if (s < 8) return 'Updated just now';
+  if (s < 60) return `Updated ${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `Updated ${m}m ago`;
+  return 'Updated a while ago';
+}
+
 export default function TrackDriverScreen({ route, navigation }) {
   const { booking } = route.params;
   const bookingId = booking?.bookingId || booking?.id;
@@ -23,9 +58,14 @@ export default function TrackDriverScreen({ route, navigation }) {
   const [driverLocation, setDriverLocation] = useState(null);
   const [bookingStatus, setBookingStatus] = useState(booking?.status || 'active');
   const [eta, setEta] = useState(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
-  // Pulse animation for driver marker
+  const mapRef = useRef(null);
   const pulseScale = useRef(new Animated.Value(1)).current;
+
+  const pickupCoord = useMemo(() => coordPickup(booking), [booking]);
+  const dropoffCoord = useMemo(() => coordDropoff(booking), [booking]);
+
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -37,7 +77,11 @@ export default function TrackDriverScreen({ route, navigation }) {
     return () => anim.stop();
   }, [pulseScale]);
 
-  // Subscribe to live driver location from Firebase RTDB
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 2000);
+    return () => clearInterval(id);
+  }, []);
+
   useEffect(() => {
     if (!bookingId) return;
     const unsub = subscribeToDriverLocation(String(bookingId), (loc) => {
@@ -46,17 +90,31 @@ export default function TrackDriverScreen({ route, navigation }) {
     return unsub;
   }, [bookingId]);
 
-  // Recalculate ETA whenever driver moves
-  useEffect(() => {
-    if (!driverLocation || !booking?.pickupAddress) return;
-    const mins = calculateETA(driverLocation, {
-      latitude: booking.pickupLat || -33.9249,
-      longitude: booking.pickupLng || 18.4241,
-    });
-    setEta(mins);
-  }, [driverLocation, booking]);
+  const driverCoord = driverLocation
+    ? { latitude: driverLocation.latitude, longitude: driverLocation.longitude }
+    : null;
 
-  // Listen to booking status changes
+  const routeTarget = headingToDropoff(bookingStatus) ? dropoffCoord || pickupCoord : pickupCoord;
+
+  useEffect(() => {
+    if (!driverCoord || !routeTarget) return;
+    const mins = calculateETA(driverCoord, routeTarget);
+    setEta(mins);
+  }, [driverCoord, routeTarget, bookingStatus]);
+
+  useEffect(() => {
+    if (!driverCoord || !mapRef.current) return;
+    mapRef.current.animateToRegion(
+      {
+        latitude: driverCoord.latitude,
+        longitude: driverCoord.longitude,
+        latitudeDelta: 0.04,
+        longitudeDelta: 0.04,
+      },
+      450
+    );
+  }, [driverCoord?.latitude, driverCoord?.longitude]);
+
   useEffect(() => {
     if (!bookingId) return;
     const statusRef = ref(database, `bookings/${bookingId}/status`);
@@ -77,78 +135,78 @@ export default function TrackDriverScreen({ route, navigation }) {
     return () => unsub();
   }, [bookingId, booking, navigation]);
 
-  const pickupCoord = booking?.pickupLat
-    ? { latitude: booking.pickupLat, longitude: booking.pickupLng }
-    : null;
+  const initialRegion = useMemo(() => {
+    const center = pickupCoord || { latitude: -33.9249, longitude: 18.4241 };
+    return {
+      ...center,
+      latitudeDelta: 0.06,
+      longitudeDelta: 0.06,
+    };
+  }, [pickupCoord]);
 
-  const driverCoord = driverLocation
-    ? { latitude: driverLocation.latitude, longitude: driverLocation.longitude }
-    : null;
+  const polylineCoords =
+    driverCoord && routeTarget ? [driverCoord, routeTarget] : null;
 
-  const mapRegion = driverCoord || pickupCoord || {
-    latitude: -33.9249,
-    longitude: 18.4241,
-    latitudeDelta: 0.05,
-    longitudeDelta: 0.05,
-  };
-
-  const statusLabel = bookingStatus === 'in_transit'
+  const statusLabel = headingToDropoff(bookingStatus)
     ? 'Driver heading to drop-off'
     : 'Driver arriving at pickup';
 
+  const updatedLabel = formatUpdatedAt(driverLocation?.timestamp, nowTick);
+
   return (
     <View style={styles.container}>
-      {/* Map — top half */}
       <MapView
+        ref={mapRef}
         style={styles.map}
-        region={{
-          ...(driverCoord || (pickupCoord ?? { latitude: -33.9249, longitude: 18.4241 })),
-          latitudeDelta: 0.04,
-          longitudeDelta: 0.04,
-        }}
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+        initialRegion={initialRegion}
         showsUserLocation={false}
         showsCompass={false}
         toolbarEnabled={false}
       >
-        {/* Driver marker */}
         {driverCoord && (
           <Marker coordinate={driverCoord} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.driverMarkerWrap}>
+            <Animated.View style={[styles.driverMarkerWrap, { transform: [{ scale: pulseScale }] }]}>
               <View style={styles.driverMarker}>
                 <Text style={styles.driverMarkerText}>D</Text>
               </View>
-            </View>
+            </Animated.View>
           </Marker>
         )}
 
-        {/* Pickup marker */}
         {pickupCoord && (
           <Marker coordinate={pickupCoord} anchor={{ x: 0.5, y: 1 }}>
             <View style={styles.pickupMarker}>
-              <Text style={styles.pickupMarkerText}>↓</Text>
+              <Text style={styles.pickupMarkerText}>P</Text>
             </View>
           </Marker>
         )}
 
-        {/* Route polyline */}
-        {driverCoord && pickupCoord && (
+        {dropoffCoord && (
+          <Marker coordinate={dropoffCoord} anchor={{ x: 0.5, y: 1 }}>
+            <View style={styles.dropoffMarker}>
+              <Text style={styles.dropoffMarkerText}>↓</Text>
+            </View>
+          </Marker>
+        )}
+
+        {polylineCoords && (
           <Polyline
-            coordinates={[driverCoord, pickupCoord]}
+            coordinates={polylineCoords}
             strokeColor={theme.colors.volt}
             strokeWidth={3}
           />
         )}
       </MapView>
 
-      {/* Bottom sheet */}
       <View style={styles.sheet}>
-        {/* ETA */}
         <View style={styles.etaRow}>
-          <View>
+          <View style={styles.etaBlock}>
             <Text style={styles.etaValue}>
-              {eta != null ? `${eta} min` : '—'}
+              {eta != null ? `${eta} min` : driverCoord ? '—' : '…'}
             </Text>
             <Text style={styles.etaLabel}>{statusLabel}</Text>
+            <Text style={styles.updatedHint}>{updatedLabel}</Text>
           </View>
           <View style={styles.statusBadge}>
             <Text style={styles.statusBadgeText}>LIVE</Text>
@@ -157,7 +215,6 @@ export default function TrackDriverScreen({ route, navigation }) {
 
         <View style={styles.divider} />
 
-        {/* Driver info */}
         <View style={styles.driverRow}>
           <View style={styles.driverAvatar}>
             <Text style={styles.driverAvatarText}>
@@ -167,14 +224,15 @@ export default function TrackDriverScreen({ route, navigation }) {
           <View style={styles.driverInfo}>
             <Text style={styles.driverName}>{booking?.driverName || 'Your driver'}</Text>
             <Text style={styles.driverVehicle}>
-              {booking?.vehicleType || 'Vehicle'}{booking?.vehicleReg ? ` · ${booking.vehicleReg}` : ''}
+              {booking?.vehicleType || 'Vehicle'}
+              {booking?.vehicleReg ? ` · ${booking.vehicleReg}` : ''}
             </Text>
           </View>
-          {booking?.rating && (
+          {booking?.rating ? (
             <View style={styles.ratingChip}>
               <Text style={styles.ratingText}>★ {Number(booking.rating).toFixed(1)}</Text>
             </View>
-          )}
+          ) : null}
         </View>
       </View>
     </View>
@@ -189,8 +247,6 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-
-  // Markers
   driverMarkerWrap: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -219,19 +275,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pickupMarkerText: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
     color: theme.colors.obsidian,
   },
-
-  // Bottom sheet
+  dropoffMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.signalGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: theme.colors.obsidian,
+  },
+  dropoffMarkerText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.colors.obsidian,
+  },
   sheet: {
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
-    // shadow
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
@@ -240,9 +308,13 @@ const styles = StyleSheet.create({
   },
   etaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 20,
+  },
+  etaBlock: {
+    flex: 1,
+    paddingRight: 12,
   },
   etaValue: {
     fontSize: 32,
@@ -254,6 +326,12 @@ const styles = StyleSheet.create({
   etaLabel: {
     fontSize: 13,
     color: theme.colors.textMuted,
+  },
+  updatedHint: {
+    marginTop: 6,
+    fontSize: 11,
+    color: theme.colors.textFaint,
+    fontWeight: '500',
   },
   statusBadge: {
     backgroundColor: theme.colors.obsidian,

@@ -7,6 +7,8 @@ let locationSubscription = null;
 let locationUpdateCallback = null;
 let lastLocationBroadcastAt = 0;
 let lastBackendSyncAt = 0;
+/** Keeps RTDB fresh when the device is stationary (watchPosition may not fire). */
+let activeDeliveryHeartbeat = null;
 
 export async function getFreshForegroundPosition({ requestPermission = true } = {}) {
   const permission = requestPermission
@@ -58,22 +60,21 @@ export async function syncDriverLocationToBackend({
  * @param {function} onLocationUpdate - Optional callback for location updates
  */
 export async function startDriverLocationTracking(driverId, orderId, onLocationUpdate = null) {
+  stopDriverLocationTracking();
   locationUpdateCallback = onLocationUpdate;
   lastLocationBroadcastAt = 0;
   lastBackendSyncAt = 0;
+  const orderIdStr = String(orderId);
   try {
     const initialLocation = await getFreshForegroundPosition({ requestPermission: true });
     const initialLatitude = initialLocation.coords.latitude;
     const initialLongitude = initialLocation.coords.longitude;
 
-    // Stop any existing tracking
-    stopDriverLocationTracking();
-
     if (locationUpdateCallback) {
-      locationUpdateCallback({ latitude: initialLatitude, longitude: initialLongitude });
+      locationUpdateCallback({ latitude: initialLatitude, longitude: initialLongitude, timestamp: Date.now() });
     }
 
-    const locationRef = ref(database, `active_deliveries/${orderId}/driver_location`);
+    const locationRef = ref(database, `active_deliveries/${orderIdStr}/driver_location`);
     await set(locationRef, {
       latitude: initialLatitude,
       longitude: initialLongitude,
@@ -90,40 +91,41 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
       quiet: true,
     });
 
-    // Keep tracking light enough for smooth in-app driving screens.
+    const pushToRtdb = (latitude, longitude, heading, speed, now) => {
+      const locationRef = ref(database, `active_deliveries/${orderIdStr}/driver_location`);
+      return set(locationRef, {
+        latitude,
+        longitude,
+        heading: heading ?? 0,
+        speed: speed ?? 0,
+        timestamp: now,
+        driverId,
+      });
+    };
+
+    // Tighter intervals so the sender map feels live; heartbeat covers standstill GPS.
     locationSubscription = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.Balanced,
-        timeInterval: 8000,
-        distanceInterval: 25,
+        timeInterval: 3000,
+        distanceInterval: 5,
       },
       (location) => {
         const { latitude, longitude, heading, speed } = location.coords;
         const now = Date.now();
-        if (now - lastLocationBroadcastAt < 7000) {
+        if (now - lastLocationBroadcastAt < 2500) {
           return;
         }
         lastLocationBroadcastAt = now;
 
-        // Call the optional callback with coordinates
         if (locationUpdateCallback) {
-          locationUpdateCallback({ latitude, longitude });
+          locationUpdateCallback({ latitude, longitude, timestamp: now });
         }
-        
-        // Update Firebase with current location
-        const locationRef = ref(database, `active_deliveries/${orderId}/driver_location`);
-        set(locationRef, {
-          latitude,
-          longitude,
-          heading: heading || 0,
-          speed: speed || 0,
-          timestamp: now,
-          driverId,
-        }).catch((error) => {
+
+        pushToRtdb(latitude, longitude, heading, speed, now).catch((error) => {
           console.error('[Location] Firebase update failed:', error);
         });
 
-        // Keep backend location truth reasonably fresh during active trips too.
         if (now - lastBackendSyncAt >= 12000) {
           syncDriverLocationToBackend({
             latitude,
@@ -137,6 +139,33 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
       }
     );
 
+    activeDeliveryHeartbeat = setInterval(async () => {
+      if (!locationSubscription) return;
+      try {
+        const last = await Location.getLastKnownPositionAsync({
+          maxAge: 120000,
+          requiredAccuracy: 250,
+        });
+        if (!last) return;
+        const { latitude, longitude, heading, speed } = last.coords;
+        const now = Date.now();
+        await pushToRtdb(latitude, longitude, heading, speed, now);
+        if (locationUpdateCallback) {
+          locationUpdateCallback({ latitude, longitude, timestamp: now });
+        }
+        if (now - lastBackendSyncAt >= 15000) {
+          syncDriverLocationToBackend({
+            latitude,
+            longitude,
+            isOnline: true,
+            quiet: true,
+          }).catch(() => {});
+        }
+      } catch (e) {
+        console.warn('[Location] Heartbeat:', e?.message || e);
+      }
+    }, 4000);
+
     return true;
   } catch (error) {
     console.error('[Location] Failed to start tracking:', error);
@@ -148,6 +177,10 @@ export async function startDriverLocationTracking(driverId, orderId, onLocationU
  * Stop tracking driver location
  */
 export function stopDriverLocationTracking() {
+  if (activeDeliveryHeartbeat) {
+    clearInterval(activeDeliveryHeartbeat);
+    activeDeliveryHeartbeat = null;
+  }
   if (locationSubscription) {
     locationSubscription.remove();
     locationSubscription = null;
@@ -168,8 +201,16 @@ export function subscribeToDriverLocation(orderId, callback) {
   // onValue returns an unsubscribe function. Use it to avoid stale listeners.
   const unsubscribe = onValue(locationRef, (snapshot) => {
     const location = snapshot.val();
-    if (location && typeof location.latitude === 'number' && typeof location.longitude === 'number') {
-      callback(location);
+    if (!location) return;
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      callback({
+        ...location,
+        latitude,
+        longitude,
+        timestamp: location.timestamp != null ? Number(location.timestamp) : undefined,
+      });
     }
   });
 

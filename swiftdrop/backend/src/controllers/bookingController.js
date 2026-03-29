@@ -74,7 +74,15 @@ async function getNearbyOnlineDrivers(pickupLat, pickupLng, radiusKm = DRIVER_SE
 // ── POST /api/bookings/request ──────────────────────────────────────────────
 async function requestBooking(req, res) {
   const senderId = req.user.id;
-  const { pickupAddress, dropoffAddress, parcelSize, pickupLat: clientLat, pickupLng: clientLng } = req.body;
+  const {
+    pickupAddress,
+    dropoffAddress,
+    parcelSize,
+    pickupLat: clientLat,
+    pickupLng: clientLng,
+    dropoffLat: clientDropLat,
+    dropoffLng: clientDropLng,
+  } = req.body;
 
   if (!pickupAddress || !dropoffAddress || !parcelSize) {
     return res.status(400).json({ error: 'pickupAddress, dropoffAddress and parcelSize are required' });
@@ -154,12 +162,22 @@ async function requestBooking(req, res) {
     console.error('[booking] FCM notify error:', err.message);
   }
 
+  const dropoffLat =
+    clientDropLat !== undefined && clientDropLat !== null ? parseFloat(clientDropLat) : null;
+  const dropoffLng =
+    clientDropLng !== undefined && clientDropLng !== null ? parseFloat(clientDropLng) : null;
+
   return res.status(201).json({
     bookingId,
     status: 'searching',
     pickupAddress,
     dropoffAddress,
     parcelSize,
+    pickupLat,
+    pickupLng,
+    ...(Number.isFinite(dropoffLat) && Number.isFinite(dropoffLng)
+      ? { dropoffLat, dropoffLng }
+      : {}),
     distanceKm,
     estimatedMins,
     driverPayout,
@@ -345,7 +363,8 @@ async function declineBooking(req, res) {
 async function myBookings(req, res) {
   try {
     const result = await db.query(
-      `SELECT id, pickup_address, dropoff_address, parcel_size, status, created_at
+      `SELECT id, pickup_address, dropoff_address, parcel_size, status, created_at,
+              pickup_lat, pickup_lng
        FROM bookings
        WHERE sender_id = $1
        ORDER BY created_at DESC
