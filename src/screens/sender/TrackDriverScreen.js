@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Platform,
+  Share,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
@@ -135,6 +137,18 @@ export default function TrackDriverScreen({ route, navigation }) {
     return () => unsub();
   }, [bookingId, booking, navigation]);
 
+  const handleShareTrack = async () => {
+    if (!booking?.trackUrl) return;
+    try {
+      await Share.share({
+        message: `Track this SwiftDrop delivery (no app needed): ${booking.trackUrl}`,
+        title: 'SwiftDrop tracking',
+      });
+    } catch {
+      /* user dismissed */
+    }
+  };
+
   const initialRegion = useMemo(() => {
     const center = pickupCoord || { latitude: -33.9249, longitude: 18.4241 };
     return {
@@ -214,6 +228,12 @@ export default function TrackDriverScreen({ route, navigation }) {
         </View>
 
         <View style={styles.divider} />
+
+        {booking?.trackUrl ? (
+          <TouchableOpacity style={styles.shareLink} onPress={handleShareTrack} activeOpacity={0.85}>
+            <Text style={styles.shareLinkText}>Share live tracking link</Text>
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.driverRow}>
           <View style={styles.driverAvatar}>
@@ -349,6 +369,21 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: theme.colors.border,
     marginBottom: 20,
+  },
+  shareLink: {
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(10,10,15,0.06)',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  shareLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.obsidian,
   },
   driverRow: {
     flexDirection: 'row',

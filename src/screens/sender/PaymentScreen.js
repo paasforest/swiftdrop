@@ -52,6 +52,7 @@ export default function PaymentScreen({ route, navigation }) {
         {
           ...bookingParams,
           paymentMethod: selectedMethod,
+          senderDeclarationAccepted: true,
         },
         { token }
       );
@@ -66,6 +67,12 @@ export default function PaymentScreen({ route, navigation }) {
               : err.message ||
                 'SwiftDrop currently serves the Western Cape and Gauteng only. Please adjust your addresses and try again.';
         Alert.alert('Outside service area', body);
+      } else if (err.code === 'DECLARATION_REQUIRED') {
+        Alert.alert(
+          'Declaration required',
+          'Go back one step and confirm the parcel rules before requesting a driver.',
+          [{ text: 'OK', onPress: () => navigation.navigate('BookingDeclaration', { bookingParams, estimate }) }]
+        );
       } else if (err.status === 404 || err.message?.includes('NO_DRIVERS')) {
         Alert.alert(
           'No drivers nearby',

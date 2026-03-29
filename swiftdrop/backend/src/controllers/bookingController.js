@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
 const { sendPushNotification } = require('../services/notificationService');
@@ -101,6 +102,14 @@ async function requestBooking(req, res) {
     return res.status(400).json({ error: 'pickupAddress, dropoffAddress and parcelSize are required' });
   }
 
+  if (req.body.senderDeclarationAccepted !== true) {
+    return res.status(400).json({
+      error:
+        'Confirm the parcel declaration on the previous screen: no cash, illegal goods, or undeclared high-value items.',
+      code: 'DECLARATION_REQUIRED',
+    });
+  }
+
   // Use client-provided coords if available, otherwise geocode (saves ~300ms)
   let pickupLat, pickupLng;
   if (clientLat && clientLng) {
@@ -166,14 +175,17 @@ async function requestBooking(req, res) {
   const estimatedMins = calcMins(tripKm);
   const distanceKm = tripKm;
 
+  const publicTrackToken = crypto.randomBytes(20).toString('hex');
+
   // Create booking row (customer_fare = sender total; driver_payout = 80%)
   let bookingId;
   try {
     const result = await db.query(
       `INSERT INTO bookings
          (sender_id, pickup_address, dropoff_address, parcel_size, status,
-          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, driver_payout, customer_fare)
-       VALUES ($1, $2, $3, $4, 'searching', $5, $6, $7, $8, $9, $10)
+          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, driver_payout, customer_fare,
+          declaration_accepted_at, public_track_token)
+       VALUES ($1, $2, $3, $4, 'searching', $5, $6, $7, $8, $9, $10, NOW(), $11)
        RETURNING id`,
       [
         senderId,
@@ -186,6 +198,7 @@ async function requestBooking(req, res) {
         dropoffLngDb,
         driverPayout,
         customerFare,
+        publicTrackToken,
       ]
     );
     bookingId = result.rows[0].id;
@@ -193,6 +206,11 @@ async function requestBooking(req, res) {
     console.error('[booking] DB insert error:', err.message);
     return res.status(500).json({ error: 'Failed to create booking' });
   }
+
+  const trackBase =
+    process.env.PUBLIC_TRACK_BASE_URL ||
+    `${req.protocol}://${req.get('host') || 'localhost'}`;
+  const trackUrl = `${String(trackBase).replace(/\/$/, '')}/track/${publicTrackToken}`;
 
   // Write job offer to Firebase RTDB
   const rtdb = getRealtimeDb();
@@ -248,6 +266,8 @@ async function requestBooking(req, res) {
     estimatedMins,
     customerFare,
     driverPayout,
+    trackUrl,
+    publicTrackToken,
   });
 }
 

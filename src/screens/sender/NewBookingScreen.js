@@ -65,7 +65,7 @@ export default function NewBookingScreen({ navigation }) {
       Alert.alert('Missing info', 'Please fill in pickup address, drop-off address and parcel size.');
       return;
     }
-    navigation.navigate('Payment', {
+    navigation.navigate('BookingDeclaration', {
       bookingParams: {
         pickupAddress,
         dropoffAddress,

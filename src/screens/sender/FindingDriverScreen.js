@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   Alert,
   Animated,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,7 +18,22 @@ const TIMEOUT_MS = 90_000;
 
 export default function FindingDriverScreen({ route, navigation }) {
   const { booking } = route.params;
-  const { bookingId, pickupAddress, dropoffAddress } = booking;
+  const { bookingId, pickupAddress, dropoffAddress, trackUrl } = booking;
+
+  const handleShareTrack = async () => {
+    if (!trackUrl) {
+      Alert.alert('Link not ready', 'Your tracking link will appear once the booking is created.');
+      return;
+    }
+    try {
+      await Share.share({
+        message: `Track this SwiftDrop delivery (no app needed): ${trackUrl}`,
+        title: 'SwiftDrop tracking',
+      });
+    } catch {
+      /* user dismissed */
+    }
+  };
 
   // Pulse animation
   const scale = useRef(new Animated.Value(1)).current;
@@ -111,6 +127,12 @@ export default function FindingDriverScreen({ route, navigation }) {
         </View>
       </View>
 
+      {trackUrl ? (
+        <TouchableOpacity style={styles.shareBtn} onPress={handleShareTrack} activeOpacity={0.85}>
+          <Text style={styles.shareText}>Share live tracking link</Text>
+        </TouchableOpacity>
+      ) : null}
+
       {/* Cancel */}
       <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel} activeOpacity={0.7}>
         <Text style={styles.cancelText}>Cancel request</Text>
@@ -171,6 +193,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 44,
+  },
+
+  shareBtn: {
+    marginBottom: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    backgroundColor: 'rgba(232,255,0,0.15)',
+    borderWidth: 1,
+    borderColor: theme.colors.volt,
+  },
+  shareText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.colors.volt,
+    textAlign: 'center',
   },
 
   // Addresses
