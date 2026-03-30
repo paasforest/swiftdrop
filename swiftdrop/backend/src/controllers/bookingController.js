@@ -487,7 +487,9 @@ async function myBookings(req, res) {
   try {
     const result = await db.query(
       `SELECT id, pickup_address, dropoff_address, parcel_size, status, created_at,
-              pickup_lat, pickup_lng
+              pickup_lat, pickup_lng,
+              pickup_photo_url, dropoff_photo_url,
+              pickup_photo_uploaded_at, dropoff_photo_uploaded_at
        FROM bookings
        WHERE sender_id = $1
        ORDER BY created_at DESC
@@ -568,32 +570,56 @@ async function uploadPhoto(req, res) {
   const { bookingId } = req.params;
   const { stage } = req.body;
   const file = req.file;
+  const driverFirebaseUid = req.firebaseUser?.uid;
 
+  if (!driverFirebaseUid) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   if (!file) return res.status(400).json({ error: 'No photo uploaded' });
   if (!['pickup', 'dropoff'].includes(stage)) {
     return res.status(400).json({ error: 'stage must be pickup or dropoff' });
   }
 
   try {
+    const assign = await db.query(
+      `SELECT driver_firebase_uid FROM bookings WHERE id = $1`,
+      [bookingId]
+    );
+    const row = assign.rows[0];
+    if (!row) return res.status(404).json({ error: 'Booking not found' });
+    if (row.driver_firebase_uid !== driverFirebaseUid) {
+      return res.status(403).json({ error: 'Only the assigned driver can upload proof photos' });
+    }
+
     const col = stage === 'pickup' ? 'pickup_photo_url' : 'dropoff_photo_url';
+    const uploadedAtCol =
+      stage === 'pickup' ? 'pickup_photo_uploaded_at' : 'dropoff_photo_uploaded_at';
 
-    // Try Cloudinary upload — if not configured, skip silently and still succeed.
-    // This allows the delivery flow to work even before Cloudinary is set up.
-    let photoUrl = null;
+    const { uploadImage } = require('../services/cloudinaryService');
+    let result;
     try {
-      const { uploadImage } = require('../services/cloudinaryService');
-      const result = await uploadImage(file);
-      photoUrl = result.secure_url;
+      result = await uploadImage(file);
     } catch (cloudErr) {
-      // Cloudinary not configured or upload failed — log but don't block the flow
-      console.warn('[uploadPhoto] Cloudinary skipped:', cloudErr.message);
+      console.warn('[uploadPhoto] Cloudinary failed:', cloudErr.message);
+      return res.status(503).json({
+        error:
+          'Could not store photo. Configure Cloudinary on the server (CLOUDINARY_URL or CLOUDINARY_*).',
+        code: 'PHOTO_STORAGE_FAILED',
+        detail: cloudErr.message,
+      });
     }
 
-    if (photoUrl) {
-      await db.query(`UPDATE bookings SET ${col} = $1 WHERE id = $2`, [photoUrl, bookingId]);
+    const photoUrl = result?.secure_url;
+    if (!photoUrl) {
+      return res.status(503).json({ error: 'Photo upload returned no URL', code: 'PHOTO_STORAGE_FAILED' });
     }
 
-    return res.json({ success: true, url: photoUrl });
+    await db.query(
+      `UPDATE bookings SET ${col} = $1, ${uploadedAtCol} = NOW() WHERE id = $2`,
+      [photoUrl, bookingId]
+    );
+
+    return res.json({ success: true, url: photoUrl, stage });
   } catch (err) {
     return res.status(500).json({ error: 'Photo upload failed', detail: err.message });
   }
@@ -603,8 +629,32 @@ async function uploadPhoto(req, res) {
 async function completeBooking(req, res) {
   const driverFirebaseUid = req.firebaseUser?.uid;
   const { bookingId } = req.params;
+  const allowWithoutDropoffPhoto = process.env.ALLOW_DELIVER_WITHOUT_PHOTO === 'true';
 
   try {
+    if (!allowWithoutDropoffPhoto) {
+      const proof = await db.query(
+        `SELECT pickup_photo_url, dropoff_photo_url FROM bookings WHERE id = $1 AND driver_firebase_uid = $2`,
+        [bookingId, driverFirebaseUid]
+      );
+      const b = proof.rows[0];
+      if (!b) return res.status(404).json({ error: 'Booking not found' });
+      if (!b.pickup_photo_url) {
+        return res.status(400).json({
+          error:
+            'Pickup proof photo must be stored before completing delivery (dispute evidence).',
+          code: 'PICKUP_PHOTO_REQUIRED',
+        });
+      }
+      if (!b.dropoff_photo_url) {
+        return res.status(400).json({
+          error:
+            'Drop-off proof photo must be uploaded and stored before completing delivery (dispute evidence).',
+          code: 'DROP_OFF_PHOTO_REQUIRED',
+        });
+      }
+    }
+
     const result = await db.query(
       `UPDATE bookings SET status = 'delivered', delivered_at = NOW()
        WHERE id = $1 AND driver_firebase_uid = $2

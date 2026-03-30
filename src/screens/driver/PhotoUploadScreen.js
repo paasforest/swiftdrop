@@ -86,7 +86,16 @@ export default function PhotoUploadScreen({ route, navigation }) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Upload failed (${res.status})`);
+        const msg =
+          err?.code === 'PHOTO_STORAGE_FAILED'
+            ? `${err.error || 'Photo storage failed'}`
+            : err?.error || `Upload failed (${res.status})`;
+        throw new Error(msg);
+      }
+
+      const body = await res.json().catch(() => ({}));
+      if (!body?.url) {
+        throw new Error('Photo was not stored. Check server Cloudinary configuration.');
       }
 
       await proceedAfterPhoto(token);
@@ -98,15 +107,6 @@ export default function PhotoUploadScreen({ route, navigation }) {
       }
     } finally {
       setUploading(false);
-    }
-  };
-
-  const handleSkipDev = async () => {
-    try {
-      const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
-      await proceedAfterPhoto(token);
-    } catch (err) {
-      Alert.alert('Error', err.message);
     }
   };
 
@@ -156,11 +156,11 @@ export default function PhotoUploadScreen({ route, navigation }) {
         }
       </TouchableOpacity>
 
-      {__DEV__ && (
-        <TouchableOpacity style={styles.devBtn} onPress={handleSkipDev}>
-          <Text style={styles.devBtnText}>⚡ DEV: Skip photo</Text>
-        </TouchableOpacity>
-      )}
+      {__DEV__ ? (
+        <Text style={styles.devHint}>
+          Photos are stored on the server (Cloudinary) for dispute evidence — skipping is disabled.
+        </Text>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -245,6 +245,11 @@ const styles = StyleSheet.create({
   },
   ctaDisabled: { opacity: 0.4 },
   ctaText: { ...theme.components.ctaButtonText },
-  devBtn: { alignItems: 'center', paddingVertical: 10, marginBottom: 20 },
-  devBtnText: { fontSize: 12, fontWeight: '600', color: theme.colors.volt },
+  devHint: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 8,
+  },
 });

@@ -26,7 +26,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/seed', seedRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SwiftDrop API', version: '2.0.7-declaration-track', status: 'auth-foundation' });
+  res.json({ name: 'SwiftDrop API', version: '2.0.8-photo-proof', status: 'auth-foundation' });
 });
 
 app.get('/health', (req, res) => {
