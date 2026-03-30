@@ -3,7 +3,7 @@ const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
 const { sendPushNotification } = require('../services/notificationService');
 const { haversineKm } = require('../utils/haversine');
-const { tripFareBreakdown } = require('../utils/pricing');
+const { tripFareBreakdown, normalizeParcelSize } = require('../utils/pricing');
 const { detectProvince } = require('../services/provinceService');
 
 // Default Cape Town centre — used as geocode fallback
@@ -91,14 +91,16 @@ async function requestBooking(req, res) {
   const {
     pickupAddress,
     dropoffAddress,
-    parcelSize,
+    parcelSize: parcelSizeRaw,
     pickupLat: clientLat,
     pickupLng: clientLng,
     dropoffLat: clientDropLat,
     dropoffLng: clientDropLng,
   } = req.body;
 
-  if (!pickupAddress || !dropoffAddress || !parcelSize) {
+  const parcelSize = normalizeParcelSize(parcelSizeRaw);
+
+  if (!pickupAddress || !dropoffAddress || !parcelSizeRaw) {
     return res.status(400).json({ error: 'pickupAddress, dropoffAddress and parcelSize are required' });
   }
 
