@@ -49,6 +49,7 @@ export default function DriverDashboardScreen({ navigation }) {
   const [offerVisible, setOfferVisible] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [declining, setDeclining] = useState(false);
+  const [todayEarnings, setTodayEarnings] = useState({ total: 0, deliveries: 0 });
 
   // Slide-up animation for job offer modal
   const slideAnim = useRef(new Animated.Value(400)).current;
@@ -87,6 +88,29 @@ export default function DriverDashboardScreen({ navigation }) {
     });
     return () => unsub();
   }, [firebaseUid, isOnline, showOffer]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+          if (!token) return;
+          const data = await getJson('/api/drivers/earnings/today', { token, quiet: true });
+          if (cancelled || !data) return;
+          setTodayEarnings({
+            total: Number(data.total) || 0,
+            deliveries: Number(data.deliveries) || 0,
+          });
+        } catch {
+          if (!cancelled) setTodayEarnings({ total: 0, deliveries: 0 });
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   // Go online / offline
   const handleToggleOnline = async (value) => {
