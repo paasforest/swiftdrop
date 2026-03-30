@@ -16,6 +16,11 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/** Avoid hammering POST /api/notifications/fcm-token if something re-triggers registration. */
+let lastFcmPostKey = null;
+let lastFcmPostAt = 0;
+const FCM_POST_DEDUP_MS = 120_000;
+
 /**
  * Native FCM device token (Android) / APNs-compatible device token path for Expo.
  * Firebase Admin `messaging.send({ token })` requires this — not the Expo push token.
@@ -70,12 +75,20 @@ export async function registerForPushNotificationsAsync(options = {}) {
       return deviceToken;
     }
 
+    const dedupKey = `${deviceToken}|${bearerToken}`;
+    const now = Date.now();
+    if (dedupKey === lastFcmPostKey && now - lastFcmPostAt < FCM_POST_DEDUP_MS) {
+      return deviceToken;
+    }
+
     try {
       await postJson(
         '/api/notifications/fcm-token',
         { fcm_token: deviceToken },
         { token: bearerToken, skipAuthRetry: true }
       );
+      lastFcmPostKey = dedupKey;
+      lastFcmPostAt = now;
       console.log('[push] Registered native push token with backend');
     } catch (e) {
       console.warn('[push] Failed to register token on server:', e?.message || e);

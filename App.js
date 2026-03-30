@@ -66,7 +66,9 @@ export default function App() {
     });
 
     return unsubscribe;
-  }, [clearUser, setUser]);
+    // setUser/clearUser from useAuthStore are new function references every render — do NOT list them here
+    // or the effect re-subscribes to onAuthStateChanged on every render (FCM spam, freeze).
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
