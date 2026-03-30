@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# Create a test booking against production (or set API_BASE_URL).
-# Requires: a Firebase ID token for a sender account (see below).
+# Create a test booking (default: production API).
 #
-# Get a token (Expo app): log in as sender, then in dev tools / temporary script:
-#   auth.currentUser.getIdToken().then(console.log)
+# Option A: export SENDER_BEARER_TOKEN='eyJ...'
+# Option B: export SENDER_EMAIL + SENDER_PASSWORD (same login as app)
 #
-# Usage:
-#   export SENDER_BEARER_TOKEN='eyJ...'
-#   ./scripts/request-test-booking.sh
+# Put a driver online first: swiftdrop/backend/scripts/setDriverOnlineRtdb.js
 
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE_URL="${API_BASE_URL:-https://swiftdrop-production.up.railway.app}"
 
 if [[ -z "${SENDER_BEARER_TOKEN:-}" ]]; then
-  echo "Set SENDER_BEARER_TOKEN to a Firebase ID token (sender user)." >&2
-  exit 1
+  if [[ -n "${SENDER_EMAIL:-}" && -n "${SENDER_PASSWORD:-}" ]]; then
+    SENDER_BEARER_TOKEN="$(node "${ROOT}/scripts/get-firebase-id-token.js")"
+  else
+    echo "Set SENDER_BEARER_TOKEN, or SENDER_EMAIL + SENDER_PASSWORD." >&2
+    exit 1
+  fi
 fi
 
-curl -sS -X POST "${API_BASE_URL}/api/bookings/request" \
+OUT="$(mktemp)"
+CODE="$(curl -sS -o "$OUT" -w "%{http_code}" -X POST "${API_BASE_URL}/api/bookings/request" \
   -H "Authorization: Bearer ${SENDER_BEARER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -29,4 +32,12 @@ curl -sS -X POST "${API_BASE_URL}/api/bookings/request" \
     "dropoffLat": -33.9022,
     "dropoffLng": 18.4199,
     "senderDeclarationAccepted": true
-  }' | jq .
+  }')"
+
+cat "$OUT"
+echo ""
+echo "HTTP $CODE" >&2
+rm -f "$OUT"
+if [[ "$CODE" != "201" ]]; then
+  exit 1
+fi
