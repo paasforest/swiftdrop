@@ -1,0 +1,83 @@
+SwiftDrop — full real trip (driver GPS + app + public track)
+===========================================================
+
+Goal: one booking goes from request → driver accepts → live GPS on sender map AND
+on the public /track/… page in a browser → delivered.
+
+You need: 2 devices (or emulator + phone), OR 1 device + curl for sender + phone for driver.
+Test accounts: sender + driver from your seed / Firebase (e.g. sender@swiftdroptest.com).
+
+
+A) Preconditions
+----------------
+• API is up (GET / shows version 2.0.x).
+• Postgres has bookings columns including public_track_token, declaration_accepted_at.
+• Firebase RTDB rules allow client writes to drivers/, active_deliveries/, bookings/ (dev setup).
+
+
+B) Driver device — go online in the app
+-----------------------------------------
+1. Log in as DRIVER.
+2. Turn ON “Go online” / online toggle.
+3. Grant location permission when asked.
+4. Stay on the dashboard so the app can keep reporting location.
+
+(For matching tests only, you can use: cd swiftdrop/backend && node scripts/setDriverOnlineRtdb.js
+with FIREBASE_SERVICE_ACCOUNT_JSON + DATABASE_URL — but for a real GPS trip, use the app online.)
+
+
+C) Sender device — book through the real UI
+---------------------------------------------
+1. Log in as SENDER.
+2. New delivery → fill pickup + drop-off (WC or Gauteng) + parcel size.
+3. Parcel rules screen → check the box → Continue.
+4. Payment / confirm → submit (senderDeclarationAccepted is sent automatically).
+5. Wait on “Finding driver” until a driver accepts OR you see failure.
+
+Tip: copy “Share live tracking link” here if you want the browser test ready early.
+
+
+D) Driver — accept and drive the job
+--------------------------------------
+1. Job offer appears → Accept.
+2. App should navigate to Navigate pickup → follow your OTP/photo flow to your app design.
+3. After accept, the app calls startDriverLocationTracking → RTDB active_deliveries/{bookingId}/driver_location.
+
+If the blue driver dot never moves: check location permission, stay foreground, and that
+NavigatePickup / active job screen is not killing the watcher (see PhotoUploadScreen stops tracking).
+
+
+E) Verify live GPS (two places)
+-------------------------------
+1) Sender — Track driver screen: map shows driver marker; ETA updates.
+
+2) Browser — open trackUrl from the booking JSON or “Share live tracking link”:
+   https://<your-api-host>/track/<public_track_token>
+   You should see pickup/drop-off markers and a blue “driver” marker that updates every ~5s.
+
+If browser shows pickup/drop but NO driver dot: driver phone may not be writing GPS yet, or
+bookingId mismatch — driver must have accepted THIS booking and tracking must be running.
+
+
+F) Complete delivery
+--------------------
+Driver completes the flow (dropoff OTP, photos, complete) per your screens.
+
+Backend sets bookings.status = delivered and removes active_deliveries/{bookingId}.
+
+Public track page may still show last known positions until you refresh; status should show delivered
+after poll (or on reload).
+
+
+G) SQL checks (optional)
+--------------------------
+SELECT id, status, public_track_token, declaration_accepted_at, delivered_at
+FROM bookings ORDER BY id DESC LIMIT 3;
+
+
+H) Troubleshooting
+--------------------
+• NO_DRIVERS / 404 on request: no driver online in RTDB near pickup — driver app online or setDriverOnlineRtdb.
+• 401 on API: ID token expired — sign in again.
+• Profile not found: Postgres user row missing for that Firebase uid.
+• Map in browser empty: wrong token (use full public_track_token, not booking id).

@@ -13,7 +13,8 @@
     "db:seed": "npm run db:seed --prefix swiftdrop/backend",
     "db:ensure-test-driver": "npm run db:ensure-test-driver --prefix swiftdrop/backend",
     "generate-assets": "node scripts/generateAssets.js",
-    "job-offer-tone": "node scripts/createJobOfferTone.js"
+    "job-offer-tone": "node scripts/createJobOfferTone.js",
+    "e2e:guide": "cat scripts/E2E_FULL_TRIP_STEPS.txt"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

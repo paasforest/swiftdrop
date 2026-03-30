@@ -231,7 +231,7 @@ function serveTrackPage(req, res) {
     }
   }
   poll();
-  setInterval(poll, 8000);
+  setInterval(poll, 5000);
 })();
   </script>
 </body>
