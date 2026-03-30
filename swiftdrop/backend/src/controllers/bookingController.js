@@ -227,6 +227,11 @@ async function requestBooking(req, res) {
         distanceKm,
         driverToPickupKm,
         estimatedMins,
+        pickupLat,
+        pickupLng,
+        ...(dropoffLatDb != null && dropoffLngDb != null
+          ? { dropoffLat: dropoffLatDb, dropoffLng: dropoffLngDb }
+          : {}),
         status: 'pending',
         createdAt: Date.now(),
       });
@@ -614,6 +619,7 @@ async function completeBooking(req, res) {
         rtdb.ref(`bookings/${bookingId}/status`).set('delivered').catch(() => {}),
         rtdb.ref(`drivers/${driverFirebaseUid}/status`).set('online').catch(() => {}),
         rtdb.ref(`driverActiveJob/${driverFirebaseUid}`).remove().catch(() => {}),
+        rtdb.ref(`active_deliveries/${bookingId}`).remove().catch(() => {}),
       ]);
     }
 

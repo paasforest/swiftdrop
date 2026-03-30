@@ -165,6 +165,10 @@ export default function DriverDashboardScreen({ navigation }) {
           dropoffAddress: jobOffer.dropoffAddress,
           driverPayout: jobOffer.driverPayout,
           distanceKm: jobOffer.distanceKm,
+          pickupLat: jobOffer.pickupLat,
+          pickupLng: jobOffer.pickupLng,
+          dropoffLat: jobOffer.dropoffLat,
+          dropoffLng: jobOffer.dropoffLng,
         },
       });
     } catch (err) {

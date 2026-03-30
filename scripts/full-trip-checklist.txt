@@ -1,0 +1,25 @@
+SwiftDrop — full trip + public track (manual QA)
+===============================================
+
+Prereqs
+  - Sender + driver test accounts in Firebase Auth + Postgres.
+  - Driver: RTDB drivers/{uid} status online + lat/lng (or app “Go online”).
+  - API deployed (e.g. 2.0.7+ with track + declaration).
+
+A) Sender (phone or simulator)
+  1. New delivery → addresses + size → Parcel rules → Payment → Confirm.
+  2. Copy “Share live tracking link” or use trackUrl from API.
+  3. Open link in browser — pickup/dropoff markers.
+
+B) Driver (second device or after A)
+  4. Go online → accept job when offer appears.
+  5. GPS starts — public track page should show blue “driver” marker moving (refresh ~8s).
+  6. Navigate pickup → arrived → pickup OTP → pickup photo.
+  7. Navigate dropoff → arrived → dropoff OTP → dropoff photo → complete.
+  8. Public track: status → Delivered; driver dot cleared (active_deliveries removed on complete).
+
+C) DB (optional)
+  SELECT id, status, delivered_at, public_track_token FROM bookings WHERE id = <id>;
+
+D) Scripts (curl booking without app)
+  See scripts/request-test-booking.sh + get-firebase-id-token.js + swiftdrop/backend/scripts/setDriverOnlineRtdb.js

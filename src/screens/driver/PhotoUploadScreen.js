@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../../services/firebaseConfig';
+import { stopDriverLocationTracking } from '../../services/locationTracking';
 import { theme } from '../../theme/theme';
 
 export default function PhotoUploadScreen({ route, navigation }) {
@@ -45,6 +46,7 @@ export default function PhotoUploadScreen({ route, navigation }) {
       navigation.replace('NavigateDropoff', { job: booking });
     } else {
       const data = await postJson(`/api/bookings/${bookingId}/complete`, {}, { token });
+      stopDriverLocationTracking();
       const payout = data?.driver_payout ?? booking?.driverPayout ?? booking?.driver_payout;
       navigation.replace('DriverJobComplete', {
         booking: { ...booking, bookingId, driverPayout: payout, driver_payout: payout },
