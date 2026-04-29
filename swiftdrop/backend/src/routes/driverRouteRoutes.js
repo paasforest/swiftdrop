@@ -13,4 +13,7 @@ router.post('/', auth, driverController.createDriverRoute);
 /** DELETE /api/driver-routes/:id — cancel a posted route (driver only) */
 router.delete('/:id', auth, driverController.cancelDriverRoute);
 
+/** PATCH /api/driver-routes/:id/cancel — cancel intercity trip with refunds + strikes */
+router.patch('/:id/cancel', auth, driverController.cancelDriverRoute);
+
 module.exports = router;
