@@ -160,6 +160,17 @@ const Home = ({ navigation }) => {
           />
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={styles.intercityCard}
+          onPress={() => navigation.navigate('TripBrowser')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.intercityTitle}>🚗 Intercity delivery</Text>
+          <Text style={styles.intercitySubtext}>
+            Send parcels across SA with travelling drivers
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.tiersSection}>
           <AppText variant="h3" color="textPrimary" style={styles.sectionTitle}>
             Choose delivery speed
@@ -290,6 +301,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.textWhite,
+  },
+  intercityCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#EBEBEB',
+  },
+  intercityTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  intercitySubtext: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginTop: 4,
   },
   tiersSection: {
     paddingHorizontal: spacing.md,

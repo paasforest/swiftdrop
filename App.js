@@ -24,6 +24,7 @@ import DeliveryConfirmed from './src/screens/customer/DeliveryConfirmed';
 import OrderDetail from './src/screens/customer/OrderDetail';
 import OrderHistory from './src/screens/customer/OrderHistory';
 import Profile from './src/screens/customer/Profile';
+import TripBrowser from './src/screens/customer/TripBrowser';
 
 // Driver Screens
 import DriverRegister from './src/screens/driver/DriverRegister';
@@ -116,6 +117,7 @@ export default function App() {
         <Stack.Screen name="OrderDetail" component={OrderDetail} />
         <Stack.Screen name="OrderHistory" component={OrderHistory} />
         <Stack.Screen name="Profile" component={Profile} />
+        <Stack.Screen name="TripBrowser" component={TripBrowser} options={{ headerShown: false }} />
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />

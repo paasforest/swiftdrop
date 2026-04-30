@@ -228,6 +228,8 @@ const Payment = ({ navigation, route }) => {
           delivery_tier: params.delivery_tier,
           insurance_selected: params.insurance_selected,
           payment_method: selectedPaymentMethod,
+          assigned_driver_route_id: params.driver_route_id || null,
+          trip_type: params.trip_type || 'local',
         },
         { token: auth.token }
       );
