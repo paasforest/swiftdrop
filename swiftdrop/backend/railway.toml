@@ -2,7 +2,8 @@
 # Place this service's root directory at: swiftdrop/backend (monorepo)
 
 [build]
-builder = "nixpacks"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # Railway allows only one preDeployCommand string (not an array). Chain scripts with &&.

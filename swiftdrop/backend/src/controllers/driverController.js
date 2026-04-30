@@ -374,10 +374,37 @@ async function cancelDriverRoute(req, res) {
   }
 }
 
+async function getTodayEarnings(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const driverId = req.user.id;
+    const r = await db.query(
+      `SELECT COALESCE(SUM(driver_earnings), 0) AS total,
+              COUNT(*) AS deliveries
+       FROM orders
+       WHERE driver_id = $1
+         AND status = 'delivered'
+         AND updated_at >= NOW()::date`,
+      [driverId]
+    );
+    const row = r.rows[0];
+    return res.json({
+      total: parseFloat(row.total) || 0,
+      deliveries: parseInt(row.deliveries, 10) || 0,
+    });
+  } catch (err) {
+    console.error('getTodayEarnings:', err);
+    return res.status(500).json({ error: 'Failed to load earnings' });
+  }
+}
+
 module.exports = {
   getStatus,
   patchStatus,
   patchLocation,
   createDriverRoute,
   cancelDriverRoute,
+  getTodayEarnings,
 };
