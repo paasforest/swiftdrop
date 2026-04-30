@@ -6,75 +6,81 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  TextInput,
+  StatusBar,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import GradientHeader from '../../components/GradientHeader';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppText, BottomTabBar, StatusBadge } from '../../components/ui';
+import { BottomTabBar } from '../../components/ui';
+
+const COLORS = {
+  black: '#000000',
+  white: '#FFFFFF',
+  green: '#00C853',
+  greenLight: '#E8F5E9',
+  grey1: '#F5F5F5',
+  grey2: '#E0E0E0',
+  grey3: '#9E9E9E',
+  grey4: '#757575',
+  grey5: '#333333',
+};
 
 function firstName(fullName) {
   if (!fullName || typeof fullName !== 'string') return 'there';
   return fullName.trim().split(/\s+/)[0] || 'there';
 }
 
-function formatMoney(n) {
-  const x = Number(n);
-  if (Number.isNaN(x)) return 'R0.00';
-  return `R${x.toFixed(2)}`;
-}
-
-function greetingPrefix() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 }
 
-const TIER_ICONS = {
-  standard: { name: 'time-outline', color: colors.success },
-  express: { name: 'flash-outline', color: colors.primary },
-  urgent: { name: 'flame-outline', color: colors.accent },
-};
+function formatStatus(status) {
+  const map = {
+    pending: 'Finding driver',
+    matching: 'Finding driver',
+    accepted: 'Driver found',
+    pickup_en_route: 'On the way',
+    pickup_arrived: 'At pickup',
+    collected: 'Collected',
+    delivery_en_route: 'En route',
+    delivery_arrived: 'Arriving',
+    delivered: 'Delivered',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  };
+  return map[status] || status;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+const ACTIVE_STATUSES = [
+  'accepted',
+  'pickup_en_route',
+  'pickup_arrived',
+  'collected',
+  'delivery_en_route',
+  'delivery_arrived',
+];
 
 const Home = ({ navigation }) => {
-  const [searchQuery, setSearchQuery] = useState('');
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [displayName, setDisplayName] = useState('there');
   const route = useRoute();
-  const refundMessage = route?.params?.refundMessage;
-
-  const deliveryTiers = [
-    {
-      id: 'standard',
-      name: 'Standard',
-      time: 'Estimated',
-      price: 'Pricing shown next',
-      key: 'standard',
-    },
-    {
-      id: 'express',
-      name: 'Express',
-      time: 'Estimated',
-      price: 'Pricing shown next',
-      popular: true,
-      key: 'express',
-    },
-    {
-      id: 'urgent',
-      name: 'Urgent',
-      time: 'Estimated',
-      price: 'Pricing shown next',
-      key: 'urgent',
-    },
-  ];
 
   const loadOrders = useCallback(async () => {
     const auth = getAuth();
@@ -101,148 +107,148 @@ const Home = ({ navigation }) => {
     useCallback(() => {
       loadOrders();
       const auth = getAuth();
-      if (auth?.token) {
+      // Guard: only register push notifications for customer accounts
+      // to prevent "Drivers only" PATCH error on driver-specific FCM endpoints
+      if (auth?.token && auth.user?.user_type === 'customer') {
         registerForPushNotificationsAsync().catch(() => {});
       }
     }, [loadOrders])
   );
 
-  const handleNewDelivery = () => {
-    navigation.navigate('AddressEntry');
-  };
-
-  const handleTierSelect = () => {
-    navigation.navigate('AddressEntry');
-  };
-
-  const handleDeliveryPress = (order) => {
-    const isCompleted = order?.status === 'delivered' || order?.status === 'completed';
-    if (isCompleted) {
-      navigation.navigate('OrderDetail', { orderId: order.id });
-      return;
-    }
-    navigation.navigate('Tracking', { orderId: order.id });
-  };
-
   return (
     <SafeAreaView style={styles.container}>
-      <GradientHeader>
-        <View style={styles.heroInner}>
-          <View style={{ flex: 1 }}>
-            <AppText variant="h2" color="textWhite">
-              {greetingPrefix()}, {displayName}
-            </AppText>
-            <AppText variant="small" color="textWhite" style={styles.heroSubtitle}>
-              Ready to send something?
-            </AppText>
-          </View>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header — clean white, no gradient */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>
+            {getGreeting()}, {displayName}
+          </Text>
+          <Text style={styles.subtitle}>Where are you sending today?</Text>
         </View>
-      </GradientHeader>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {refundMessage ? (
-          <View style={styles.refundBanner}>
-            <AppText variant="small" style={styles.refundBannerText}>
-              {refundMessage}
-            </AppText>
-          </View>
-        ) : null}
-
-        <TouchableOpacity style={styles.searchBar} onPress={handleNewDelivery} activeOpacity={0.92}>
-          <Ionicons name="location-outline" size={24} color={colors.textWhite} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Where to deliver?"
-            placeholderTextColor="rgba(255,255,255,0.85)"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            editable={false}
-          />
-        </TouchableOpacity>
-
         <TouchableOpacity
-          style={styles.intercityCard}
-          onPress={() => navigation.navigate('TripBrowser')}
-          activeOpacity={0.85}
+          onPress={() => navigation.navigate('Profile')}
+          style={styles.avatar}
         >
-          <Text style={styles.intercityTitle}>🚗 Intercity delivery</Text>
-          <Text style={styles.intercitySubtext}>
-            Send parcels across SA with travelling drivers
+          <Text style={styles.avatarText}>
+            {displayName?.[0]?.toUpperCase() || 'U'}
           </Text>
         </TouchableOpacity>
+      </View>
 
-        <View style={styles.tiersSection}>
-          <AppText variant="h3" color="textPrimary" style={styles.sectionTitle}>
-            Choose delivery speed
-          </AppText>
-          <View style={styles.tiersContainer}>
-            {deliveryTiers.map((tier) => {
-              const ic = TIER_ICONS[tier.id];
-              return (
-                <TouchableOpacity key={tier.id} style={styles.tierCard} onPress={handleTierSelect} activeOpacity={0.85}>
-                  {tier.popular && (
-                    <View style={styles.popularBadge}>
-                      <AppText variant="label" style={styles.popularText}>
-                        Popular
-                      </AppText>
-                    </View>
-                  )}
-                  <Ionicons name={ic.name} size={32} color={ic.color} style={styles.tierIcon} />
-                  <AppText variant="small" color="textPrimary" style={styles.tierName}>
-                    {tier.name}
-                  </AppText>
-                  <AppText variant="small" color="textSecondary">
-                    {tier.time}
-                  </AppText>
-                  <AppText variant="small" color="primary" style={styles.tierPrice}>
-                    {tier.price}
-                  </AppText>
-                </TouchableOpacity>
-              );
-            })}
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        {route.params?.refundMessage && (
+          <View style={styles.refundBanner}>
+            <Text style={styles.refundText}>{route.params.refundMessage}</Text>
           </View>
+        )}
+
+        {/* Search bar */}
+        <TouchableOpacity
+          style={styles.searchBar}
+          onPress={() => navigation.navigate('AddressEntry')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.searchDot} />
+          <Text style={styles.searchText}>Where to deliver?</Text>
+          <View style={styles.searchArrow}>
+            <Text style={styles.searchArrowText}>→</Text>
+          </View>
+        </TouchableOpacity>
+
+        <Text style={styles.sectionLabel}>SEND A PARCEL</Text>
+
+        {/* Two delivery option cards side by side */}
+        <View style={styles.cardsRow}>
+
+          {/* Local delivery — BLACK card */}
+          <TouchableOpacity
+            style={styles.localCard}
+            onPress={() => navigation.navigate('AddressEntry')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.cardEmoji}>📦</Text>
+            <Text style={styles.localCardTitle}>Local</Text>
+            <Text style={styles.localCardTitle}>delivery</Text>
+            <Text style={styles.localCardSub}>Same day in your city</Text>
+          </TouchableOpacity>
+
+          {/* Intercity delivery — GREY card */}
+          <TouchableOpacity
+            style={styles.intercityCard}
+            onPress={() => navigation.navigate('TripBrowser')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.cardEmoji}>🚗</Text>
+            <Text style={styles.intercityCardTitle}>Intercity</Text>
+            <Text style={styles.intercityCardTitle}>delivery</Text>
+            <Text style={styles.intercityCardSub}>Across SA with drivers</Text>
+          </TouchableOpacity>
+
         </View>
 
-        <View style={styles.recentSection}>
-          <AppText variant="h3" color="textPrimary" style={styles.sectionTitle}>
-            Your deliveries
-          </AppText>
-          {loadError ? (
-            <AppText variant="small" color="danger" style={styles.hintText}>
-              {loadError}
-            </AppText>
-          ) : null}
-          {loading ? (
-            <ActivityIndicator style={{ marginVertical: spacing.lg }} color={colors.primary} />
-          ) : orders.length === 0 ? (
-            <AppText variant="body" color="textSecondary" style={styles.hintText}>
-              No deliveries yet. Start one with the address bar above.
-            </AppText>
-          ) : (
-            orders.map((order) => (
-              <TouchableOpacity
-                key={order.id}
-                style={styles.deliveryCard}
-                onPress={() => handleDeliveryPress(order)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.deliveryHeader}>
-                  <Text style={styles.deliveryDestination} numberOfLines={2}>
-                    {order.dropoff_address || 'Delivery'}
+        <Text style={styles.sectionLabel}>RECENT</Text>
+
+        {loadError ? (
+          <Text style={styles.errorText}>{loadError}</Text>
+        ) : loading ? (
+          <ActivityIndicator style={{ marginVertical: 24 }} color={COLORS.green} />
+        ) : orders.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No deliveries yet</Text>
+            <Text style={styles.emptySubtext}>Your history will appear here</Text>
+          </View>
+        ) : (
+          orders.map((order) => (
+            <TouchableOpacity
+              key={order.id}
+              style={styles.orderCard}
+              onPress={() => {
+                if (ACTIVE_STATUSES.includes(order.status)) {
+                  navigation.navigate('Tracking', { orderId: order.id });
+                } else {
+                  navigation.navigate('OrderDetail', { orderId: order.id });
+                }
+              }}
+            >
+              <View style={styles.orderTop}>
+                <Text style={styles.orderDest} numberOfLines={1}>
+                  {order.dropoff_address}
+                </Text>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    order.status === 'completed' || order.status === 'delivered'
+                      ? styles.statusGreen
+                      : styles.statusGrey,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      order.status === 'completed' || order.status === 'delivered'
+                        ? styles.statusTextGreen
+                        : styles.statusTextGrey,
+                    ]}
+                  >
+                    {formatStatus(order.status)}
                   </Text>
-                  <StatusBadge status={order.status} />
                 </View>
-                <View style={styles.deliveryFooter}>
-                  <Text style={styles.deliveryDate}>
-                    {order.order_number}{' '}
-                    {order.updated_at ? new Date(order.updated_at).toLocaleString() : ''}
-                  </Text>
-                  <Text style={styles.deliveryPrice}>{formatMoney(order.total_price)}</Text>
-                </View>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+              </View>
+              <View style={styles.orderBottom}>
+                <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+                <Text style={styles.orderPrice}>
+                  R{Number(order.total_price || 0).toFixed(2)}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
 
       <BottomTabBar navigation={navigation} variant="customer" active="home" />
@@ -253,161 +259,232 @@ const Home = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingBottom: 72,
+    backgroundColor: '#FFFFFF',
   },
-  heroInner: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
-  heroSubtitle: {
-    marginTop: spacing.xs,
-    opacity: 0.92,
+  greeting: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  scroll: {
+    flex: 1,
   },
   refundBanner: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-    padding: spacing.sm + 6,
-    backgroundColor: colors.successLight,
-    borderRadius: radius.md,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 14,
+    marginHorizontal: 20,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.success,
-    opacity: 0.95,
+    borderColor: '#00C853',
   },
-  refundBannerText: {
-    color: colors.success,
-    fontWeight: '700',
-    lineHeight: 18,
+  refundText: {
+    color: '#00C853',
+    fontSize: 13,
+    fontWeight: '600',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'stretch',
-    width: '100%',
-    backgroundColor: colors.primary,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-    paddingVertical: spacing.md + 2,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    ...shadows.card,
-  },
-  searchIcon: {
-    marginRight: spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textWhite,
-  },
-  intercityCard: {
     backgroundColor: '#F5F5F5',
     borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    marginHorizontal: 20,
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
-  intercityTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#000',
+  searchDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00C853',
+    marginRight: 12,
   },
-  intercitySubtext: {
-    fontSize: 13,
-    color: '#9E9E9E',
-    marginTop: 4,
-  },
-  tiersSection: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    marginBottom: spacing.md,
-  },
-  hintText: {
-    marginBottom: spacing.sm,
-  },
-  tiersContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  tierCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    marginHorizontal: spacing.xs,
-    ...shadows.card,
-    position: 'relative',
-  },
-  popularBadge: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.xs + 2,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  popularText: {
-    color: colors.textWhite,
-    fontSize: 10,
-  },
-  tierIcon: {
-    marginBottom: spacing.sm,
-  },
-  tierName: {
-    fontWeight: '600',
-    marginBottom: spacing.xs,
-  },
-  tierPrice: {
-    fontWeight: '600',
-    marginTop: spacing.xs,
-  },
-  recentSection: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  deliveryCard: {
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-    ...shadows.card,
-  },
-  deliveryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: spacing.sm,
-  },
-  deliveryDestination: {
+  searchText: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '500',
-    color: colors.textPrimary,
-    marginRight: spacing.sm,
+    color: '#9E9E9E',
   },
-  deliveryFooter: {
+  searchArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchArrowText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  cardsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 12,
+    marginBottom: 32,
+  },
+  localCard: {
+    flex: 1,
+    backgroundColor: '#000000',
+    borderRadius: 20,
+    padding: 20,
+    minHeight: 160,
+    justifyContent: 'flex-end',
+  },
+  cardEmoji: {
+    fontSize: 32,
+    marginBottom: 16,
+  },
+  localCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    lineHeight: 22,
+  },
+  localCardSub: {
+    fontSize: 11,
+    color: '#9E9E9E',
+    marginTop: 6,
+  },
+  intercityCard: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    padding: 20,
+    minHeight: 160,
+    justifyContent: 'flex-end',
+    borderWidth: 1.5,
+    borderColor: '#E8E8E8',
+  },
+  intercityCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    lineHeight: 22,
+  },
+  intercityCardSub: {
+    fontSize: 11,
+    color: '#757575',
+    marginTop: 6,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#BDBDBD',
+    marginBottom: 4,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#BDBDBD',
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#FF3B30',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  orderCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  orderTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  orderDest: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    flex: 1,
+    marginRight: 8,
+  },
+  statusBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusGreen: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusGrey: {
+    backgroundColor: '#F5F5F5',
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  statusTextGreen: {
+    color: '#00C853',
+  },
+  statusTextGrey: {
+    color: '#757575',
+  },
+  orderBottom: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  deliveryDate: {
+  orderDate: {
     fontSize: 12,
-    color: colors.textSecondary,
-    flex: 1,
-    marginRight: spacing.sm,
+    color: '#9E9E9E',
   },
-  deliveryPrice: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.primary,
+  orderPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000000',
   },
 });
 
