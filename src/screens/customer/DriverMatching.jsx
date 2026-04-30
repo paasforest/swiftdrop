@@ -9,22 +9,19 @@ import {
   Animated,
   Alert,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { API_BASE_URL } from '../../apiConfig';
 import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
-const RADAR_BLUE = '#1A73E8';
 const MATCH_TIMEOUT_MS = 3 * 60 * 1000;
 const POLL_MS = 3000;
 const FOUND_NAV_DELAY_MS = 1500;
 
-/** Driver has accepted or job is already in progress (poll may skip `accepted`). */
 function isDriverMatchedStatus(status) {
   const s = String(status || '');
   return [
@@ -58,7 +55,6 @@ function tierLabel(tier) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Staggered infinite pulse: first cycle waits `staggerMs`, then every 1800ms. */
 function startRadarRing(scale, opacity, staggerMs, isCancelled) {
   let first = true;
   const step = () => {
@@ -298,11 +294,7 @@ const DriverMatching = ({ navigation, route }) => {
       'Are you sure? You will receive a full refund.',
       [
         { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Cancel order',
-          style: 'destructive',
-          onPress: handleCancelOrder,
-        },
+        { text: 'Cancel order', style: 'destructive', onPress: handleCancelOrder },
       ]
     );
   };
@@ -347,6 +339,7 @@ const DriverMatching = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.container}>
         <MapView
           style={styles.mapFill}
@@ -365,39 +358,27 @@ const DriverMatching = ({ navigation, route }) => {
         >
           {hasPickupCoord ? (
             <Marker
-              coordinate={{
-                latitude: pickupLat,
-                longitude: pickupLng,
-              }}
-              pinColor={RADAR_BLUE}
+              coordinate={{ latitude: pickupLat, longitude: pickupLng }}
+              pinColor="#00C853"
             />
           ) : null}
         </MapView>
 
         <View style={styles.mapOverlay} pointerEvents="none" />
 
-        {/* Radar + center */}
+        {/* Radar */}
         <View style={styles.radarSection}>
           <View style={styles.radarStage}>
             {isSearching ? (
               <>
                 <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale0 }], opacity: opacity0 },
-                  ]}
+                  style={[styles.radarRing, { transform: [{ scale: scale0 }], opacity: opacity0 }]}
                 />
                 <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale1 }], opacity: opacity1 },
-                  ]}
+                  style={[styles.radarRing, { transform: [{ scale: scale1 }], opacity: opacity1 }]}
                 />
                 <Animated.View
-                  style={[
-                    styles.radarRing,
-                    { transform: [{ scale: scale2 }], opacity: opacity2 },
-                  ]}
+                  style={[styles.radarRing, { transform: [{ scale: scale2 }], opacity: opacity2 }]}
                 />
               </>
             ) : null}
@@ -405,15 +386,13 @@ const DriverMatching = ({ navigation, route }) => {
             <View style={styles.centerIconWrap} pointerEvents="none">
               {driverFound ? (
                 <View style={styles.centerIconSuccess}>
-                  <Ionicons name="checkmark" size={38} color="#FFFFFF" />
+                  <Text style={{ fontSize: 34 }}>✓</Text>
                 </View>
               ) : (
                 <View style={styles.centerIcon}>
-                  <Ionicons
-                    name={noDriverFound ? 'warning-outline' : 'cube-outline'}
-                    size={34}
-                    color={RADAR_BLUE}
-                  />
+                  <Text style={{ fontSize: 32 }}>
+                    {noDriverFound ? '😔' : '📦'}
+                  </Text>
                 </View>
               )}
             </View>
@@ -448,15 +427,11 @@ const DriverMatching = ({ navigation, route }) => {
         <View style={styles.card}>
           <View style={styles.addrRow}>
             <View style={[styles.dot, styles.dotGreen]} />
-            <Text style={styles.addrText} numberOfLines={2}>
-              {pickupAddress}
-            </Text>
+            <Text style={styles.addrText} numberOfLines={2}>{pickupAddress}</Text>
           </View>
           <View style={styles.addrRow}>
-            <View style={[styles.dot, styles.dotRed]} />
-            <Text style={styles.addrText} numberOfLines={2}>
-              {dropoffAddress}
-            </Text>
+            <View style={[styles.dot, styles.dotBlack]} />
+            <Text style={styles.addrText} numberOfLines={2}>{dropoffAddress}</Text>
           </View>
           <View style={styles.cardFooter}>
             <View style={styles.tierBadge}>
@@ -474,7 +449,7 @@ const DriverMatching = ({ navigation, route }) => {
               disabled={retrying}
             >
               {retrying ? (
-                <ActivityIndicator color={colors.textWhite} />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.primaryBtnText}>Keep Searching</Text>
               )}
@@ -495,7 +470,7 @@ const DriverMatching = ({ navigation, route }) => {
             hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
           >
             {cancelling ? (
-              <ActivityIndicator size="small" color="#6B7280" />
+              <ActivityIndicator size="small" color="#9E9E9E" />
             ) : (
               <Text style={styles.cancelLinkText}>Cancel Order</Text>
             )}
@@ -516,29 +491,29 @@ const styles = StyleSheet.create({
     width,
     minHeight: height,
     backgroundColor: 'transparent',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
   mapFill: {
     ...StyleSheet.absoluteFillObject,
   },
   mapOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.82)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
   },
   radarSection: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: height * 0.38,
-    marginTop: spacing.md,
+    marginTop: 16,
   },
   radarStage: {
     width: 260,
     height: 260,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: 20,
   },
   radarRing: {
     position: 'absolute',
@@ -546,8 +521,8 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 2,
-    borderColor: RADAR_BLUE,
-    backgroundColor: 'transparent',
+    borderColor: '#00C853',
+    backgroundColor: 'rgba(0,200,83,0.12)',
   },
   centerIconWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -559,9 +534,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: RADAR_BLUE,
+    backgroundColor: '#00C853',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -574,9 +547,7 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: '#22C55E',
-    borderWidth: 3,
-    borderColor: '#16A34A',
+    backgroundColor: '#00C853',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -587,17 +558,17 @@ const styles = StyleSheet.create({
   },
   mainTitle: {
     fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#000000',
     textAlign: 'center',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 16,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 15,
-    color: '#6B7280',
+    color: '#9E9E9E',
     textAlign: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 20,
     lineHeight: 22,
     marginBottom: 12,
   },
@@ -611,21 +582,21 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: RADAR_BLUE,
+    backgroundColor: '#000000',
     marginHorizontal: 5,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#F0F0F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 12,
-    elevation: 4,
+    elevation: 3,
   },
   addrRow: {
     flexDirection: 'row',
@@ -640,15 +611,15 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   dotGreen: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#00C853',
   },
-  dotRed: {
-    backgroundColor: '#EF4444',
+  dotBlack: {
+    backgroundColor: '#000000',
   },
   addrText: {
     flex: 1,
     fontSize: 15,
-    color: '#111827',
+    color: '#000000',
     fontWeight: '600',
     lineHeight: 22,
   },
@@ -659,43 +630,46 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: '#F0F0F0',
   },
   tierBadge: {
-    backgroundColor: '#E8F4FF',
+    backgroundColor: '#F5F5F5',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#BFDBFE',
+    borderColor: '#E0E0E0',
   },
   tierBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: RADAR_BLUE,
+    color: '#000000',
   },
   priceText: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#111827',
+    color: '#000000',
   },
   cancelLink: {
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    marginBottom: spacing.sm,
+    paddingVertical: 16,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    borderRadius: 14,
   },
   cancelLinkText: {
     fontSize: 15,
-    color: '#6B7280',
+    color: '#757575',
     fontWeight: '600',
   },
   sadActions: {
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   primaryBtn: {
-    backgroundColor: RADAR_BLUE,
+    backgroundColor: '#000000',
     paddingVertical: 16,
-    borderRadius: radius.md,
+    borderRadius: 14,
     alignItems: 'center',
   },
   primaryBtnText: {
@@ -708,7 +682,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   secondaryBtnText: {
-    color: '#6B7280',
+    color: '#757575',
     fontSize: 15,
     fontWeight: '700',
   },

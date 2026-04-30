@@ -5,15 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
+  ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppButton, AppText } from '../../components/ui';
-
-const { width, height } = Dimensions.get('window');
 
 function formatMoney(n) {
   const x = Number(n);
@@ -65,7 +62,8 @@ const DeliveryTiers = ({ navigation, route }) => {
   useEffect(() => {
     let cancelled = false;
     async function run() {
-      if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null) return;
+      if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null)
+        return;
       if (parcel_value == null) return;
 
       setEstimateLoading(true);
@@ -111,41 +109,39 @@ const DeliveryTiers = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
-            <Ionicons name="chevron-back" size={26} color={colors.primary} />
-          </TouchableOpacity>
-          <AppText variant="h3" color="textPrimary">
-            Choose Delivery Speed
-          </AppText>
-          <View style={styles.placeholder} />
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        <View style={styles.routeInfo}>
-          <AppText variant="small" color="textSecondary" style={styles.routeText}>
-            {estimateError
-              ? estimateError
-              : estimateLoading
-                ? 'Calculating route…'
-                : estimate?.distance_km != null
-                  ? `${estimate.distance_km} km · ${zoneLabel(estimate.zone)}`
-                  : 'Select delivery speed'}
-          </AppText>
-        </View>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Delivery speed</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+
+        {/* Route info */}
+        <Text style={styles.routeText}>
+          {estimateError
+            ? estimateError
+            : estimateLoading
+              ? 'Calculating route…'
+              : estimate?.distance_km != null
+                ? `${estimate.distance_km} km · ${zoneLabel(estimate.zone)}`
+                : 'Select delivery speed'}
+        </Text>
+
+        {/* Progress */}
         <View style={styles.progressContainer}>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: '75%' }]} />
           </View>
-          <AppText variant="label" color="textSecondary" style={styles.progressText}>
-            Step 3 of 4
-          </AppText>
+          <Text style={styles.progressText}>Step 3 of 4</Text>
         </View>
 
+        {/* Tier cards */}
         <View style={styles.optionsContainer}>
           {deliveryOptions.map((option) => {
             const tierEstimate = estimate?.[option.id];
@@ -166,182 +162,172 @@ const DeliveryTiers = ({ navigation, route }) => {
                 onPress={() => setSelectedTier(option.id)}
                 activeOpacity={0.9}
               >
-                {/* Row 1: tier name | price + optional checkmark */}
                 <View style={styles.cardRow}>
                   <View style={styles.cardRow1Left}>
-                    <AppText variant="h4" color="textPrimary" style={styles.tierName}>
-                      {option.name}
-                    </AppText>
+                    <Text style={styles.tierName}>{option.name}</Text>
                     {option.popular ? (
                       <View style={styles.popularBadge}>
-                        <AppText variant="label" style={styles.popularBadgeText}>
-                          Popular
-                        </AppText>
+                        <Text style={styles.popularBadgeText}>Popular</Text>
                       </View>
                     ) : null}
                   </View>
                   <View style={styles.cardRow1Right}>
-                    <AppText style={styles.priceOrange}>{priceStr}</AppText>
+                    <Text style={styles.priceText}>{priceStr}</Text>
                     {selected ? (
                       <View style={styles.checkmarkCircle}>
-                        <Ionicons name="checkmark" size={14} color={colors.textWhite} />
+                        <Ionicons name="checkmark" size={14} color="#FFFFFF" />
                       </View>
                     ) : null}
                   </View>
                 </View>
 
-                {/* Row 2: time estimate (driver earnings never shown to customers) */}
                 <View style={styles.cardRow}>
-                  <AppText variant="small" color="textSecondary" style={styles.timeLineText}>
-                    {timeLine}
-                  </AppText>
+                  <Text style={styles.timeLineText}>{timeLine}</Text>
                 </View>
 
-                {/* Row 3: zone */}
                 <View style={styles.cardRow}>
                   <View style={styles.zoneBadge}>
-                    <AppText variant="label" color="textSecondary" style={styles.zoneBadgeText}>
+                    <Text style={styles.zoneBadgeText}>
                       {estimate?.zone != null ? zoneLabel(estimate.zone) : 'Zone'}
-                    </AppText>
+                    </Text>
                   </View>
                 </View>
 
-                {/* Row 4: guaranteed (green pill) — full width */}
-                <View style={[styles.cardRow, styles.cardRowLast]}>
+                <View style={[styles.cardRow, { marginBottom: 0 }]}>
                   <View style={styles.guaranteedPillWrap}>
                     <View style={styles.guaranteedPill}>
-                      <AppText variant="small" style={styles.guaranteedPillText}>
-                        Price Guaranteed ✓
-                      </AppText>
+                      <Text style={styles.guaranteedPillText}>Price Guaranteed ✓</Text>
                     </View>
                   </View>
                 </View>
 
                 {unavailable ? (
-                  <AppText variant="small" color="accent" style={styles.unavailableText}>
-                    Unavailable right now
-                  </AppText>
+                  <Text style={styles.unavailableText}>Unavailable right now</Text>
                 ) : null}
               </TouchableOpacity>
             );
           })}
         </View>
 
+        {/* Protection */}
         <View style={styles.protectionSection}>
           <View style={styles.protectionBadge}>
-            <AppText variant="body" style={styles.protectionText}>
-              R500 parcel protection included
-            </AppText>
+            <Text style={styles.protectionText}>R500 parcel protection included</Text>
           </View>
 
           {Number(parcel_value) > 500 ? (
             <View style={styles.upgradeBox}>
-              <AppText variant="h4" color="textPrimary" style={styles.upgradeTitle}>
-                Upgrade options
-              </AppText>
-              <AppText variant="small" color="textSecondary" style={styles.upgradeLine}>
-                Upgrade to R2000 cover for R25
-              </AppText>
-              <AppText variant="small" color="textSecondary" style={styles.upgradeLine}>
-                Upgrade to R5000 cover for R65
-              </AppText>
+              <Text style={styles.upgradeTitle}>Upgrade options</Text>
+              <Text style={styles.upgradeLine}>Upgrade to R2000 cover for R25</Text>
+              <Text style={styles.upgradeLine}>Upgrade to R5000 cover for R65</Text>
             </View>
           ) : null}
         </View>
+
       </ScrollView>
 
+      {/* Bottom: total + continue */}
       <View style={styles.bottomContainer}>
         <View style={styles.priceSummary}>
-          <AppText variant="h4" color="textSecondary">
-            Total
-          </AppText>
-          <AppText variant="h1" color="primary" style={styles.totalPrice}>
-            {formatMoney(totalPrice)}
-          </AppText>
+          <Text style={styles.totalLabel}>Total</Text>
+          <Text style={styles.totalPrice}>{formatMoney(totalPrice)}</Text>
         </View>
-        <AppButton
-          label="Continue to payment"
-          variant="primary"
+        <TouchableOpacity
+          style={[styles.continueButton, disabledContinue && { opacity: 0.4 }]}
           onPress={handleContinue}
           disabled={disabledContinue}
-          loading={estimateLoading}
-        />
+        >
+          {estimateLoading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.continueButtonText}>Continue to payment</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
 
-const ROW_GAP = 6;
 const CARD_PAD = 16;
+const ROW_GAP = 6;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width,
-    minHeight: height,
-  },
-  scrollContent: {
-    paddingBottom: spacing.xl,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  placeholder: {
-    width: 24,
-  },
-  routeInfo: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+  backButton: { padding: 8 },
+  backArrow: { fontSize: 22, color: '#000000' },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   routeText: {
+    fontSize: 13,
+    color: '#9E9E9E',
     textAlign: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   progressContainer: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    marginTop: 8,
   },
   progressBar: {
     height: 4,
-    backgroundColor: colors.border,
+    backgroundColor: '#E0E0E0',
     borderRadius: 2,
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     borderRadius: 2,
   },
   progressText: {
+    fontSize: 12,
+    color: '#9E9E9E',
     textAlign: 'center',
   },
   optionsContainer: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
   optionCard: {
     flexDirection: 'column',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    borderRadius: 14,
     padding: CARD_PAD,
-    marginBottom: spacing.md,
-    ...shadows.card,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
   optionCardSelected: {
     borderWidth: 2,
-    borderColor: colors.primary,
-    backgroundColor: colors.tierSelectedBg,
+    borderColor: '#000000',
+    backgroundColor: '#F5F5F5',
   },
   optionCardUnavailable: {
     opacity: 0.6,
-    backgroundColor: colors.background,
+    backgroundColor: '#F5F5F5',
   },
   cardRow: {
     flexDirection: 'row',
@@ -349,35 +335,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: ROW_GAP,
   },
-  cardRowLast: {
-    marginBottom: 0,
-  },
-  cardRowAlignStart: {
-    alignItems: 'flex-start',
-  },
-  guaranteedPillWrap: {
-    flex: 1,
-    width: '100%',
-  },
   cardRow1Left: {
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    marginRight: spacing.sm,
+    marginRight: 8,
   },
   tierName: {
+    fontSize: 16,
     fontWeight: '700',
-    marginRight: spacing.xs,
+    color: '#000000',
+    marginRight: 8,
   },
   popularBadge: {
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.sm,
+    backgroundColor: '#000000',
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: radius.full,
+    borderRadius: 20,
   },
   popularBadgeText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '700',
   },
@@ -386,104 +364,140 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexShrink: 0,
   },
-  priceOrange: {
+  priceText: {
     fontSize: 22,
     fontWeight: '700',
-    color: colors.accent,
+    color: '#000000',
   },
   checkmarkCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: spacing.sm,
+    marginLeft: 8,
   },
   timeLineText: {
     flex: 1,
+    fontSize: 13,
+    color: '#9E9E9E',
   },
   zoneBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.sm,
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: radius.sm,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
   },
   zoneBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
+    color: '#757575',
     textTransform: 'capitalize',
+  },
+  guaranteedPillWrap: {
+    flex: 1,
+    width: '100%',
   },
   guaranteedPill: {
     alignSelf: 'stretch',
-    backgroundColor: colors.successLight,
+    backgroundColor: '#E8F5E9',
     borderWidth: 1,
-    borderColor: colors.success,
-    borderRadius: radius.full,
+    borderColor: '#00C853',
+    borderRadius: 20,
     paddingVertical: 6,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guaranteedPillText: {
-    color: colors.success,
+    color: '#00C853',
     fontWeight: '700',
+    fontSize: 12,
     textAlign: 'center',
   },
   unavailableText: {
     marginTop: ROW_GAP,
     fontWeight: '600',
+    fontSize: 12,
+    color: '#FF9500',
   },
   protectionSection: {
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
   protectionBadge: {
-    backgroundColor: colors.successLight,
-    borderColor: colors.success,
+    backgroundColor: '#E8F5E9',
+    borderColor: '#00C853',
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.sm + 6,
-    marginBottom: spacing.sm,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
   },
   protectionText: {
-    color: colors.success,
+    color: '#00C853',
     fontWeight: '700',
     textAlign: 'center',
+    fontSize: 14,
   },
   upgradeBox: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
+    backgroundColor: '#F5F5F5',
+    borderColor: '#E0E0E0',
     borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.sm + 6,
+    borderRadius: 12,
+    padding: 14,
   },
   upgradeTitle: {
     marginBottom: 10,
     textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
   },
   upgradeLine: {
-    marginBottom: spacing.sm,
+    marginBottom: 6,
     textAlign: 'center',
+    fontSize: 13,
+    color: '#9E9E9E',
   },
   bottomContainer: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
   },
   priceSummary: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    marginBottom: 14,
+  },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#9E9E9E',
   },
   totalPrice: {
     fontSize: 24,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  continueButton: {
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

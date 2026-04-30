@@ -5,19 +5,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
   Modal,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { WebView } from 'react-native-webview';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppButton, AppText } from '../../components/ui';
-
-const { width, height } = Dimensions.get('window');
 
 function formatMoney(n) {
   const x = Number(n);
@@ -235,10 +231,8 @@ const Payment = ({ navigation, route }) => {
       );
 
       const orderId = res?.id;
-
       if (!orderId) throw new Error('Could not create order');
 
-      // Gap 2: PayFast in-app WebView (wait for return_url)
       if (selectedPaymentMethod === 'payfast') {
         setPaymentMessage(null);
         setPendingOrderId(orderId);
@@ -268,7 +262,6 @@ const Payment = ({ navigation, route }) => {
         return;
       }
 
-      // Wallet payment: refresh balance then driver matching screen.
       if (selectedPaymentMethod === 'wallet') {
         await fetchWalletBalance();
         navigateToDriverMatching(orderId, res?.total_price ?? total);
@@ -282,25 +275,22 @@ const Payment = ({ navigation, route }) => {
     }
   };
 
-  const handleBack = () => {
-    navigation.goBack();
-  };
-
   const totalPriceText = total != null ? formatMoney(total) : '—';
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} hitSlop={12}>
-            <Ionicons name="chevron-back" size={26} color={colors.primary} />
-          </TouchableOpacity>
-          <AppText variant="h3" color="textPrimary">
-            Payment
-          </AppText>
-          <View style={styles.placeholder} />
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={12}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Payment</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
 
         {paymentMessage ? (
           <View style={styles.paymentMessageBox}>
@@ -311,7 +301,7 @@ const Payment = ({ navigation, route }) => {
         {/* Order Summary */}
         <View style={styles.orderSummary}>
           <Text style={styles.summaryTitle}>Order Summary</Text>
-          
+
           <View style={styles.addressSection}>
             <View style={styles.addressRow}>
               <Text style={styles.addressLabel}>From:</Text>
@@ -324,7 +314,11 @@ const Payment = ({ navigation, route }) => {
           </View>
 
           <View style={styles.deliveryInfo}>
-            <Text style={styles.deliveryType}>{delivery_tier ? delivery_tier[0].toUpperCase() + delivery_tier.slice(1) : 'Delivery'}</Text>
+            <Text style={styles.deliveryType}>
+              {delivery_tier
+                ? delivery_tier[0].toUpperCase() + delivery_tier.slice(1)
+                : 'Delivery'}
+            </Text>
             <Text style={styles.estimatedTime}>⏱ Pricing from your route</Text>
           </View>
         </View>
@@ -333,9 +327,11 @@ const Payment = ({ navigation, route }) => {
         <View style={styles.priceBreakdown}>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Delivery fee</Text>
-            <Text style={styles.priceValue}>{delivery_base_price != null ? formatMoney(delivery_base_price) : '—'}</Text>
+            <Text style={styles.priceValue}>
+              {delivery_base_price != null ? formatMoney(delivery_base_price) : '—'}
+            </Text>
           </View>
-          <View style={styles.priceRow}>
+          <View style={[styles.priceRow, { borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }]}>
             <Text style={styles.priceLabel}>Insurance</Text>
             <Text style={styles.priceValue}>
               {delivery_insurance_fee != null ? formatMoney(delivery_insurance_fee) : '—'}
@@ -349,8 +345,8 @@ const Payment = ({ navigation, route }) => {
 
         {/* Payment Methods */}
         <View style={styles.paymentSection}>
-          <Text style={styles.sectionTitle}>Pay With</Text>
-          
+          <Text style={styles.sectionLabel}>PAY WITH</Text>
+
           {paymentMethods.map((method) => {
             const isWallet = method.isWallet;
             const disabled = isWallet && walletOptionDisabled;
@@ -380,16 +376,13 @@ const Payment = ({ navigation, route }) => {
                   <Ionicons
                     name={method.ionicon}
                     size={26}
-                    color={disabled ? colors.textLight : colors.primary}
+                    color={disabled ? '#BDBDBD' : '#000000'}
                     style={styles.paymentIcon}
                   />
                   <View style={styles.paymentInfo}>
                     <View style={styles.paymentNameRow}>
                       <Text
-                        style={[
-                          styles.paymentName,
-                          disabled && styles.paymentTextMuted,
-                        ]}
+                        style={[styles.paymentName, disabled && styles.paymentTextMuted]}
                       >
                         {method.name}
                       </Text>
@@ -397,7 +390,7 @@ const Payment = ({ navigation, route }) => {
                         <Ionicons
                           name="checkmark-circle"
                           size={22}
-                          color={colors.success}
+                          color="#00C853"
                           style={styles.walletCheckIcon}
                         />
                       ) : null}
@@ -414,7 +407,7 @@ const Payment = ({ navigation, route }) => {
                     {isWallet && walletBalanceLoading ? (
                       <ActivityIndicator
                         size="small"
-                        color={colors.primary}
+                        color="#000000"
                         style={styles.walletLoadingIndicator}
                       />
                     ) : null}
@@ -437,20 +430,24 @@ const Payment = ({ navigation, route }) => {
 
         {/* Parking Notice */}
         <View style={styles.noticeBox}>
-          <Ionicons name="information-circle-outline" size={22} color={colors.warning} style={styles.noticeIcon} />
+          <Ionicons
+            name="information-circle-outline"
+            size={22}
+            color="#F59E0B"
+            style={styles.noticeIcon}
+          />
           <Text style={styles.noticeText}>
             Please ensure parking is available at the pickup address when the driver arrives.
           </Text>
         </View>
+
       </ScrollView>
 
       {/* Pay Button */}
       <View style={styles.bottomContainer}>
-        <AppButton
-          label={`Pay ${totalPriceText} & request driver`}
-          variant="accent"
-          onPress={handlePay}
-        />
+        <TouchableOpacity style={styles.payButton} onPress={handlePay}>
+          <Text style={styles.payButtonText}>Pay {totalPriceText}</Text>
+        </TouchableOpacity>
       </View>
 
       <Modal
@@ -462,13 +459,13 @@ const Payment = ({ navigation, route }) => {
           <View style={styles.payfastHeader}>
             <Text style={styles.payfastHeaderTitle}>PayFast Payment</Text>
             <TouchableOpacity style={styles.payfastCloseBtn} onPress={closePayfast}>
-              <Ionicons name="close" size={22} color={colors.danger} />
+              <Ionicons name="close" size={22} color="#EF4444" />
             </TouchableOpacity>
           </View>
 
           {payfastLoading && (
             <View style={styles.modalLoading}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <ActivityIndicator size="large" color="#00C853" />
               <Text style={styles.modalLoadingText}>Loading payment…</Text>
             </View>
           )}
@@ -490,131 +487,145 @@ const Payment = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width,
-    minHeight: height,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  placeholder: {
-    width: 24,
+  backButton: { padding: 8 },
+  backArrow: { fontSize: 22, color: '#000000' },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   orderSummary: {
-    backgroundColor: colors.background,
-    margin: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    ...shadows.card,
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
   summaryTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 14,
   },
   addressSection: {
-    marginBottom: spacing.sm,
+    marginBottom: 12,
   },
   addressRow: {
     flexDirection: 'row',
-    marginBottom: spacing.sm,
+    marginBottom: 8,
   },
   addressLabel: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     width: 50,
   },
   addressText: {
     flex: 1,
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#000000',
+    fontWeight: '500',
   },
   deliveryInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: spacing.sm,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopColor: '#F0F0F0',
   },
   deliveryType: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: '#000000',
   },
   estimatedTime: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
   },
   priceBreakdown: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    padding: 20,
   },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: 10,
   },
   totalRow: {
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
-    marginTop: spacing.sm,
+    borderTopColor: '#F0F0F0',
+    paddingTop: 14,
+    marginTop: 4,
   },
   priceLabel: {
-    fontSize: 16,
-    color: colors.textSecondary,
+    fontSize: 15,
+    color: '#757575',
   },
   priceValue: {
-    fontSize: 16,
-    color: colors.textPrimary,
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#000000',
+    fontWeight: '600',
   },
   totalLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
   },
   totalValue: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.primary,
+    fontWeight: '800',
+    color: '#000000',
   },
   paymentSection: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 12,
   },
   paymentMethod: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
   },
   paymentMethodSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
+    borderColor: '#000000',
+    borderWidth: 2,
+    backgroundColor: '#F5F5F5',
   },
   paymentMethodDisabled: {
     opacity: 0.55,
-    backgroundColor: colors.surface,
+    backgroundColor: '#F5F5F5',
   },
   paymentLeft: {
     flexDirection: 'row',
@@ -622,7 +633,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   paymentIcon: {
-    marginRight: spacing.sm,
+    marginRight: 12,
   },
   paymentInfo: {
     flex: 1,
@@ -636,20 +647,20 @@ const styles = StyleSheet.create({
   paymentName: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   walletCheckIcon: {
     marginLeft: 6,
   },
   paymentDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    fontSize: 13,
+    color: '#9E9E9E',
   },
   paymentTextMuted: {
-    color: colors.textLight,
+    color: '#BDBDBD',
   },
   walletAvailableText: {
-    color: colors.success,
+    color: '#00C853',
     fontWeight: '600',
   },
   walletLoadingIndicator: {
@@ -661,96 +672,111 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioCircleDisabled: {
-    borderColor: colors.textLight,
+    borderColor: '#BDBDBD',
     opacity: 0.7,
   },
   radioSelected: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
   },
   noticeBox: {
     flexDirection: 'row',
-    backgroundColor: colors.warningLight,
-    margin: spacing.md,
-    padding: spacing.sm,
-    borderRadius: radius.md,
+    backgroundColor: '#FFFBEB',
+    margin: 16,
+    padding: 12,
+    borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.warning,
+    borderColor: '#FDE68A',
   },
   noticeIcon: {
-    marginRight: spacing.sm,
+    marginRight: 10,
   },
   noticeText: {
     flex: 1,
-    fontSize: 14,
-    color: colors.textPrimary,
+    fontSize: 13,
+    color: '#92400E',
     lineHeight: 20,
   },
   bottomContainer: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingHorizontal: 16,
+    paddingBottom: 32,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
+  },
+  payButton: {
+    backgroundColor: '#00C853',
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   paymentMessageBox: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-    backgroundColor: colors.dangerLight,
-    borderRadius: radius.md,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 12,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.danger,
+    borderColor: '#FCA5A5',
   },
   paymentMessageText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontWeight: '700',
     textAlign: 'center',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
   },
   payfastHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: spacing.sm,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: '#F0F0F0',
   },
   payfastHeaderTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   payfastCloseBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surface,
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalLoading: {
-    padding: spacing.md,
+    padding: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalLoadingText: {
-    marginTop: spacing.sm,
+    marginTop: 10,
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     fontWeight: '600',
   },
   webview: {
