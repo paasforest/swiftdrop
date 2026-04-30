@@ -3,6 +3,9 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const { auth, verifyFirebaseToken } = require('../middleware/auth');
 
+router.post('/login', authController.login);
+router.post('/register-customer', authController.registerCustomer);
+router.post('/refresh-token', authController.refreshToken);
 router.get('/me', auth, authController.getMe);
 router.post('/register', verifyFirebaseToken, authController.register);
 router.post('/bootstrap-profile', verifyFirebaseToken, authController.bootstrapProfile);

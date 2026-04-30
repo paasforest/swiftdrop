@@ -1,7 +1,24 @@
 const db = require('../database/connection');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const smsService = require('../services/smsService');
 const { generateOTP, storeOTP, validateOTP } = require('../utils/otpHelper');
 const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
+
+function signTokens(user) {
+  const secret = process.env.JWT_SECRET;
+  const token = jwt.sign(
+    { id: user.id, user_type: user.user_type, email: user.email },
+    secret,
+    { expiresIn: '7d' }
+  );
+  const refreshToken = jwt.sign(
+    { id: user.id, type: 'refresh' },
+    secret,
+    { expiresIn: '30d' }
+  );
+  return { token, refreshToken };
+}
 
 function buildUserPayload(row) {
   if (!row) return null;
@@ -269,9 +286,122 @@ async function verifyPhone(req, res) {
   return res.json({ user: buildUserPayload(result.rows[0]) });
 }
 
+async function login(req, res) {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '').trim();
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+  try {
+    const result = await db.query(
+      `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+              full_name, email, phone, user_type, is_verified, is_active,
+              profile_photo_url, wallet_balance, password_hash
+       FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+      [email]
+    );
+    const user = result.rows[0];
+    if (!user || !user.is_active) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    if (!user.password_hash || user.password_hash === 'firebase-auth') {
+      return res.status(401).json({ error: 'This account uses a different sign-in method' });
+    }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    const { token, refreshToken } = signTokens(user);
+    return res.json({ token, refreshToken, user: buildUserPayload(user) });
+  } catch (err) {
+    console.error('login:', err);
+    return res.status(500).json({ error: 'Login failed' });
+  }
+}
+
+async function registerCustomer(req, res) {
+  const full_name = String(req.body?.full_name || '').trim();
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const rawPhone = String(req.body?.phone || '').trim();
+  const password = String(req.body?.password || '').trim();
+
+  if (!full_name || !email || !rawPhone || !password) {
+    return res.status(400).json({ error: 'full_name, email, phone and password are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+  const phone = normalizeSouthAfricaToE164(rawPhone);
+  if (!phone) {
+    return res.status(400).json({ error: 'A valid South African phone number is required' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    const existing = await client.query(
+      `SELECT id FROM users WHERE LOWER(email) = $1 OR phone = $2 LIMIT 1`,
+      [email, phone]
+    );
+    if (existing.rows[0]) {
+      return res.status(409).json({ error: 'An account with this email or phone already exists' });
+    }
+    const password_hash = await bcrypt.hash(password, 10);
+    const inserted = await client.query(
+      `INSERT INTO users
+         (full_name, email, phone, password_hash, user_type, app_role,
+          profile_completed, is_verified, is_active, wallet_balance)
+       VALUES ($1, $2, $3, $4, 'customer', 'sender', false, false, true, 0)
+       RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                 full_name, email, phone, user_type, is_verified, is_active,
+                 profile_photo_url, wallet_balance`,
+      [full_name, email, phone, password_hash]
+    );
+    const user = inserted.rows[0];
+    const { token, refreshToken } = signTokens(user);
+    return res.status(201).json({
+      token,
+      refreshToken,
+      user: buildUserPayload(user),
+      phoneVerificationRequired: false,
+    });
+  } catch (err) {
+    console.error('registerCustomer:', err);
+    return res.status(500).json({ error: 'Registration failed' });
+  } finally {
+    client.release();
+  }
+}
+
+async function refreshToken(req, res) {
+  const rt = String(req.body?.refreshToken || '').trim();
+  if (!rt) return res.status(400).json({ error: 'refreshToken is required' });
+  try {
+    const decoded = jwt.verify(rt, process.env.JWT_SECRET);
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({ error: 'Invalid refresh token' });
+    }
+    const result = await db.query(
+      `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+              full_name, email, phone, user_type, is_verified, is_active,
+              profile_photo_url, wallet_balance
+       FROM users WHERE id = $1 AND is_active = true LIMIT 1`,
+      [decoded.id]
+    );
+    const user = result.rows[0];
+    if (!user) return res.status(401).json({ error: 'User not found' });
+    const { token } = signTokens(user);
+    return res.json({ token, user: buildUserPayload(user) });
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired refresh token' });
+  }
+}
+
 module.exports = {
   getMe,
+  login,
   register,
+  registerCustomer,
+  refreshToken,
   setRole,
   completeProfile,
   bootstrapProfile: register,
