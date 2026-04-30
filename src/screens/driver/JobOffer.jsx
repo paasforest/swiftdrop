@@ -5,21 +5,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
   ActivityIndicator,
   Animated,
   Platform,
   Alert,
   ToastAndroid,
+  StatusBar,
 } from 'react-native';
 import { CommonActions } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius } from '../../theme/theme';
-import { AppButton, BottomTabBar } from '../../components/ui';
-
-const { width } = Dimensions.get('window');
+import { BottomTabBar } from '../../components/ui';
 
 function zoneLabel(zone) {
   if (!zone) return '';
@@ -220,11 +217,16 @@ const JobOffer = ({ navigation }) => {
     return String(s).trim();
   }, [offer]);
 
+  // Dynamic timer color based on remaining seconds
+  const timerColor =
+    remainingSec > 10 ? '#00C853' : remainingSec > 5 ? '#FF9500' : '#FF3B30';
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color="#00C853" />
           <Text style={styles.loadingText}>Loading job offer…</Text>
         </View>
       </SafeAreaView>
@@ -234,6 +236,7 @@ const JobOffer = ({ navigation }) => {
   if (loadError) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.centered}>
           <Text style={styles.errorText}>{loadError}</Text>
           <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()}>
@@ -247,6 +250,7 @@ const JobOffer = ({ navigation }) => {
   if (!offer) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.centered}>
           <Text style={styles.noOfferTitle}>No active offer</Text>
           <Text style={styles.noOfferSub}>Returning to home…</Text>
@@ -257,87 +261,128 @@ const JobOffer = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.offerTag}>New job offer</Text>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        <View style={styles.earnHero}>
-          <Text style={styles.earnsLabel}>You earn</Text>
-          <Text style={styles.earnsValue}>{formatMoney(offer.driver_earns)}</Text>
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Section label */}
+        <Text style={styles.offerTag}>NEW JOB OFFER</Text>
 
+        {/* Countdown timer */}
         <View style={styles.timerBlock}>
-          <View style={styles.timerRow}>
-            <Text style={styles.timerLabel}>Time left</Text>
-            <Text style={styles.timerSeconds}>{remainingSec}s</Text>
-          </View>
           <View style={styles.progressTrack}>
-            <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+            <Animated.View
+              style={[
+                styles.progressFill,
+                { width: progressWidth, backgroundColor: timerColor },
+              ]}
+            />
+          </View>
+          <Text style={[styles.timerText, { color: timerColor }]}>
+            {remainingSec}s remaining
+          </Text>
+        </View>
+
+        {/* Earnings hero — the big number */}
+        <View style={styles.earningsHero}>
+          <Text style={styles.earningsLabel}>You will earn</Text>
+          <Text style={styles.earningsAmount}>{formatMoney(offer.driver_earns)}</Text>
+        </View>
+
+        {/* Route card with connected dots */}
+        <View style={styles.routeCard}>
+          <View style={styles.routeRow}>
+            <View style={styles.routeDotGreen} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.routeLabel}>PICKUP</Text>
+              <Text style={styles.routeAddress} numberOfLines={2}>
+                {offer.pickup_address}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.routeConnector} />
+          <View style={styles.routeRow}>
+            <View style={styles.routeDotBlack} />
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.routeLabel}>DROPOFF</Text>
+              <Text style={styles.routeAddress} numberOfLines={2}>
+                {offer.dropoff_address}
+              </Text>
+            </View>
           </View>
         </View>
 
-        <View style={styles.rowAddress}>
-          <View style={styles.dotGreen} />
-          <View style={styles.addressTextWrap}>
-            <Text style={styles.addrLabel}>Pickup</Text>
-            <Text style={styles.addrValue}>{offer.pickup_address}</Text>
-          </View>
+        {/* Parcel info chips */}
+        <View style={styles.chipsRow}>
+          {offer.parcel_size ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>📦 {offer.parcel_size}</Text>
+            </View>
+          ) : null}
+          {offer.parcel_type ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>{offer.parcel_type}</Text>
+            </View>
+          ) : null}
+          {offer.distance_km ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>📍 {offer.distance_km} km</Text>
+            </View>
+          ) : null}
+          {offer.zone ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>{zoneLabel(offer.zone)}</Text>
+            </View>
+          ) : null}
+          {offer.time_estimate ? (
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>⏱ {offer.time_estimate}</Text>
+            </View>
+          ) : null}
         </View>
 
-        <View style={styles.rowAddress}>
-          <View style={styles.dotRed} />
-          <View style={styles.addressTextWrap}>
-            <Text style={styles.addrLabel}>Dropoff</Text>
-            <Text style={styles.addrValue}>{offer.dropoff_address}</Text>
-          </View>
-        </View>
-
-        <View style={styles.metaGrid}>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Distance</Text>
-            <Text style={styles.metaValue}>{offer.distance_km} km</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Zone</Text>
-            <Text style={styles.metaValue}>{zoneLabel(offer.zone)}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Est. time</Text>
-            <Text style={styles.metaValue}>{offer.time_estimate}</Text>
-          </View>
-          <View style={styles.metaItem}>
-            <Text style={styles.metaLabel}>Parcel</Text>
-            <Text style={styles.metaValue}>
-              {offer.parcel_type || '—'}
-              {offer.parcel_size ? ` · ${offer.parcel_size}` : ''}
-            </Text>
-          </View>
-        </View>
-
+        {/* Special handling */}
         {specialHandlingText ? (
           <View style={styles.specialBox}>
-            <Text style={styles.specialTitle}>Special handling</Text>
+            <Text style={styles.specialTitle}>⚠️ Special handling</Text>
             <Text style={styles.specialBody}>{specialHandlingText}</Text>
           </View>
         ) : null}
 
-        <View style={styles.actions}>
-          <AppButton
-            label="Accept"
-            variant="primary"
-            onPress={handleAccept}
-            loading={accepting}
-            disabled={accepting || declining}
-          />
-          <View style={{ height: spacing.sm }} />
-          <AppButton
-            label="Decline"
-            variant="outline"
+        {/* Accept / Decline buttons */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.declineButton}
             onPress={handleDecline}
-            loading={declining}
             disabled={accepting || declining}
-          />
+            activeOpacity={0.8}
+          >
+            {declining ? (
+              <ActivityIndicator color="#757575" size="small" />
+            ) : (
+              <Text style={styles.declineText}>Decline</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.acceptButton, (accepting || declining) && { opacity: 0.6 }]}
+            onPress={handleAccept}
+            disabled={accepting || declining}
+            activeOpacity={0.8}
+          >
+            {accepting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.acceptText}>Accept</Text>
+            )}
+          </TouchableOpacity>
         </View>
+
       </ScrollView>
+
       <BottomTabBar navigation={navigation} variant="driver" active="jobs" />
     </SafeAreaView>
   );
@@ -346,169 +391,194 @@ const JobOffer = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingBottom: 72,
+    backgroundColor: '#FFFFFF',
   },
   scroll: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 100,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: spacing.lg,
+    padding: 24,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 15,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
   },
   offerTag: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  earnHero: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  earnsLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  earnsValue: {
-    fontSize: 48,
-    fontWeight: '800',
-    color: colors.accent,
-    letterSpacing: -1.5,
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+    paddingTop: 20,
+    paddingBottom: 12,
   },
   timerBlock: {
-    marginBottom: 20,
-  },
-  timerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     marginBottom: 8,
   },
-  timerLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  timerSeconds: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.primary,
-  },
   progressTrack: {
-    height: 10,
-    borderRadius: 6,
-    backgroundColor: colors.border,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F0F0F0',
     overflow: 'hidden',
+    marginBottom: 6,
   },
   progressFill: {
     height: '100%',
-    borderRadius: 6,
-    backgroundColor: colors.success,
+    borderRadius: 3,
   },
-  rowAddress: {
+  timerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  earningsHero: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    marginHorizontal: 20,
+    marginVertical: 16,
+  },
+  earningsLabel: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginBottom: 4,
+  },
+  earningsAmount: {
+    fontSize: 48,
+    fontWeight: '800',
+    color: '#000000',
+    letterSpacing: -1.5,
+  },
+  routeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  routeRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 14,
-    backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: 10,
   },
-  dotGreen: {
+  routeDotGreen: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: colors.success,
-    marginTop: 4,
-    marginRight: 10,
+    backgroundColor: '#00C853',
+    marginTop: 2,
+    flexShrink: 0,
   },
-  dotRed: {
+  routeDotBlack: {
     width: 12,
     height: 12,
-    borderRadius: 6,
-    backgroundColor: colors.danger,
-    marginTop: 4,
-    marginRight: 10,
+    borderRadius: 3,
+    backgroundColor: '#000000',
+    marginTop: 2,
+    flexShrink: 0,
   },
-  addressTextWrap: {
-    flex: 1,
+  routeConnector: {
+    width: 2,
+    height: 16,
+    backgroundColor: '#E0E0E0',
+    marginLeft: 5,
   },
-  addrLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    marginBottom: 4,
+  routeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1,
+    marginBottom: 2,
   },
-  addrValue: {
-    fontSize: 15,
-    color: colors.textPrimary,
-    lineHeight: 22,
+  routeAddress: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '500',
+    lineHeight: 20,
   },
-  metaGrid: {
+  chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 8,
+    paddingHorizontal: 20,
+    marginBottom: 16,
   },
-  metaItem: {
-    width: '48%',
-    marginBottom: 10,
-    backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+  chip: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  metaLabel: {
-    fontSize: 11,
-    color: colors.textLight,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  metaValue: {
-    fontSize: 15,
+  chipText: {
+    fontSize: 12,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   specialBox: {
-    backgroundColor: colors.warningLight,
+    backgroundColor: '#FFFBEB',
     padding: 14,
-    borderRadius: radius.md,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.warning,
+    borderColor: '#FDE68A',
+    marginHorizontal: 20,
     marginBottom: 16,
   },
   specialTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: colors.accentDark,
+    color: '#92400E',
     marginBottom: 6,
   },
   specialBody: {
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#000000',
     lineHeight: 20,
   },
-  actions: {
-    marginTop: 8,
+  actionsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 12,
+    paddingBottom: 32,
+    paddingTop: 8,
+  },
+  declineButton: {
+    flex: 1,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  acceptButton: {
+    flex: 2,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#00C853',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   errorText: {
     fontSize: 16,
-    color: colors.danger,
+    color: '#FF3B30',
     textAlign: 'center',
     marginBottom: 16,
   },
@@ -517,19 +587,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   secondaryBtnText: {
-    color: colors.primary,
+    color: '#000000',
     fontSize: 16,
     fontWeight: '600',
   },
   noOfferTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: colors.textSecondary,
+    color: '#000000',
     marginBottom: 8,
   },
   noOfferSub: {
     fontSize: 15,
-    color: colors.textLight,
+    color: '#9E9E9E',
   },
 });
 
