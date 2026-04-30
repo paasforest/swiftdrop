@@ -6,6 +6,7 @@ const { releaseEscrow } = require('../services/paymentService');
 const { sendPushNotification } = require('../services/notificationService');
 const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
+const { hasAvailableSlots } = require('../services/slotService');
 
 // Align with matchingService: drivers below this average rating are excluded (NULL = allowed).
 const MIN_DRIVER_RATING_FOR_MATCHING = 3.0;
@@ -121,6 +122,7 @@ async function createOrder(req, res) {
       parcel_type, parcel_size, parcel_value, special_handling,
       delivery_tier, insurance_selected,
       payment_method = 'card',
+      assigned_driver_route_id,
     } = req.body;
 
     if (!pickup_address || pickup_lat == null || pickup_lng == null ||
@@ -131,6 +133,31 @@ async function createOrder(req, res) {
 
     if (!['standard', 'express', 'urgent'].includes(delivery_tier)) {
       return res.status(400).json({ error: 'Invalid delivery_tier' });
+    }
+
+    // Intercity slot reservation: only when the customer is booking onto a posted trip.
+    if (assigned_driver_route_id) {
+      const { rows: routeRows } = await db.query(
+        `SELECT max_parcels FROM driver_routes WHERE id = $1 AND status = 'active'`,
+        [assigned_driver_route_id]
+      );
+      if (!routeRows[0]) {
+        return res.status(400).json({
+          error: 'This trip is no longer available.',
+          code: 'TRIP_NOT_FOUND',
+        });
+      }
+      const available = await hasAvailableSlots(
+        assigned_driver_route_id,
+        routeRows[0].max_parcels,
+        parcel_size
+      );
+      if (!available) {
+        return res.status(400).json({
+          error: 'Sorry this trip is now full.',
+          code: 'TRIP_FULL',
+        });
+      }
     }
 
     const dist = haversineKm(
@@ -199,14 +226,16 @@ async function createOrder(req, res) {
           order_number, customer_id, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type, parcel_size, parcel_value,
           special_handling, delivery_tier, status, base_price, insurance_fee, total_price,
-          commission_amount, driver_earnings, pickup_otp, delivery_otp
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20)
+          commission_amount, driver_earnings, pickup_otp, delivery_otp,
+          assigned_driver_route_id
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20,$21)
         RETURNING *`,
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type || null, parcel_size || null,
           parcel_value || null, special_handling || null, delivery_tier,
           basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp,
+          assigned_driver_route_id || null,
         ]
       );
       const order = orderRes.rows[0];

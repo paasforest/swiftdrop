@@ -1,5 +1,6 @@
 const db = require('../database/connection');
 const { getRealtimeDb } = require('../services/firebaseAdmin');
+const { sendPushNotification } = require('../services/notificationService');
 
 /**
  * Driver availability and GPS live in `driver_locations` (used by the matching engine).
@@ -128,6 +129,11 @@ async function createDriverRoute(req, res) {
       departure_time,
       max_parcels,
       boot_space,
+      trip_type,
+      pickup_method,
+      meeting_point_address,
+      meeting_point_lat,
+      meeting_point_lng,
     } = req.body;
 
     if (!from_address || !String(from_address).trim()) {
@@ -162,11 +168,28 @@ async function createDriverRoute(req, res) {
     }
 
     const driverId = req.user.id;
+
+    const tripTypeSafe = ['local', 'intercity'].includes(trip_type) ? trip_type : 'local';
+    const pickupMethodSafe = ['driver_collects', 'sender_drops_off'].includes(pickup_method)
+      ? pickup_method
+      : 'driver_collects';
+    const meetingAddr = pickupMethodSafe === 'sender_drops_off' && meeting_point_address
+      ? String(meeting_point_address).trim()
+      : null;
+    const meetingLat = pickupMethodSafe === 'sender_drops_off' && meeting_point_lat != null
+      ? Number(meeting_point_lat)
+      : null;
+    const meetingLng = pickupMethodSafe === 'sender_drops_off' && meeting_point_lng != null
+      ? Number(meeting_point_lng)
+      : null;
+
     const result = await db.query(
       `INSERT INTO driver_routes (
         driver_id, from_address, from_lat, from_lng, to_address, to_lat, to_lng,
-        departure_time, max_parcels, boot_space, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
+        departure_time, max_parcels, boot_space, status,
+        trip_type, pickup_method,
+        meeting_point_address, meeting_point_lat, meeting_point_lng
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12,$13,$14,$15)
       RETURNING *`,
       [
         driverId,
@@ -179,6 +202,11 @@ async function createDriverRoute(req, res) {
         dep.toISOString(),
         mp,
         boot,
+        tripTypeSafe,
+        pickupMethodSafe,
+        meetingAddr,
+        meetingLat,
+        meetingLng,
       ]
     );
 
@@ -189,9 +217,167 @@ async function createDriverRoute(req, res) {
   }
 }
 
+/**
+ * PATCH /api/driver-routes/:id/cancel — driver cancels a posted trip.
+ *
+ * Refunds every order assigned to this route, notifies affected customers,
+ * records a cancellation strike against the driver, and deactivates the
+ * driver account if 3 strikes have occurred in the last 90 days.
+ */
+async function cancelDriverRoute(req, res) {
+  const client = await db.pool.connect();
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+
+    const routeId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(routeId) || routeId <= 0) {
+      return res.status(400).json({ error: 'Invalid route id' });
+    }
+
+    await client.query('BEGIN');
+
+    const routeRes = await client.query(
+      `SELECT * FROM driver_routes WHERE id = $1 FOR UPDATE`,
+      [routeId]
+    );
+    const route = routeRes.rows[0];
+    if (!route) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Route not found' });
+    }
+    if (route.driver_id !== req.user.id) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (route.status !== 'active') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Route cannot be cancelled in current state' });
+    }
+
+    await client.query(
+      `UPDATE driver_routes SET status = 'cancelled' WHERE id = $1`,
+      [routeId]
+    );
+
+    // Refund every active order assigned to this route
+    const ordersRes = await client.query(
+      `SELECT id, customer_id, total_price, status
+         FROM orders
+        WHERE assigned_driver_route_id = $1
+          AND status NOT IN ('cancelled', 'completed', 'delivered')`,
+      [routeId]
+    );
+    const affectedOrders = ordersRes.rows;
+
+    for (const o of affectedOrders) {
+      await client.query(
+        `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+        [o.id]
+      );
+      const payRes = await client.query(
+        `SELECT payment_method FROM payments WHERE order_id = $1`,
+        [o.id]
+      );
+      const pay = payRes.rows[0];
+      if (pay) {
+        await client.query(
+          `UPDATE payments SET escrow_status = 'refunded', updated_at = NOW() WHERE order_id = $1`,
+          [o.id]
+        );
+        if (pay.payment_method === 'wallet') {
+          await client.query(
+            `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2`,
+            [o.total_price, o.customer_id]
+          );
+          await client.query(
+            `INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
+             VALUES ($1, 'credit', $2, $3, 'Refund: driver cancelled trip')`,
+            [o.customer_id, o.total_price, `order:${o.id}`]
+          );
+        }
+      }
+    }
+
+    // Record a strike + check 90-day window
+    await client.query(
+      `INSERT INTO driver_strikes (driver_id, driver_route_id, reason)
+       VALUES ($1, $2, 'trip_cancelled')`,
+      [req.user.id, routeId]
+    );
+
+    await client.query(
+      `UPDATE driver_routes
+          SET cancellation_strikes = COALESCE(cancellation_strikes, 0) + 1
+        WHERE id = $1`,
+      [routeId]
+    );
+
+    const strikesRes = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM driver_strikes
+        WHERE driver_id = $1
+          AND created_at >= NOW() - INTERVAL '90 days'`,
+      [req.user.id]
+    );
+    const recentStrikes = strikesRes.rows[0]?.n ?? 0;
+
+    let driverDeactivated = false;
+    if (recentStrikes >= 3) {
+      await client.query(
+        `UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1`,
+        [req.user.id]
+      );
+      driverDeactivated = true;
+    }
+
+    await client.query('COMMIT');
+
+    // Best-effort push notifications (post-commit; failure does not affect cancel)
+    for (const o of affectedOrders) {
+      sendPushNotification(
+        o.customer_id,
+        'Trip cancelled',
+        'Your driver cancelled their trip. Your payment has been refunded.',
+        { type: 'trip_cancelled', order_id: o.id }
+      ).catch(() => {});
+    }
+    if (driverDeactivated) {
+      sendPushNotification(
+        req.user.id,
+        'Account deactivated',
+        'Your account has been deactivated due to 3 trip cancellations in 90 days.',
+        { type: 'driver_deactivated' }
+      ).catch(() => {});
+    } else {
+      sendPushNotification(
+        req.user.id,
+        'Trip cancelled',
+        `Trip cancelled. Strike ${recentStrikes}/3 in the last 90 days.`,
+        { type: 'driver_strike', strikes: recentStrikes }
+      ).catch(() => {});
+    }
+
+    return res.json({
+      message: 'Trip cancelled',
+      affected_orders: affectedOrders.length,
+      strikes_in_90_days: recentStrikes,
+      driver_deactivated: driverDeactivated,
+    });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('cancelDriverRoute:', err);
+    return res.status(500).json({ error: 'Failed to cancel trip' });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getStatus,
   patchStatus,
   patchLocation,
   createDriverRoute,
+  cancelDriverRoute,
 };

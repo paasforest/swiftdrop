@@ -11,6 +11,7 @@ const driverRouteRoutes = require('./src/routes/driverRouteRoutes');
 const disputeRoutes = require('./src/routes/disputeRoutes');
 const notificationRoutes = require('./src/routes/notificationRoutes');
 const walletRoutes = require('./src/routes/walletRoutes');
+const tripRoutes = require('./src/routes/tripRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -28,6 +29,7 @@ app.use('/api/driver-routes', driverRouteRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/trips', tripRoutes);
 
 app.get('/', (req, res) => {
   res.json({ name: 'SwiftDrop API', version: '1.0.0' });

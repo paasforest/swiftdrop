@@ -79,6 +79,21 @@ const PostRoute = ({ navigation }) => {
   const [successMessage, setSuccessMessage] = useState(null);
   const navigateTimerRef = useRef(null);
 
+  // Trip type
+  const [tripType, setTripType] = useState('local');
+
+  // Pickup method
+  const [pickupMethod, setPickupMethod] = useState('driver_collects');
+
+  // Meeting point (only used when sender_drops_off)
+  const [meetingPointAddress, setMeetingPointAddress] = useState('');
+  const [meetingPointLat, setMeetingPointLat] = useState(null);
+  const [meetingPointLng, setMeetingPointLng] = useState(null);
+  const [meetingPredictions, setMeetingPredictions] = useState([]);
+  const [meetingPlacesLoading, setMeetingPlacesLoading] = useState(false);
+  const [meetingPlacesError, setMeetingPlacesError] = useState(null);
+  const debouncedMeeting = useDebounced(meetingPointAddress, 350);
+
   useEffect(() => {
     return () => {
       if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current);
@@ -150,6 +165,54 @@ const PostRoute = ({ navigation }) => {
       cancelled = true;
     };
   }, [debouncedTo]);
+
+  // Meeting point autocomplete — same pattern as From/To
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!debouncedMeeting || debouncedMeeting.trim().length < 2) {
+        setMeetingPredictions([]);
+        setMeetingPlacesError(null);
+        return;
+      }
+      if (!GOOGLE_MAPS_API_KEY) {
+        setMeetingPlacesError('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
+        setMeetingPredictions([]);
+        return;
+      }
+      setMeetingPlacesLoading(true);
+      setMeetingPlacesError(null);
+      try {
+        const list = await fetchPlacePredictions(debouncedMeeting);
+        if (!cancelled) setMeetingPredictions(list);
+      } catch (e) {
+        if (!cancelled) {
+          setMeetingPlacesError(e.message || 'Autocomplete failed');
+          setMeetingPredictions([]);
+        }
+      } finally {
+        if (!cancelled) setMeetingPlacesLoading(false);
+      }
+    }
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedMeeting]);
+
+  const onSelectMeetingPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setMeetingPredictions([]);
+    setMeetingPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      setMeetingPointAddress(details.formatted_address || p.description || '');
+      setMeetingPointLat(details.latitude);
+      setMeetingPointLng(details.longitude);
+    } catch (e) {
+      setMeetingPlacesError(e.message || 'Could not load place');
+    }
+  }, []);
 
   const onSelectFromPrediction = useCallback(async (p) => {
     Keyboard.dismiss();
@@ -235,8 +298,16 @@ const PostRoute = ({ navigation }) => {
     if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) {
       return 'Please select boot space.';
     }
+    if (pickupMethod === 'sender_drops_off' && (!meetingPointAddress.trim() || meetingPointLat == null)) {
+      return 'Please enter a meeting point address';
+    }
     return null;
-  }, [fromAddress, fromLat, fromLng, toAddress, toLat, toLng, departureAt, maxParcels, bootSpace]);
+  }, [
+    fromAddress, fromLat, fromLng,
+    toAddress, toLat, toLng,
+    departureAt, maxParcels, bootSpace,
+    pickupMethod, meetingPointAddress, meetingPointLat,
+  ]);
 
   const handlePostRoute = async () => {
     setErrorMessage(null);
@@ -265,6 +336,11 @@ const PostRoute = ({ navigation }) => {
         departure_time: departureAt.toISOString(),
         max_parcels: maxParcels,
         boot_space: bootSpace,
+        trip_type: tripType,
+        pickup_method: pickupMethod,
+        meeting_point_address: pickupMethod === 'sender_drops_off' ? meetingPointAddress : null,
+        meeting_point_lat:     pickupMethod === 'sender_drops_off' ? meetingPointLat     : null,
+        meeting_point_lng:     pickupMethod === 'sender_drops_off' ? meetingPointLng     : null,
       };
 
       await postJson('/api/driver-routes', body, { token: auth.token });
@@ -332,6 +408,46 @@ const PostRoute = ({ navigation }) => {
         ) : null}
 
         <View style={styles.formContainer}>
+          {/* Trip type selector */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={styles.inputLabel}>Trip type</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {[
+                { key: 'local',     label: 'Local delivery' },
+                { key: 'intercity', label: 'Intercity trip'  },
+              ].map((opt) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => setTripType(opt.key)}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 12,
+                    borderRadius: 24,
+                    alignItems: 'center',
+                    backgroundColor: tripType === opt.key ? '#000000' : 'transparent',
+                    borderWidth: 1.5,
+                    borderColor: tripType === opt.key ? '#000000' : '#E0E0E0',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: tripType === opt.key ? '#FFFFFF' : '#757575',
+                    }}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {tripType === 'intercity' && (
+              <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 8, lineHeight: 16 }}>
+                Post your route so clients can book parcels on your trip
+              </Text>
+            )}
+          </View>
+
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>From</Text>
             <View style={styles.inputContainer}>
@@ -492,6 +608,111 @@ const PostRoute = ({ navigation }) => {
                 <Text style={[styles.stepperText, maxParcels >= 5 && styles.stepperTextDisabled]}>+</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Pickup method toggle */}
+          <View style={{ marginTop: 24 }}>
+            <Text style={styles.inputLabel}>How will you collect parcels?</Text>
+
+            {[
+              {
+                key:   'driver_collects',
+                label: 'I will collect from sender',
+                sub:   'You go to the sender before departing',
+              },
+              {
+                key:   'sender_drops_off',
+                label: 'Sender drops off to me',
+                sub:   'Client brings parcel to your location',
+              },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                onPress={() => setPickupMethod(opt.key)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: pickupMethod === opt.key ? '#000000' : '#E0E0E0',
+                  backgroundColor: pickupMethod === opt.key ? '#F5F5F5' : '#FAFAFA',
+                  marginBottom: 10,
+                }}
+              >
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: pickupMethod === opt.key ? '#000' : '#E0E0E0',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 12,
+                  }}
+                >
+                  {pickupMethod === opt.key && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#000' }} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#000' }}>{opt.label}</Text>
+                  <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 2 }}>{opt.sub}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            {/* Meeting point — only when sender_drops_off */}
+            {pickupMethod === 'sender_drops_off' && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.inputLabel}>Meeting point address</Text>
+                <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 8 }}>
+                  Where should the sender bring the parcel?
+                </Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter meeting point address"
+                    placeholderTextColor={colors.textLight}
+                    value={meetingPointAddress}
+                    onChangeText={(t) => {
+                      setMeetingPointAddress(t);
+                      if (!t.trim()) {
+                        setMeetingPointLat(null);
+                        setMeetingPointLng(null);
+                      }
+                    }}
+                  />
+                </View>
+                {meetingPlacesError ? (
+                  <Text style={styles.placesErrorText}>{meetingPlacesError}</Text>
+                ) : null}
+                {meetingPredictions.length > 0 && (
+                  <View style={styles.predictionsBox}>
+                    {meetingPredictions.map((item) => (
+                      <TouchableOpacity
+                        key={item.place_id}
+                        style={styles.predictionRow}
+                        onPress={() => onSelectMeetingPrediction(item)}
+                      >
+                        <Text style={styles.predictionMain} numberOfLines={2}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        <Text style={styles.predictionSub} numberOfLines={1}>
+                          {item.structured_formatting?.secondary_text || ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {meetingPlacesLoading ? (
+                  <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
+                ) : null}
+              </View>
+            )}
           </View>
         </View>
 
