@@ -400,6 +400,27 @@ async function getTodayEarnings(req, res) {
   }
 }
 
+async function getEarningsSummary(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const { rows } = await db.query(
+      `SELECT
+         COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days'  THEN amount END), 0) AS week_total,
+         COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN amount END), 0) AS month_total,
+         COALESCE(SUM(amount), 0) AS all_time_total
+       FROM wallet_transactions
+       WHERE user_id = $1 AND type = 'credit'`,
+      [req.user.id]
+    );
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('getEarningsSummary:', err);
+    return res.status(500).json({ error: 'Failed to load earnings summary' });
+  }
+}
+
 module.exports = {
   getStatus,
   patchStatus,
@@ -407,4 +428,5 @@ module.exports = {
   createDriverRoute,
   cancelDriverRoute,
   getTodayEarnings,
+  getEarningsSummary,
 };

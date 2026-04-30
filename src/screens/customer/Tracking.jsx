@@ -156,7 +156,7 @@ const Tracking = ({ navigation, route }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* Map placeholder */}
         <View style={styles.mapContainer}>
@@ -273,6 +273,21 @@ const Tracking = ({ navigation, route }) => {
             </Text>
           </View>
         </View>
+
+        {/* Rate delivery button */}
+        {(order.status === 'delivered' || order.status === 'completed') && !order.customer_rating && (
+          <TouchableOpacity
+            style={styles.rateButton}
+            onPress={() => navigation.navigate('RatingScreen', {
+              orderId: order.id,
+              driverName: order.driver_name,
+              driverInitial: order.driver_name?.[0] || 'D',
+              deliveryAddress: order.dropoff_address,
+            })}
+          >
+            <Text style={styles.rateButtonText}>⭐ Rate your delivery</Text>
+          </TouchableOpacity>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -518,6 +533,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
+  },
+  rateButton: {
+    backgroundColor: '#000000',
+    borderRadius: 14,
+    height: 52,
+    marginHorizontal: 20,
+    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
 

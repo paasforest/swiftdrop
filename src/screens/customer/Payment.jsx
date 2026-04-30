@@ -96,24 +96,22 @@ const Payment = ({ navigation, route }) => {
 
   const navigateToDriverMatching = useCallback(
     (orderId, totalPrice) => {
-      navigation.navigate('DriverMatching', {
+      navigation.replace('OrderConfirmation', {
         orderId,
         pickup_address,
-        pickup_lat,
-        pickup_lng,
         dropoff_address,
-        delivery_tier,
         total_price: totalPrice != null ? totalPrice : delivery_total,
+        delivery_tier,
+        trip_type: params.trip_type || 'local',
       });
     },
     [
       navigation,
       pickup_address,
-      pickup_lat,
-      pickup_lng,
       dropoff_address,
       delivery_tier,
       delivery_total,
+      params.trip_type,
     ]
   );
 

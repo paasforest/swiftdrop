@@ -25,6 +25,8 @@ import OrderDetail from './src/screens/customer/OrderDetail';
 import OrderHistory from './src/screens/customer/OrderHistory';
 import Profile from './src/screens/customer/Profile';
 import TripBrowser from './src/screens/customer/TripBrowser';
+import RatingScreen from './src/screens/customer/RatingScreen';
+import OrderConfirmation from './src/screens/customer/OrderConfirmation';
 
 // Driver Screens
 import DriverRegister from './src/screens/driver/DriverRegister';
@@ -36,6 +38,7 @@ import PickupConfirm from './src/screens/driver/PickupConfirm';
 import EnRouteDelivery from './src/screens/driver/EnRouteDelivery';
 import DeliveryConfirm from './src/screens/driver/DeliveryConfirm';
 import Earnings from './src/screens/driver/Earnings';
+import EarningsScreen from './src/screens/driver/EarningsScreen';
 import DriverOTPScreen from './src/screens/driver/DriverOTPScreen';
 
 // Admin Screens
@@ -118,6 +121,8 @@ export default function App() {
         <Stack.Screen name="OrderHistory" component={OrderHistory} />
         <Stack.Screen name="Profile" component={Profile} />
         <Stack.Screen name="TripBrowser" component={TripBrowser} options={{ headerShown: false }} />
+        <Stack.Screen name="RatingScreen" component={RatingScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="OrderConfirmation" component={OrderConfirmation} options={{ headerShown: false }} />
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
@@ -130,6 +135,7 @@ export default function App() {
         <Stack.Screen name="EnRouteDelivery" component={EnRouteDelivery} />
         <Stack.Screen name="DeliveryConfirm" component={DeliveryConfirm} />
         <Stack.Screen name="Earnings" component={Earnings} />
+        <Stack.Screen name="EarningsScreen" component={EarningsScreen} options={{ headerShown: false }} />
 
         {/* Admin Flow */}
         <Stack.Screen name="AdminOverview" component={AdminOverview} />
