@@ -23,11 +23,19 @@ async function ensureAdmin() {
     );
 
     if (existing.rows.length > 0) {
-      console.log('[ensure-admin] Admin account(s) already exist:');
-      existing.rows.forEach((r) => {
-        console.log(`  • id=${r.id}  email=${r.email}  phone=${r.phone}  name=${r.full_name}`);
-      });
-      console.log('[ensure-admin] No changes needed.');
+      // Admin exists — ensure they have a valid bcrypt password (not firebase-auth placeholder)
+      const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+      for (const r of existing.rows) {
+        const cur = await db.query(`SELECT password_hash FROM users WHERE id = $1`, [r.id]);
+        const currentHash = cur.rows[0]?.password_hash ?? '';
+        const needsUpdate = !currentHash || currentHash === 'firebase-auth' || !currentHash.startsWith('$2');
+        if (needsUpdate) {
+          await db.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [passwordHash, r.id]);
+          console.log(`[ensure-admin] Updated password_hash for admin id=${r.id} (${r.email}).`);
+        } else {
+          console.log(`[ensure-admin] Admin id=${r.id} (${r.email}) already has a valid password hash.`);
+        }
+      }
       process.exit(0);
       return;
     }
