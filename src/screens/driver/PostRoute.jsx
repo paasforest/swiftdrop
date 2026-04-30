@@ -5,12 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
   TextInput,
   ActivityIndicator,
   Platform,
   Keyboard,
+  StatusBar,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,9 +18,6 @@ import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
-import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
-
-const { width, height } = Dimensions.get('window');
 
 function useDebounced(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -68,7 +65,6 @@ const PostRoute = ({ navigation }) => {
     return d;
   });
   const [showDeparturePicker, setShowDeparturePicker] = useState(false);
-  /** Android: date then time (datetime mode not reliable on all API levels). */
   const [androidPickerMode, setAndroidPickerMode] = useState(null);
 
   const [bootSpace, setBootSpace] = useState(null);
@@ -79,13 +75,9 @@ const PostRoute = ({ navigation }) => {
   const [successMessage, setSuccessMessage] = useState(null);
   const navigateTimerRef = useRef(null);
 
-  // Trip type
   const [tripType, setTripType] = useState('local');
-
-  // Pickup method
   const [pickupMethod, setPickupMethod] = useState('driver_collects');
 
-  // Meeting point (only used when sender_drops_off)
   const [meetingPointAddress, setMeetingPointAddress] = useState('');
   const [meetingPointLat, setMeetingPointLat] = useState(null);
   const [meetingPointLng, setMeetingPointLng] = useState(null);
@@ -128,9 +120,7 @@ const PostRoute = ({ navigation }) => {
       }
     }
     run();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [debouncedFrom]);
 
   useEffect(() => {
@@ -161,12 +151,9 @@ const PostRoute = ({ navigation }) => {
       }
     }
     run();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [debouncedTo]);
 
-  // Meeting point autocomplete — same pattern as From/To
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -195,9 +182,7 @@ const PostRoute = ({ navigation }) => {
       }
     }
     run();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [debouncedMeeting]);
 
   const onSelectMeetingPrediction = useCallback(async (p) => {
@@ -274,33 +259,15 @@ const PostRoute = ({ navigation }) => {
   }, [androidPickerMode]);
 
   const validate = useCallback(() => {
-    if (!fromAddress.trim()) {
-      return 'From address is required.';
-    }
-    if (fromLat == null || fromLng == null) {
-      return 'Choose a From address from the suggestions so we have a location.';
-    }
-    if (!toAddress.trim()) {
-      return 'To address is required.';
-    }
-    if (toLat == null || toLng == null) {
-      return 'Choose a To address from the suggestions so we have a location.';
-    }
-    if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) {
-      return 'Departure time is invalid.';
-    }
-    if (departureAt.getTime() <= Date.now()) {
-      return 'Departure time must be in the future.';
-    }
-    if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) {
-      return 'Max parcels must be between 1 and 5.';
-    }
-    if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) {
-      return 'Please select boot space.';
-    }
-    if (pickupMethod === 'sender_drops_off' && (!meetingPointAddress.trim() || meetingPointLat == null)) {
-      return 'Please enter a meeting point address';
-    }
+    if (!fromAddress.trim()) return 'From address is required.';
+    if (fromLat == null || fromLng == null) return 'Choose a From address from the suggestions so we have a location.';
+    if (!toAddress.trim()) return 'To address is required.';
+    if (toLat == null || toLng == null) return 'Choose a To address from the suggestions so we have a location.';
+    if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) return 'Departure time is invalid.';
+    if (departureAt.getTime() <= Date.now()) return 'Departure time must be in the future.';
+    if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) return 'Max parcels must be between 1 and 5.';
+    if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) return 'Please select boot space.';
+    if (pickupMethod === 'sender_drops_off' && (!meetingPointAddress.trim() || meetingPointLat == null)) return 'Please enter a meeting point address';
     return null;
   }, [
     fromAddress, fromLat, fromLng,
@@ -356,37 +323,35 @@ const PostRoute = ({ navigation }) => {
     }
   };
 
-  const handleBack = () => {
-    navigation.goBack();
-  };
-
   const bootSpaceOptions = [
     { key: 'small', label: 'Small' },
     { key: 'medium', label: 'Medium' },
     { key: 'large', label: 'Large' },
   ];
 
-  const incrementParcels = () => {
-    if (maxParcels < 5) setMaxParcels(maxParcels + 1);
-  };
-
-  const decrementParcels = () => {
-    if (maxParcels > 1) setMaxParcels(maxParcels - 1);
-  };
+  const incrementParcels = () => { if (maxParcels < 5) setMaxParcels(maxParcels + 1); };
+  const decrementParcels = () => { if (maxParcels > 1) setMaxParcels(maxParcels - 1); };
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Post Your Route</Text>
-          <View style={{ width: 28 }} />
+          <Text style={styles.headerTitle}>Post a trip</Text>
+          <View style={{ width: 40 }} />
         </View>
 
         <View style={styles.explanationContainer}>
@@ -408,8 +373,9 @@ const PostRoute = ({ navigation }) => {
         ) : null}
 
         <View style={styles.formContainer}>
+
           {/* Trip type selector */}
-          <View style={{ marginBottom: 24 }}>
+          <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Trip type</Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               {[
@@ -419,22 +385,16 @@ const PostRoute = ({ navigation }) => {
                 <TouchableOpacity
                   key={opt.key}
                   onPress={() => setTripType(opt.key)}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 12,
-                    borderRadius: 24,
-                    alignItems: 'center',
-                    backgroundColor: tripType === opt.key ? '#000000' : 'transparent',
-                    borderWidth: 1.5,
-                    borderColor: tripType === opt.key ? '#000000' : '#E0E0E0',
-                  }}
+                  style={[
+                    styles.tripTypePill,
+                    tripType === opt.key && styles.tripTypePillSelected,
+                  ]}
                 >
                   <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: tripType === opt.key ? '#FFFFFF' : '#757575',
-                    }}
+                    style={[
+                      styles.tripTypePillText,
+                      tripType === opt.key && styles.tripTypePillTextSelected,
+                    ]}
                   >
                     {opt.label}
                   </Text>
@@ -442,28 +402,26 @@ const PostRoute = ({ navigation }) => {
               ))}
             </View>
             {tripType === 'intercity' && (
-              <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 8, lineHeight: 16 }}>
+              <Text style={styles.intercityHint}>
                 Post your route so clients can book parcels on your trip
               </Text>
             )}
           </View>
 
+          {/* From */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>From</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+              <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={fromAddress}
                 onChangeText={(t) => {
                   setFromAddress(t);
-                  if (!t.trim()) {
-                    setFromLat(null);
-                    setFromLng(null);
-                  }
+                  if (!t.trim()) { setFromLat(null); setFromLng(null); }
                 }}
                 placeholder="Search starting address"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
               />
             </View>
             {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
@@ -485,25 +443,23 @@ const PostRoute = ({ navigation }) => {
                 ))}
               </View>
             )}
-            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
+            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
           </View>
 
+          {/* To */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>To</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+              <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={toAddress}
                 onChangeText={(t) => {
                   setToAddress(t);
-                  if (!t.trim()) {
-                    setToLat(null);
-                    setToLng(null);
-                  }
+                  if (!t.trim()) { setToLat(null); setToLng(null); }
                 }}
                 placeholder="Search destination address"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
               />
             </View>
             {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
@@ -525,21 +481,20 @@ const PostRoute = ({ navigation }) => {
                 ))}
               </View>
             )}
-            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
+            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
           </View>
 
+          {/* Departure time */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Departure time</Text>
             <TouchableOpacity
               style={styles.dateContainer}
               onPress={() => {
-                if (Platform.OS === 'android') {
-                  setAndroidPickerMode('date');
-                }
+                if (Platform.OS === 'android') setAndroidPickerMode('date');
                 setShowDeparturePicker(true);
               }}
             >
-              <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.dateIcon} />
+              <Ionicons name="calendar-outline" size={20} color="#000000" style={styles.dateIcon} />
               <Text style={styles.dateText}>{formatDepartureDisplay(departureAt)}</Text>
             </TouchableOpacity>
             {showDeparturePicker && Platform.OS === 'ios' && (
@@ -570,6 +525,7 @@ const PostRoute = ({ navigation }) => {
             )}
           </View>
 
+          {/* Boot space */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Boot space</Text>
             <View style={styles.chipsContainer}>
@@ -587,6 +543,7 @@ const PostRoute = ({ navigation }) => {
             </View>
           </View>
 
+          {/* Max parcels */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Max parcels</Text>
             <View style={styles.stepperContainer}>
@@ -610,8 +567,8 @@ const PostRoute = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Pickup method toggle */}
-          <View style={{ marginTop: 24 }}>
+          {/* Pickup method */}
+          <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>How will you collect parcels?</Text>
 
             {[
@@ -629,61 +586,40 @@ const PostRoute = ({ navigation }) => {
               <TouchableOpacity
                 key={opt.key}
                 onPress={() => setPickupMethod(opt.key)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 14,
-                  paddingHorizontal: 16,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: pickupMethod === opt.key ? '#000000' : '#E0E0E0',
-                  backgroundColor: pickupMethod === opt.key ? '#F5F5F5' : '#FAFAFA',
-                  marginBottom: 10,
-                }}
+                style={[
+                  styles.pickupOption,
+                  pickupMethod === opt.key && styles.pickupOptionSelected,
+                ]}
               >
                 <View
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    borderWidth: 2,
-                    borderColor: pickupMethod === opt.key ? '#000' : '#E0E0E0',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: 12,
-                  }}
+                  style={[
+                    styles.radioCircle,
+                    pickupMethod === opt.key && styles.radioCircleSelected,
+                  ]}
                 >
-                  {pickupMethod === opt.key && (
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#000' }} />
-                  )}
+                  {pickupMethod === opt.key && <View style={styles.radioDot} />}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#000' }}>{opt.label}</Text>
-                  <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 2 }}>{opt.sub}</Text>
+                  <Text style={styles.pickupLabel}>{opt.label}</Text>
+                  <Text style={styles.pickupSub}>{opt.sub}</Text>
                 </View>
               </TouchableOpacity>
             ))}
 
-            {/* Meeting point — only when sender_drops_off */}
             {pickupMethod === 'sender_drops_off' && (
               <View style={{ marginTop: 16 }}>
                 <Text style={styles.inputLabel}>Meeting point address</Text>
-                <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 8 }}>
-                  Where should the sender bring the parcel?
-                </Text>
+                <Text style={styles.meetingHint}>Where should the sender bring the parcel?</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter meeting point address"
-                    placeholderTextColor={colors.textLight}
+                    placeholderTextColor="#BDBDBD"
                     value={meetingPointAddress}
                     onChangeText={(t) => {
                       setMeetingPointAddress(t);
-                      if (!t.trim()) {
-                        setMeetingPointLat(null);
-                        setMeetingPointLng(null);
-                      }
+                      if (!t.trim()) { setMeetingPointLat(null); setMeetingPointLng(null); }
                     }}
                   />
                 </View>
@@ -709,15 +645,16 @@ const PostRoute = ({ navigation }) => {
                   </View>
                 )}
                 {meetingPlacesLoading ? (
-                  <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
+                  <ActivityIndicator style={{ marginTop: 8 }} color="#000000" />
                 ) : null}
               </View>
             )}
           </View>
+
         </View>
 
         <View style={styles.noticeBanner}>
-          <Ionicons name="notifications-outline" size={22} color={colors.accent} style={styles.noticeIcon} />
+          <Ionicons name="notifications-outline" size={22} color="#F59E0B" style={styles.noticeIcon} />
           <Text style={styles.noticeText}>
             You will be notified when parcels match your route. You choose which ones to accept.
           </Text>
@@ -726,12 +663,12 @@ const PostRoute = ({ navigation }) => {
 
       <View style={styles.bottomContainer}>
         <TouchableOpacity
-          style={[styles.postButton, submitting && styles.postButtonDisabled]}
+          style={[styles.postButton, submitting && { opacity: 0.6 }]}
           onPress={handlePostRoute}
           disabled={submitting || Boolean(successMessage)}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.textWhite} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.postButtonText}>Post Route</Text>
           )}
@@ -744,9 +681,7 @@ const PostRoute = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.textWhite,
-    width: width,
-    minHeight: height,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     paddingBottom: 120,
@@ -755,27 +690,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  backArrow: {
-    fontSize: 24,
-    color: colors.primary,
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
+  backButton: { padding: 8 },
+  backArrow: { fontSize: 22, color: '#000000' },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   explanationContainer: {
     paddingHorizontal: 20,
+    paddingTop: 14,
     marginBottom: 16,
   },
   explanationText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     lineHeight: 20,
     textAlign: 'center',
   },
@@ -784,12 +719,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: colors.dangerLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
-    borderColor: colors.dangerLight,
+    borderColor: '#FCA5A5',
   },
   errorBannerText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -798,12 +733,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: colors.successLight,
+    backgroundColor: '#DCFCE7',
     borderWidth: 1,
-    borderColor: colors.successLight,
+    borderColor: '#86EFAC',
   },
   successBannerText: {
-    color: colors.success,
+    color: '#15803D',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -815,32 +750,58 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 8,
+  },
+  tripTypePill: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+  },
+  tripTypePillSelected: {
+    backgroundColor: '#000000',
+    borderColor: '#000000',
+  },
+  tripTypePillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  tripTypePillTextSelected: {
+    color: '#FFFFFF',
+  },
+  intercityHint: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 8,
+    lineHeight: 16,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 4,
   },
   inputIcon: {
-    fontSize: 20,
     paddingHorizontal: 12,
   },
   input: {
     flex: 1,
-    padding: 12,
-    fontSize: 16,
-    color: colors.textPrimary,
+    paddingVertical: 14,
+    paddingRight: 14,
+    fontSize: 15,
+    color: '#000000',
   },
   placesErrorText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontSize: 12,
     marginTop: 6,
   },
@@ -848,42 +809,42 @@ const styles = StyleSheet.create({
     marginTop: 8,
     maxHeight: 180,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
-    backgroundColor: colors.textWhite,
+    backgroundColor: '#FFFFFF',
   },
   predictionRow: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: '#E0E0E0',
   },
   predictionMain: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   predictionSub: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     marginTop: 2,
   },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   dateIcon: {
-    fontSize: 20,
     marginRight: 12,
   },
   dateText: {
-    fontSize: 16,
-    color: colors.textPrimary,
+    fontSize: 15,
+    color: '#000000',
     flex: 1,
   },
   iosPickerDone: {
@@ -892,7 +853,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   iosPickerDoneText: {
-    color: colors.primary,
+    color: '#000000',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -902,47 +863,48 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   chip: {
-    backgroundColor: colors.background,
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   chipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   chipText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#757575',
     fontWeight: '500',
   },
   chipTextSelected: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 4,
+    overflow: 'hidden',
   },
   stepperButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
   stepperText: {
-    fontSize: 20,
-    color: colors.primary,
+    fontSize: 22,
+    color: '#000000',
     fontWeight: 'bold',
   },
   stepperTextDisabled: {
-    color: colors.textLight,
+    color: '#BDBDBD',
   },
   stepperValue: {
     flex: 1,
@@ -950,26 +912,76 @@ const styles = StyleSheet.create({
   },
   stepperNumber: {
     fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  pickupOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    marginBottom: 10,
+  },
+  pickupOptionSelected: {
+    borderColor: '#000000',
+    backgroundColor: '#F5F5F5',
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  radioCircleSelected: {
+    borderColor: '#000000',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#000000',
+  },
+  pickupLabel: {
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
+  },
+  pickupSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  meetingHint: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginBottom: 8,
   },
   noticeBanner: {
-    backgroundColor: colors.warningLight,
+    backgroundColor: '#FFFBEB',
     marginHorizontal: 20,
     padding: 16,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   noticeIcon: {
-    fontSize: 20,
     marginRight: 12,
   },
   noticeText: {
     flex: 1,
     fontSize: 14,
-    color: colors.warning,
+    color: '#92400E',
     lineHeight: 20,
   },
   bottomContainer: {
@@ -980,25 +992,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 30,
     paddingTop: 10,
-    backgroundColor: colors.textWhite,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: '#F0F0F0',
   },
   postButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 14,
     alignItems: 'center',
-    minHeight: 52,
     justifyContent: 'center',
   },
-  postButtonDisabled: {
-    opacity: 0.85,
-  },
   postButtonText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 

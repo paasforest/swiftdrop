@@ -1,21 +1,18 @@
 import React, { useState } from 'react';
 import {
   View,
+  Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
-import { AppText, AppButton } from '../../components/ui';
-
-const { width, height } = Dimensions.get('window');
 
 function cleanLoginInput(value) {
   return String(value ?? '')
@@ -61,10 +58,7 @@ const Login = ({ navigation }) => {
         return;
       }
 
-      const data = await postJson('/api/auth/login', {
-        email,
-        password,
-      });
+      const data = await postJson('/api/auth/login', { email, password });
 
       setAuth({
         token: data.token,
@@ -129,51 +123,53 @@ const Login = ({ navigation }) => {
   };
 
   const handleGoogleSignIn = () => {};
-
   const handleForgotPassword = () => {};
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <View style={styles.logoContainer}>
-          <AppText variant="h1" color="primary" style={styles.logo}>
-            SwiftDrop
-          </AppText>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+
+        {/* Logo */}
+        <View style={styles.logoSection}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoText}>S</Text>
+          </View>
+          <Text style={styles.brandName}>SwiftDrop</Text>
+          <Text style={styles.brandTagline}>Deliver with people going your way</Text>
         </View>
 
+        {/* Tabs */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'login' && styles.activeTab]}
             onPress={() => setActiveTab('login')}
           >
-            <AppText
-              variant="h4"
-              color={activeTab === 'login' ? 'primary' : 'textSecondary'}
-              style={{ fontWeight: activeTab === 'login' ? '600' : '500' }}
-            >
+            <Text style={[styles.tabText, activeTab === 'login' && styles.tabTextActive]}>
               Login
-            </AppText>
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'register' && styles.activeTab]}
             onPress={() => setActiveTab('register')}
           >
-            <AppText
-              variant="h4"
-              color={activeTab === 'register' ? 'primary' : 'textSecondary'}
-              style={{ fontWeight: activeTab === 'register' ? '600' : '500' }}
-            >
+            <Text style={[styles.tabText, activeTab === 'register' && styles.tabTextActive]}>
               Register
-            </AppText>
+            </Text>
           </TouchableOpacity>
         </View>
 
+        {/* Login form */}
         {activeTab === 'login' && (
           <View style={styles.formContainer}>
             <TextInput
               style={styles.textInput}
               placeholder="Email or phone"
-              placeholderTextColor={colors.textLight}
+              placeholderTextColor="#BDBDBD"
               value={loginEmail}
               onChangeText={setLoginEmail}
               keyboardType="email-address"
@@ -184,83 +180,89 @@ const Login = ({ navigation }) => {
               <TextInput
                 style={styles.passwordInputInner}
                 placeholder="Password"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
                 value={loginPassword}
                 onChangeText={setLoginPassword}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={8}
+              >
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={22}
-                  color={colors.textSecondary}
+                  color="#9E9E9E"
                 />
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity onPress={handleForgotPassword}>
-              <AppText variant="small" color="primary" style={styles.forgot}>
-                Forgot password?
-              </AppText>
+              <Text style={styles.forgot}>Forgot password?</Text>
             </TouchableOpacity>
 
             {errorMessage ? (
-              <AppText variant="small" color="danger" style={styles.errorText}>
-                {errorMessage}
-              </AppText>
+              <Text style={styles.errorText}>{errorMessage}</Text>
             ) : null}
 
-            <AppButton
-              label={isSubmitting ? 'Logging in…' : 'Login'}
-              variant="primary"
+            <TouchableOpacity
+              style={[styles.primaryButton, isSubmitting && { opacity: 0.6 }]}
               onPress={handleLogin}
-              loading={isSubmitting}
               disabled={isSubmitting}
-            />
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSubmitting ? 'Logging in…' : 'Login'}
+              </Text>
+            </TouchableOpacity>
 
-            <AppButton
-              label="Register as driver"
-              variant="outline"
+            <TouchableOpacity
+              style={[styles.outlineButton, { marginTop: 12 }]}
               onPress={() => navigation.navigate('DriverRegister')}
               disabled={isSubmitting}
-              style={{ marginTop: spacing.sm }}
-            />
+            >
+              <Text style={styles.outlineButtonText}>Register as driver</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setActiveTab('register')}
               disabled={isSubmitting}
               style={styles.linkWrap}
             >
-              <AppText variant="small" color="primary" style={styles.link}>
-                Register as customer
-              </AppText>
+              <Text style={styles.link}>Register as customer</Text>
             </TouchableOpacity>
 
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
-              <AppText variant="small" color="textSecondary" style={styles.dividerText}>
-                or
-              </AppText>
+              <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn} activeOpacity={0.85}>
-              <Ionicons name="logo-google" size={20} color={colors.textSecondary} style={{ marginRight: spacing.sm }} />
-              <AppText variant="h4" style={{ color: colors.textSecondary, fontWeight: '500' }}>
-                Sign in with Google
-              </AppText>
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={handleGoogleSignIn}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="logo-google"
+                size={20}
+                color="#9E9E9E"
+                style={{ marginRight: 10 }}
+              />
+              <Text style={styles.googleText}>Sign in with Google</Text>
             </TouchableOpacity>
           </View>
         )}
 
+        {/* Register form */}
         {activeTab === 'register' && (
           <View style={styles.formContainer}>
             <TextInput
               style={styles.textInput}
               placeholder="Full name"
-              placeholderTextColor={colors.textLight}
+              placeholderTextColor="#BDBDBD"
               value={registerName}
               onChangeText={setRegisterName}
             />
@@ -268,7 +270,7 @@ const Login = ({ navigation }) => {
             <TextInput
               style={styles.textInput}
               placeholder="Email"
-              placeholderTextColor={colors.textLight}
+              placeholderTextColor="#BDBDBD"
               value={registerEmail}
               onChangeText={setRegisterEmail}
               keyboardType="email-address"
@@ -276,13 +278,11 @@ const Login = ({ navigation }) => {
             />
 
             <View style={styles.phoneContainer}>
-              <AppText variant="body" color="textSecondary" style={styles.phonePrefix}>
-                +27
-              </AppText>
+              <Text style={styles.phonePrefix}>+27</Text>
               <TextInput
                 style={styles.phoneInputInner}
                 placeholder="Phone number"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
                 value={registerPhone}
                 onChangeText={setRegisterPhone}
                 keyboardType="phone-pad"
@@ -293,16 +293,20 @@ const Login = ({ navigation }) => {
               <TextInput
                 style={styles.passwordInputInner}
                 placeholder="Password"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
                 value={registerPassword}
                 onChangeText={setRegisterPassword}
                 secureTextEntry={!showPassword}
               />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={8}
+              >
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={22}
-                  color={colors.textSecondary}
+                  color="#9E9E9E"
                 />
               </TouchableOpacity>
             </View>
@@ -311,35 +315,40 @@ const Login = ({ navigation }) => {
               <TextInput
                 style={styles.passwordInputInner}
                 placeholder="Confirm password"
-                placeholderTextColor={colors.textLight}
+                placeholderTextColor="#BDBDBD"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry={!showConfirmPassword}
               />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                hitSlop={8}
+              >
                 <Ionicons
                   name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={22}
-                  color={colors.textSecondary}
+                  color="#9E9E9E"
                 />
               </TouchableOpacity>
             </View>
 
             {errorMessage ? (
-              <AppText variant="small" color="danger" style={styles.errorText}>
-                {errorMessage}
-              </AppText>
+              <Text style={styles.errorText}>{errorMessage}</Text>
             ) : null}
 
-            <AppButton
-              label={isSubmitting ? 'Registering…' : 'Create account'}
-              variant="primary"
+            <TouchableOpacity
+              style={[styles.primaryButton, isSubmitting && { opacity: 0.6 }]}
               onPress={handleRegister}
-              loading={isSubmitting}
               disabled={isSubmitting}
-            />
+            >
+              <Text style={styles.primaryButtonText}>
+                {isSubmitting ? 'Registering…' : 'Create account'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -348,128 +357,202 @@ const Login = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width,
-    minHeight: height,
+    backgroundColor: '#FFFFFF',
   },
-  logoContainer: {
+  logoSection: {
     alignItems: 'center',
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingTop: 60,
+    paddingBottom: 40,
   },
-  logo: {
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  logoText: {
     fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  brandName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#000000',
+    marginBottom: 6,
+  },
+  brandTagline: {
+    fontSize: 14,
+    color: '#9E9E9E',
+    textAlign: 'center',
   },
   tabContainer: {
     flexDirection: 'row',
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    padding: spacing.xs,
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 4,
   },
   tab: {
     flex: 1,
-    paddingVertical: spacing.sm + 4,
+    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: radius.sm,
+    borderRadius: 10,
   },
   activeTab: {
-    backgroundColor: colors.surface,
-    ...shadows.card,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#9E9E9E',
+  },
+  tabTextActive: {
+    fontWeight: '700',
+    color: '#000000',
   },
   formContainer: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   textInput: {
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     fontSize: 15,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
+    color: '#000000',
+    marginBottom: 12,
   },
   passwordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    marginBottom: spacing.md,
-    paddingRight: spacing.sm,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    marginBottom: 12,
+    paddingRight: 4,
   },
   passwordInputInner: {
     flex: 1,
-    padding: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     fontSize: 15,
-    color: colors.textPrimary,
+    color: '#000000',
   },
   eyeBtn: {
-    padding: spacing.sm,
+    padding: 10,
   },
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    marginBottom: spacing.md,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    marginBottom: 12,
   },
   phonePrefix: {
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 15,
+    color: '#000000',
+    fontWeight: '600',
     borderRightWidth: 1,
-    borderRightColor: colors.border,
+    borderRightColor: '#E0E0E0',
   },
   phoneInputInner: {
     flex: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
     fontSize: 15,
-    color: colors.textPrimary,
+    color: '#000000',
   },
   forgot: {
     textAlign: 'right',
-    marginBottom: spacing.md,
+    marginBottom: 16,
+    color: '#9E9E9E',
+    fontSize: 13,
   },
   errorText: {
-    marginBottom: spacing.md,
+    marginBottom: 12,
     textAlign: 'center',
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  primaryButton: {
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  outlineButton: {
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+  },
+  outlineButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '600',
   },
   linkWrap: {
     alignItems: 'center',
-    marginTop: spacing.sm,
+    marginTop: 16,
+    marginBottom: 4,
   },
   link: {
-    textDecorationLine: 'underline',
+    color: '#000000',
     fontWeight: '600',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.lg,
+    marginVertical: 20,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: colors.border,
+    backgroundColor: '#F0F0F0',
   },
   dividerText: {
-    marginHorizontal: spacing.md,
+    marginHorizontal: 14,
+    fontSize: 13,
+    color: '#9E9E9E',
   },
   googleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.md,
-    borderRadius: radius.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  googleText: {
+    color: '#9E9E9E',
+    fontSize: 15,
+    fontWeight: '500',
   },
 });
 
