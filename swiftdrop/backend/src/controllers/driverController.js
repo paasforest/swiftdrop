@@ -483,6 +483,32 @@ async function getTripParcels(req, res) {
   }
 }
 
+/** GET /api/driver/profile — vehicle + tier for driver profile screen */
+async function getMyProfile(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const { rows } = await db.query(
+      `SELECT u.full_name, u.phone, u.email,
+              dp.vehicle_make, dp.vehicle_model, dp.vehicle_year, dp.vehicle_color, dp.vehicle_plate,
+              dt.current_rating, dt.deliveries_completed
+       FROM users u
+       LEFT JOIN driver_profiles dp ON dp.user_id = u.id
+       LEFT JOIN driver_tiers dt ON dt.driver_id = u.id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+    if (!rows[0]) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    return res.json(rows[0]);
+  } catch (err) {
+    console.error('getMyProfile:', err);
+    return res.status(500).json({ error: 'Failed to load profile' });
+  }
+}
+
 async function getEarningsSummary(req, res) {
   try {
     if (req.user.user_type !== 'driver') {
@@ -511,6 +537,7 @@ module.exports = {
   createDriverRoute,
   cancelDriverRoute,
   getTodayEarnings,
+  getMyProfile,
   getEarningsSummary,
   getMyRoutes,
   getTripParcels,

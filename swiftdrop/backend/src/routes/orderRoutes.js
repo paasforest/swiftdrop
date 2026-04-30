@@ -9,6 +9,7 @@ const router = express.Router();
 router.post('/price-estimate', order.calculatePrice);
 
 // Lists / dashboard (before /:id)
+router.get('/customer/stats', auth, order.getCustomerStats);
 router.get('/customer', auth, order.getCustomerOrders);
 router.get('/driver/dashboard', auth, order.getDriverDashboard);
 router.get('/driver', auth, order.getDriverOrders);

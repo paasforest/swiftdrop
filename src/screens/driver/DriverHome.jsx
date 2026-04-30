@@ -235,7 +235,7 @@ const DriverHome = ({ navigation }) => {
         </View>
         <TouchableOpacity
           style={styles.avatar}
-          onPress={() => navigation.navigate('Profile')}
+          onPress={() => navigation.navigate('DriverProfile')}
         >
           <Text style={styles.avatarText}>
             {firstName?.[0]?.toUpperCase() || 'D'}

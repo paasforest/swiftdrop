@@ -9,5 +9,6 @@ router.patch('/status', auth, driverController.patchStatus);
 router.patch('/location', auth, driverController.patchLocation);
 router.get('/earnings/today', auth, driverController.getTodayEarnings);
 router.get('/earnings/summary', auth, driverController.getEarningsSummary);
+router.get('/profile', auth, driverController.getMyProfile);
 
 module.exports = router;

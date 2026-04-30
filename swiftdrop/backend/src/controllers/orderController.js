@@ -524,6 +524,39 @@ async function getOrderById(req, res) {
   }
 }
 
+/** GET /api/orders/customer/stats — counts & spend for profile */
+async function getCustomerStats(req, res) {
+  try {
+    if (req.user.user_type !== 'customer') {
+      return res.status(403).json({ error: 'Customers only' });
+    }
+
+    const { rows } = await db.query(
+      `SELECT
+         COUNT(*)::int AS total_orders,
+         COALESCE(SUM(total_price), 0) AS total_spent
+       FROM orders
+       WHERE customer_id = $1
+         AND status NOT IN ('cancelled')`,
+      [req.user.id]
+    );
+
+    const wallet = await db.query(`SELECT wallet_balance FROM users WHERE id = $1`, [req.user.id]);
+
+    const r0 = rows[0] || {};
+    const wb = wallet.rows[0]?.wallet_balance;
+
+    return res.json({
+      total_orders: Number(r0.total_orders) || 0,
+      total_spent: Number(r0.total_spent || 0).toFixed(2),
+      wallet_balance: Number(wb != null ? wb : 0).toFixed(2),
+    });
+  } catch (err) {
+    console.error('getCustomerStats:', err);
+    return res.status(500).json({ error: 'Failed to load stats' });
+  }
+}
+
 async function getCustomerOrders(req, res) {
   try {
     if (req.user.user_type !== 'customer') {
@@ -1133,6 +1166,7 @@ module.exports = {
   createOrder,
   calculatePrice,
   getOrderById,
+  getCustomerStats,
   getCustomerOrders,
   getDriverOrders,
   getDriverDashboard,

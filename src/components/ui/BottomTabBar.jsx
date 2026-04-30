@@ -53,7 +53,7 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
       { key: 'home', label: 'Home', icon: 'home', iconOutline: 'home-outline', route: 'DriverHome' },
       { key: 'jobs', label: 'Jobs', icon: 'briefcase', iconOutline: 'briefcase-outline', route: 'JobOffer' },
       { key: 'earnings', label: 'Earnings', icon: 'wallet', iconOutline: 'wallet-outline', route: 'EarningsScreen' },
-      { key: 'profile', label: 'Profile', icon: 'person', iconOutline: 'person-outline', route: 'Profile' },
+      { key: 'profile', label: 'Profile', icon: 'person', iconOutline: 'person-outline', route: 'DriverProfile' },
     ];
 
     return (

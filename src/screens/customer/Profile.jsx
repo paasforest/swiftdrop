@@ -1,21 +1,76 @@
-import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { getAuth } from '../../authStore';
-import { resetToLogin } from '../../navigationHelpers';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
+import React, { useState, useCallback, useLayoutEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  ScrollView,
+  TouchableOpacity,
+  Linking,
+  ActivityIndicator,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAuth, clearAuth } from '../../authStore';
+import { getJson } from '../../apiClient';
 import { BottomTabBar } from '../../components/ui';
-import AvatarPlaceholder from '../../components/AvatarPlaceholder';
 
-const Profile = ({ navigation, route }) => {
+const defaultStats = {
+  total_orders: 0,
+  total_spent: '0.00',
+  wallet_balance: '0.00',
+};
+
+const Profile = ({ navigation }) => {
   const auth = getAuth();
   const user = auth?.user;
   const isAdmin = user?.user_type === 'admin';
   const isDriver = user?.user_type === 'driver';
 
-  const handleLogout = () => {
-    resetToLogin(navigation);
-  };
+  const [stats, setStats] = useState(defaultStats);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useLayoutEffect(() => {
+    if (isDriver) {
+      navigation.replace('DriverProfile');
+    }
+  }, [isDriver, navigation]);
+
+  const loadStats = useCallback(async () => {
+    if (isDriver || isAdmin || user?.user_type !== 'customer') return;
+    const token = getAuth()?.token;
+    if (!token) return;
+    setStatsLoading(true);
+    try {
+      const data = await getJson('/api/orders/customer/stats', { token });
+      setStats({
+        total_orders: Number(data.total_orders) || 0,
+        total_spent: data.total_spent != null ? String(data.total_spent) : '0.00',
+        wallet_balance: data.wallet_balance != null ? String(data.wallet_balance) : '0.00',
+      });
+    } catch {
+      setStats(defaultStats);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [isDriver, isAdmin, user?.user_type]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [loadStats])
+  );
+
+  if (isDriver) {
+    return <View style={styles.container} />;
+  }
+
+  const menuItems = [
+    { icon: '📦', label: 'Order history', screen: 'OrderHistory' },
+    { icon: '💳', label: 'Payment methods', screen: null, sub: 'Coming soon' },
+    { icon: '🔔', label: 'Notifications', screen: null, sub: 'Coming soon' },
+    { icon: '🛡️', label: 'Privacy policy', screen: null, sub: 'Opens in browser' },
+    { icon: '📞', label: 'Contact support', screen: null, sub: 'support@swiftdrop.co.za' },
+  ];
 
   const tabActive = 'profile';
 
@@ -23,48 +78,92 @@ const Profile = ({ navigation, route }) => {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <AvatarPlaceholder size={72} />
-          <Text style={styles.name}>{user?.full_name || 'Account'}</Text>
-          <Text style={styles.email}>{user?.email || user?.phone || ''}</Text>
-          <Text style={styles.role}>
-            {isDriver ? 'Driver' : isAdmin ? 'Admin' : 'Customer'}
-          </Text>
+          <Text style={styles.headerTitle}>Profile</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>Account</Text>
-          <Text style={styles.cardBody}>
-            Manage your profile and security in a future update.
-          </Text>
+        <View style={styles.avatarSection}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarInitial}>{user?.full_name?.[0]?.toUpperCase() || 'U'}</Text>
+          </View>
+          <Text style={styles.userName}>{user?.full_name || 'Account'}</Text>
+          <Text style={styles.userPhone}>{user?.phone || ''}</Text>
+          <Text style={styles.userEmail}>{user?.email || ''}</Text>
         </View>
 
-        <View style={styles.sessionCard}>
-          <Text style={styles.sessionLabel}>Session</Text>
+        {!isAdmin ? (
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              {statsLoading ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Text style={styles.statNum}>{stats.total_orders}</Text>
+                  <Text style={styles.statLabel}>Deliveries</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              {statsLoading ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Text style={styles.statNum}>R{stats.total_spent}</Text>
+                  <Text style={styles.statLabel}>Total spent</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              {statsLoading ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <>
+                  <Text style={styles.statNum}>R{stats.wallet_balance}</Text>
+                  <Text style={styles.statLabel}>Wallet</Text>
+                </>
+              )}
+            </View>
+          </View>
+        ) : null}
+
+        {menuItems.map((item) => (
           <TouchableOpacity
-            style={styles.logoutRow}
-            onPress={handleLogout}
-            activeOpacity={0.75}
-            accessibilityRole="button"
-            accessibilityLabel="Log out"
-            accessibilityHint="Signs out of your account on this device"
+            key={item.label}
+            style={styles.menuItem}
+            onPress={() => {
+              if (item.screen) {
+                navigation.navigate(item.screen);
+              } else if (item.sub === 'Opens in browser') {
+                Linking.openURL('https://swiftdrop.co.za/privacy').catch(() => {});
+              } else if (item.label === 'Contact support') {
+                Linking.openURL('mailto:support@swiftdrop.co.za').catch(() => {});
+              }
+            }}
           >
-            <View style={styles.logoutIconCircle}>
-              <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+            <Text style={styles.menuIcon}>{item.icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.menuLabel}>{item.label}</Text>
+              {item.sub ? <Text style={styles.menuSub}>{item.sub}</Text> : null}
             </View>
-            <View style={styles.logoutTextBlock}>
-              <Text style={styles.logoutTitle}>Log out</Text>
-              <Text style={styles.logoutSub}>Sign out of this device</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+            <Text style={styles.menuArrow}>›</Text>
           </TouchableOpacity>
-        </View>
-      </ScrollView>
-      {!isAdmin &&
-        (isDriver ? (
-          <BottomTabBar navigation={navigation} variant="driver" active={tabActive} />
-        ) : (
-          <BottomTabBar navigation={navigation} variant="customer" active={tabActive} />
         ))}
+
+        <TouchableOpacity
+          style={styles.logoutButton}
+          onPress={async () => {
+            await clearAuth();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Login' }],
+            });
+          }}
+        >
+          <Text style={styles.logoutText}>Log out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+      {!isAdmin ? <BottomTabBar navigation={navigation} variant="customer" active={tabActive} /> : null}
     </SafeAreaView>
   );
 };
@@ -72,97 +171,121 @@ const Profile = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingBottom: 72,
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 88,
   },
   scroll: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 24,
   },
   header: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  name: {
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+  headerTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    color: colors.textPrimary,
+    fontWeight: '800',
+    color: '#000000',
   },
-  email: {
-    fontSize: 15,
-    color: colors.textSecondary,
-  },
-  role: {
-    marginTop: spacing.sm,
-    textTransform: 'capitalize',
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  cardHeading: {
-    marginBottom: spacing.sm,
-    fontSize: 17,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  cardBody: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: colors.textSecondary,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadows.card,
-  },
-  sessionCard: {
-    marginBottom: spacing.lg,
-  },
-  sessionLabel: {
-    marginBottom: spacing.xs,
-    marginLeft: spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  logoutRow: {
-    flexDirection: 'row',
+  avatarSection: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
+    paddingVertical: 32,
   },
-  logoutIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 59, 48, 0.12)',
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#000000',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
+    marginBottom: 12,
   },
-  logoutTextBlock: {
-    flex: 1,
-    minWidth: 0,
+  avatarInitial: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  logoutTitle: {
-    fontWeight: '600',
+  userName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  userPhone: {
+    fontSize: 14,
+    color: '#757575',
     marginBottom: 2,
-    fontSize: 15,
-    color: colors.textPrimary,
   },
-  logoutSub: {
+  userEmail: {
+    fontSize: 13,
+    color: '#9E9E9E',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: 16,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  statNum: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#9E9E9E',
+    fontWeight: '600',
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  menuIcon: { fontSize: 20, marginRight: 14 },
+  menuLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  menuSub: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  menuArrow: {
+    fontSize: 20,
+    color: '#9E9E9E',
+  },
+  logoutButton: {
+    margin: 20,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#FF3B30',
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  logoutText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FF3B30',
   },
 });
 
