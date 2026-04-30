@@ -9,6 +9,7 @@
     "db:ensure-admin": "node src/database/ensureAdmin.js",
     "db:reset-admin-password": "node src/database/resetAdminPassword.js",
     "db:ensure-test-driver": "node src/database/ensureTestDriver.js",
+    "db:ensure-test-users": "node src/database/ensureTestUsers.js",
     "db:seed": "node src/database/seed.js",
     "create:driver": "node src/scripts/createTestDriver.js",
     "test:auth": "node tests/auth.test.js",
