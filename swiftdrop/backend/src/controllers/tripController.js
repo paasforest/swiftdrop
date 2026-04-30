@@ -40,6 +40,7 @@ async function searchTrips(req, res) {
          dr.meeting_point_address,
          dr.meeting_point_lat,
          dr.meeting_point_lng,
+         dr.delivery_radius_km,
          u.full_name  AS driver_name,
          dt.current_rating AS driver_rating
        FROM driver_routes dr

@@ -134,6 +134,7 @@ async function createDriverRoute(req, res) {
       meeting_point_address,
       meeting_point_lat,
       meeting_point_lng,
+      delivery_radius_km,
     } = req.body;
 
     if (!from_address || !String(from_address).trim()) {
@@ -183,13 +184,19 @@ async function createDriverRoute(req, res) {
       ? Number(meeting_point_lng)
       : null;
 
+    const validRadii = [5, 10, 20, 30];
+    const radiusKm = tripTypeSafe === 'intercity' && validRadii.includes(Number(delivery_radius_km))
+      ? Number(delivery_radius_km)
+      : 10;
+
     const result = await db.query(
       `INSERT INTO driver_routes (
         driver_id, from_address, from_lat, from_lng, to_address, to_lat, to_lng,
         departure_time, max_parcels, boot_space, status,
         trip_type, pickup_method,
-        meeting_point_address, meeting_point_lat, meeting_point_lng
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12,$13,$14,$15)
+        meeting_point_address, meeting_point_lat, meeting_point_lng,
+        delivery_radius_km
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12,$13,$14,$15,$16)
       RETURNING *`,
       [
         driverId,
@@ -207,6 +214,7 @@ async function createDriverRoute(req, res) {
         meetingAddr,
         meetingLat,
         meetingLng,
+        radiusKm,
       ]
     );
 
@@ -400,6 +408,81 @@ async function getTodayEarnings(req, res) {
   }
 }
 
+async function getMyRoutes(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const { rows } = await db.query(
+      `SELECT dr.*,
+              COUNT(o.id) AS parcel_count
+       FROM driver_routes dr
+       LEFT JOIN orders o ON o.assigned_driver_route_id = dr.id
+         AND o.status NOT IN ('cancelled')
+       WHERE dr.driver_id = $1
+         AND dr.status = 'active'
+         AND dr.departure_time > NOW() - INTERVAL '24 hours'
+       GROUP BY dr.id
+       ORDER BY dr.departure_time ASC`,
+      [req.user.id]
+    );
+    return res.json({ routes: rows });
+  } catch (err) {
+    console.error('getMyRoutes:', err);
+    return res.status(500).json({ error: 'Failed to load routes' });
+  }
+}
+
+async function getTripParcels(req, res) {
+  try {
+    if (req.user.user_type !== 'driver') {
+      return res.status(403).json({ error: 'Drivers only' });
+    }
+    const { id } = req.params;
+    const { rows: routeRows } = await db.query(
+      `SELECT * FROM driver_routes WHERE id = $1 AND driver_id = $2`,
+      [id, req.user.id]
+    );
+    if (!routeRows[0]) {
+      return res.status(404).json({ error: 'Trip not found' });
+    }
+    const { rows } = await db.query(
+      `SELECT
+         o.id, o.order_number, o.status,
+         o.pickup_address, o.dropoff_address,
+         o.pickup_lat, o.pickup_lng,
+         o.dropoff_lat, o.dropoff_lng,
+         o.parcel_size, o.parcel_type,
+         o.pickup_otp, o.delivery_otp,
+         o.pickup_photo_url, o.delivery_photo_url,
+         o.pickup_confirmed_at, o.delivery_confirmed_at,
+         o.driver_earnings,
+         u.full_name AS customer_name,
+         u.phone AS customer_phone
+       FROM orders o
+       JOIN users u ON u.id = o.customer_id
+       WHERE o.assigned_driver_route_id = $1
+         AND o.status NOT IN ('cancelled')
+       ORDER BY o.created_at ASC`,
+      [id]
+    );
+    const delivered = rows.filter((r) => ['delivered', 'completed'].includes(r.status));
+    const collected = rows.filter((r) =>
+      ['collected', 'delivery_en_route', 'delivery_arrived', 'delivered', 'completed'].includes(r.status)
+    );
+    return res.json({
+      route: routeRows[0],
+      parcels: rows,
+      total: rows.length,
+      collected: collected.length,
+      delivered: delivered.length,
+    });
+  } catch (err) {
+    console.error('getTripParcels:', err);
+    return res.status(500).json({ error: 'Failed to load parcels' });
+  }
+}
+
 async function getEarningsSummary(req, res) {
   try {
     if (req.user.user_type !== 'driver') {
@@ -429,4 +512,6 @@ module.exports = {
   cancelDriverRoute,
   getTodayEarnings,
   getEarningsSummary,
+  getMyRoutes,
+  getTripParcels,
 };

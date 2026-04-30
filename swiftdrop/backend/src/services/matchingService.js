@@ -292,6 +292,52 @@ function runMatching(orderId) {
   return runPromise;
 }
 
+async function getDriverDeliveryRadius(driverId, fallbackKm = 20) {
+  try {
+    const r = await db.query(
+      `SELECT delivery_radius_km FROM driver_routes
+       WHERE driver_id = $1 AND status = 'active' AND trip_type = 'intercity'
+       ORDER BY departure_time DESC LIMIT 1`,
+      [driverId]
+    );
+    const val = r.rows[0]?.delivery_radius_km;
+    return Number.isFinite(Number(val)) ? Number(val) : fallbackKm;
+  } catch {
+    return fallbackKm;
+  }
+}
+
+/**
+ * Score a regular (non-trip) order against a dedicated driver route.
+ * Returns distance km if within radius, null otherwise.
+ */
+function dedicatedScore(order, route, defaultRadiusKm = 10) {
+  const radiusKm = Number(route.delivery_radius_km) || defaultRadiusKm;
+  const d = haversineKm(
+    parseFloat(route.current_lat || route.from_lat),
+    parseFloat(route.current_lng || route.from_lng),
+    parseFloat(order.pickup_lat),
+    parseFloat(order.pickup_lng)
+  );
+  if (!Number.isFinite(d) || d > radiusKm) return null;
+  return d;
+}
+
+/**
+ * For intercity corridor matching: check if the order's dropoff is within
+ * the driver's chosen delivery radius of the route's destination.
+ */
+function isDropoffWithinDeliveryRadius(order, route, defaultRadiusKm = 10) {
+  const radiusKm = Number(route.delivery_radius_km) || defaultRadiusKm;
+  const d = haversineKm(
+    parseFloat(order.dropoff_lat),
+    parseFloat(order.dropoff_lng),
+    parseFloat(route.to_lat),
+    parseFloat(route.to_lng)
+  );
+  return Number.isFinite(d) && d <= radiusKm;
+}
+
 async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
   const order = await getOrder(orderId);
   if (!order) return;
@@ -306,6 +352,8 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
   const dist = haversineKm(pickupLat, pickupLng, dropoffLat, dropoffLng);
   const zone = zoneForDistance(dist);
   if (zone !== 'intercity') return;
+
+  const deliveryRadius = await getDriverDeliveryRadius(driverId, 20);
 
   const candidatesRes = await db.query(
     `SELECT id, order_number,
@@ -339,7 +387,7 @@ async function offerReturnLoadAfterIntercityPickup(orderId, driverId) {
       };
     })
     .filter(Boolean)
-    .filter((x) => x.distPickupToPickup <= 20 && x.distDropoffToPickup <= 20)
+    .filter((x) => x.distPickupToPickup <= deliveryRadius && x.distDropoffToPickup <= deliveryRadius)
     .sort((a, b) => a.score - b.score);
 
   const best = oppositeOrders[0]?.candidate;
@@ -396,4 +444,6 @@ module.exports = {
   runMatchingWithRetry,
   offerReturnLoadAfterIntercityPickup,
   sendJobOfferToDriver,
+  dedicatedScore,
+  isDropoffWithinDeliveryRadius,
 };

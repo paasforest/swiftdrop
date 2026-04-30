@@ -76,6 +76,7 @@ const PostRoute = ({ navigation }) => {
   const navigateTimerRef = useRef(null);
 
   const [tripType, setTripType] = useState('local');
+  const [deliveryRadius, setDeliveryRadius] = useState(10);
   const [pickupMethod, setPickupMethod] = useState('driver_collects');
 
   const [meetingPointAddress, setMeetingPointAddress] = useState('');
@@ -308,6 +309,7 @@ const PostRoute = ({ navigation }) => {
         meeting_point_address: pickupMethod === 'sender_drops_off' ? meetingPointAddress : null,
         meeting_point_lat:     pickupMethod === 'sender_drops_off' ? meetingPointLat     : null,
         meeting_point_lng:     pickupMethod === 'sender_drops_off' ? meetingPointLng     : null,
+        delivery_radius_km: tripType === 'intercity' ? deliveryRadius : null,
       };
 
       await postJson('/api/driver-routes', body, { token: auth.token });
@@ -566,6 +568,37 @@ const PostRoute = ({ navigation }) => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Delivery radius — intercity only */}
+          {tripType === 'intercity' && (
+            <View style={styles.inputSection}>
+              <Text style={styles.inputLabel}>Delivery radius at destination</Text>
+              <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 12 }}>
+                How far will you travel to deliver from your destination?
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[5, 10, 20, 30].map((km) => (
+                  <TouchableOpacity
+                    key={km}
+                    onPress={() => setDeliveryRadius(km)}
+                    style={{
+                      flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
+                      backgroundColor: deliveryRadius === km ? '#000000' : '#F5F5F5',
+                      borderWidth: 1.5,
+                      borderColor: deliveryRadius === km ? '#000000' : '#E0E0E0',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 14, fontWeight: '700',
+                      color: deliveryRadius === km ? '#FFFFFF' : '#757575',
+                    }}>
+                      {km}km
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Pickup method */}
           <View style={styles.inputSection}>

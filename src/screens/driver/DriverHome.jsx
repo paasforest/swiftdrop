@@ -57,6 +57,7 @@ const DriverHome = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [activeTrips, setActiveTrips] = useState([]);
 
   const locationIntervalRef = useRef(null);
 
@@ -132,8 +133,15 @@ const DriverHome = ({ navigation }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getJson('/api/orders/driver/dashboard', { token: auth.token });
+      const [data, routesData] = await Promise.all([
+        getJson('/api/orders/driver/dashboard', { token: auth.token }),
+        getJson('/api/driver-routes/my', { token: auth.token }).catch(() => ({ routes: [] })),
+      ]);
       setDashboard(data);
+      const intercityWithParcels = (routesData.routes || []).filter(
+        (r) => r.trip_type === 'intercity' && Number(r.parcel_count) > 0
+      );
+      setActiveTrips(intercityWithParcels);
     } catch (e) {
       setError(e.message || 'Could not load dashboard');
       setDashboard(null);
@@ -280,6 +288,23 @@ const DriverHome = ({ navigation }) => {
           <Text style={styles.earningsAmount}>{formatMoney(todayEarnings)}</Text>
           <Text style={styles.deliveriesCount}>{todayDeliveries} deliveries completed today</Text>
         </View>
+
+        {/* Active intercity trip banners */}
+        {activeTrips.map((trip) => (
+          <TouchableOpacity
+            key={trip.id}
+            style={styles.tripBanner}
+            onPress={() => navigation.navigate('TripDeliveryManager', { routeId: trip.id })}
+          >
+            <View>
+              <Text style={styles.tripBannerTitle}>ACTIVE TRIP</Text>
+              <Text style={styles.tripBannerRoute} numberOfLines={1}>
+                {trip.from_address} → {trip.to_address}
+              </Text>
+            </View>
+            <Text style={styles.tripBannerArrow}>→</Text>
+          </TouchableOpacity>
+        ))}
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
@@ -496,6 +521,24 @@ const styles = StyleSheet.create({
   deliveriesCount: {
     fontSize: 14,
     color: '#9E9E9E',
+  },
+  tripBanner: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 14, padding: 16,
+    marginHorizontal: 16, marginBottom: 12,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1, borderColor: '#00C853',
+  },
+  tripBannerTitle: {
+    fontSize: 11, fontWeight: '700',
+    color: '#00C853', letterSpacing: 1, marginBottom: 4,
+  },
+  tripBannerRoute: {
+    fontSize: 14, fontWeight: '600', color: '#000000',
+  },
+  tripBannerArrow: {
+    fontSize: 20, color: '#00C853', fontWeight: '700',
   },
   actionButtons: {
     paddingHorizontal: 20,
