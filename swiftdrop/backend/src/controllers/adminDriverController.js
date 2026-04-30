@@ -222,9 +222,57 @@ async function rejectDriver(req, res) {
   }
 }
 
+/** POST /api/admin/drivers/:id/vehicle — update driver vehicle details */
+async function updateDriverVehicle(req, res) {
+  try {
+    requireAdmin(req.user);
+    const { id } = req.params;
+    const { vehicle_make, vehicle_model, vehicle_year, vehicle_color, vehicle_plate } = req.body;
+
+    if (vehicle_year !== undefined && (typeof vehicle_year !== 'number' || !Number.isInteger(vehicle_year))) {
+      return res.status(400).json({ error: 'vehicle_year must be an integer' });
+    }
+
+    const fields = { vehicle_make, vehicle_model, vehicle_year, vehicle_color, vehicle_plate };
+    const updates = Object.entries(fields).filter(function(entry) { return entry[1] !== undefined; });
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'At least one vehicle field must be provided' });
+    }
+
+    const driverCheck = await db.query(
+      'SELECT dp.user_id FROM driver_profiles dp' +
+      ' JOIN users u ON u.id = dp.user_id' +
+      ' WHERE u.id = $1 AND u.user_type = \'driver\'',
+      [id]
+    );
+    if (driverCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Driver not found' });
+    }
+
+    const setClauses = updates.map(function(entry, i) { return entry[0] + ' = $' + (i + 1); }).join(', ');
+    const values = updates.map(function(entry) { return entry[1]; });
+    values.push(id);
+
+    const result = await db.query(
+      'UPDATE driver_profiles' +
+      ' SET ' + setClauses +
+      ' WHERE user_id = $' + values.length +
+      ' RETURNING user_id, vehicle_make, vehicle_model, vehicle_year, vehicle_color, vehicle_plate',
+      values
+    );
+
+    return res.json({ driver_profile: result.rows[0] });
+  } catch (err) {
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ error: err.message || 'Failed to update vehicle details' });
+  }
+}
+
 module.exports = {
   listDriverApplications,
   getDriverApplicationDetail,
   approveDriver,
   rejectDriver,
+  updateDriverVehicle,
 };

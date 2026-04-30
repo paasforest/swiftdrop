@@ -1,78 +1,73 @@
 const db = require('../database/connection');
 const { getSlotsRemaining } = require('../services/slotService');
 
+/**
+ * GET /api/trips/search?from_city=&to_city=&date=YYYY-MM-DD
+ * Returns active intercity driver_routes with at least one parcel slot remaining.
+ */
 async function searchTrips(req, res) {
   try {
-    const { from_city, to_city, date } = req.query;
+    const fromCity = String(req.query.from_city || '').trim();
+    const toCity   = String(req.query.to_city   || '').trim();
+    const date     = req.query.date ? String(req.query.date).trim() : null;
 
-    if (!from_city || !to_city) {
+    if (!fromCity || !toCity) {
       return res.status(400).json({ error: 'from_city and to_city are required' });
+    }
+
+    const params = [`%${fromCity}%`, `%${toCity}%`];
+    let dateClause = '';
+    if (date) {
+      params.push(date);
+      dateClause = ` AND dr.departure_time::date = $${params.length}::date`;
     }
 
     const { rows } = await db.query(
       `SELECT
-          dr.id,
-          dr.from_address,
-          dr.to_address,
-          dr.from_lat,
-          dr.from_lng,
-          dr.to_lat,
-          dr.to_lng,
-          dr.departure_time,
-          dr.max_parcels,
-          dr.boot_space,
-          dr.pickup_method,
-          dr.meeting_point_address,
-          dr.trip_type,
-          dr.province,
-          u.full_name  AS driver_name,
-          u.profile_photo_url AS driver_photo,
-          u.id         AS driver_id,
-          COALESCE(dt.current_rating, 0) AS driver_rating,
-          (SELECT COUNT(*)
-           FROM orders o
-           WHERE o.assigned_driver_route_id = dr.id
-             AND o.status NOT IN ('cancelled', 'delivered', 'completed')
-          ) AS booked_count,
-          (SELECT COALESCE(SUM(
-              CASE
-                WHEN o.parcel_size = 'small'  THEN 1
-                WHEN o.parcel_size = 'medium' THEN 2
-                WHEN o.parcel_size = 'large'  THEN 3
-                ELSE 1
-              END
-           ), 0)
-           FROM orders o
-           WHERE o.assigned_driver_route_id = dr.id
-             AND o.status NOT IN ('cancelled', 'delivered', 'completed')
-          ) AS slots_used
+         dr.id,
+         dr.driver_id,
+         dr.from_address,
+         dr.from_lat,
+         dr.from_lng,
+         dr.to_address,
+         dr.to_lat,
+         dr.to_lng,
+         dr.departure_time,
+         dr.max_parcels,
+         dr.boot_space,
+         dr.trip_type,
+         dr.pickup_method,
+         dr.meeting_point_address,
+         dr.meeting_point_lat,
+         dr.meeting_point_lng,
+         u.full_name  AS driver_name,
+         dt.current_rating AS driver_rating
        FROM driver_routes dr
        JOIN users u ON u.id = dr.driver_id
        LEFT JOIN driver_tiers dt ON dt.driver_id = dr.driver_id
        WHERE dr.status = 'active'
+         AND dr.trip_type = 'intercity'
+         AND dr.departure_time > NOW()
          AND dr.from_address ILIKE $1
          AND dr.to_address   ILIKE $2
-         AND DATE(dr.departure_time AT TIME ZONE 'Africa/Johannesburg') >= CURRENT_DATE
-         AND (
-           $3::date IS NULL OR
-           DATE(dr.departure_time AT TIME ZONE 'Africa/Johannesburg') = $3::date
-         )
-       ORDER BY dr.departure_time ASC`,
-      [`%${from_city}%`, `%${to_city}%`, date || null]
+         ${dateClause}
+       ORDER BY dr.departure_time ASC
+       LIMIT 50`,
+      params
     );
 
-    const trips = rows.map((trip) => ({
-      ...trip,
-      slots_remaining: trip.max_parcels - Number(trip.slots_used),
-      is_full: Number(trip.slots_used) >= trip.max_parcels,
-    }));
+    const trips = await Promise.all(
+      rows.map(async (r) => {
+        const remaining = await getSlotsRemaining(r.id, r.max_parcels);
+        return { ...r, slots_remaining: remaining };
+      })
+    );
 
-    const available = trips.filter((t) => !t.is_full);
-
-    return res.json({ trips: available, total: available.length });
+    const available = trips.filter((t) => t.slots_remaining > 0);
+    return res.json({ trips: available });
   } catch (err) {
     console.error('searchTrips:', err);
-    return res.status(500).json({ error: 'Trip search failed' });
+    return res.status(500).json({ error: 'Failed to load trips' });
   }
 }
 

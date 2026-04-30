@@ -1,8 +1,9 @@
 const express = require('express');
-const router = express.Router();
-const { searchTrips } = require('../controllers/tripController');
 const { auth } = require('../middleware/auth');
+const tripController = require('../controllers/tripController');
 
-router.get('/search', auth, searchTrips);
+const router = express.Router();
+
+router.get('/search', auth, tripController.searchTrips);
 
 module.exports = router;

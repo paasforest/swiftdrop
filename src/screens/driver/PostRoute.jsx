@@ -1,29 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useRoute } from '@react-navigation/native';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  SafeAreaView,
   ScrollView,
   TextInput,
   ActivityIndicator,
   Platform,
   Keyboard,
-  Switch,
+  StatusBar,
 } from 'react-native';
-import * as Location from 'expo-location';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
-import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
-
-const { width, height } = Dimensions.get('window');
 
 function useDebounced(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -46,18 +40,6 @@ function formatDepartureDisplay(d) {
 }
 
 const PostRoute = ({ navigation }) => {
-  const route = useRoute();
-  const defaultDriverType = route.params?.defaultDriverType || 'commuter';
-  const [driverType, setDriverType] = useState(defaultDriverType);
-  const [hasReturn, setHasReturn] = useState(false);
-  const [returnDepartureTime, setReturnDepartureTime] = useState(() => {
-    const t = new Date();
-    t.setHours(17, 0, 0, 0);
-    return t;
-  });
-  const [showReturnPicker, setShowReturnPicker] = useState(false);
-  const [androidReturnPickerMode, setAndroidReturnPickerMode] = useState(null);
-
   const [fromAddress, setFromAddress] = useState('');
   const [fromLat, setFromLat] = useState(null);
   const [fromLng, setFromLng] = useState(null);
@@ -74,7 +56,7 @@ const PostRoute = ({ navigation }) => {
   const [toPlacesError, setToPlacesError] = useState(null);
 
   const debouncedFrom = useDebounced(fromAddress, 350);
-  const debouncedTo   = useDebounced(toAddress,   350);
+  const debouncedTo = useDebounced(toAddress, 350);
 
   const [departureAt, setDepartureAt] = useState(() => {
     const d = new Date();
@@ -91,24 +73,18 @@ const PostRoute = ({ navigation }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
+  const navigateTimerRef = useRef(null);
 
-  // ── ADD 1 — Trip type ────────────────────────────────────────────────────
   const [tripType, setTripType] = useState('local');
-
-  // ── ADD 2 — Pickup method ────────────────────────────────────────────────
   const [pickupMethod, setPickupMethod] = useState('driver_collects');
 
-  // ── ADD 3 — Meeting point ────────────────────────────────────────────────
   const [meetingPointAddress, setMeetingPointAddress] = useState('');
   const [meetingPointLat, setMeetingPointLat] = useState(null);
   const [meetingPointLng, setMeetingPointLng] = useState(null);
   const [meetingPredictions, setMeetingPredictions] = useState([]);
   const [meetingPlacesLoading, setMeetingPlacesLoading] = useState(false);
   const [meetingPlacesError, setMeetingPlacesError] = useState(null);
-
   const debouncedMeeting = useDebounced(meetingPointAddress, 350);
-
-  const navigateTimerRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -116,14 +92,6 @@ const PostRoute = ({ navigation }) => {
     };
   }, []);
 
-  useEffect(() => {
-    const d = route.params?.defaultDriverType;
-    if (d === 'commuter' || d === 'dedicated') {
-      setDriverType(d);
-    }
-  }, [route.params?.defaultDriverType]);
-
-  // From address autocomplete
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -155,7 +123,6 @@ const PostRoute = ({ navigation }) => {
     return () => { cancelled = true; };
   }, [debouncedFrom]);
 
-  // To address autocomplete
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -187,7 +154,6 @@ const PostRoute = ({ navigation }) => {
     return () => { cancelled = true; };
   }, [debouncedTo]);
 
-  // Meeting point autocomplete — same pattern as From/To
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -219,6 +185,20 @@ const PostRoute = ({ navigation }) => {
     return () => { cancelled = true; };
   }, [debouncedMeeting]);
 
+  const onSelectMeetingPrediction = useCallback(async (p) => {
+    Keyboard.dismiss();
+    setMeetingPredictions([]);
+    setMeetingPlacesError(null);
+    try {
+      const details = await fetchPlaceDetails(p.place_id);
+      setMeetingPointAddress(details.formatted_address || p.description || '');
+      setMeetingPointLat(details.latitude);
+      setMeetingPointLng(details.longitude);
+    } catch (e) {
+      setMeetingPlacesError(e.message || 'Could not load place');
+    }
+  }, []);
+
   const onSelectFromPrediction = useCallback(async (p) => {
     Keyboard.dismiss();
     setFromPredictions([]);
@@ -244,20 +224,6 @@ const PostRoute = ({ navigation }) => {
       setToLng(details.longitude);
     } catch (e) {
       setToPlacesError(e.message || 'Could not load place');
-    }
-  }, []);
-
-  const onSelectMeetingPrediction = useCallback(async (p) => {
-    Keyboard.dismiss();
-    setMeetingPredictions([]);
-    setMeetingPlacesError(null);
-    try {
-      const details = await fetchPlaceDetails(p.place_id);
-      setMeetingPointAddress(details.formatted_address || p.description || '');
-      setMeetingPointLat(details.latitude);
-      setMeetingPointLng(details.longitude);
-    } catch (e) {
-      setMeetingPlacesError(e.message || 'Could not load place');
     }
   }, []);
 
@@ -292,97 +258,22 @@ const PostRoute = ({ navigation }) => {
     if (date) setDepartureAt(date);
   }, [androidPickerMode]);
 
-  const onReturnDepartureChange = useCallback((event, date) => {
-    if (Platform.OS === 'android') {
-      if (event?.type === 'dismissed') {
-        setShowReturnPicker(false);
-        setAndroidReturnPickerMode(null);
-        return;
-      }
-      if (date) {
-        if (androidReturnPickerMode === 'date') {
-          setReturnDepartureTime((prev) => {
-            const n = new Date(prev);
-            n.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
-            return n;
-          });
-          setAndroidReturnPickerMode('time');
-        } else {
-          setReturnDepartureTime((prev) => {
-            const n = new Date(prev);
-            n.setHours(date.getHours(), date.getMinutes(), 0, 0);
-            return n;
-          });
-          setShowReturnPicker(false);
-          setAndroidReturnPickerMode(null);
-        }
-      }
-      return;
-    }
-    if (event?.type === 'dismissed') return;
-    if (date) setReturnDepartureTime(date);
-  }, [androidReturnPickerMode]);
-
   const validate = useCallback(() => {
-    if (driverType === 'commuter') {
-      if (!fromAddress.trim()) {
-        return 'From address is required.';
-      }
-      if (fromLat == null || fromLng == null) {
-        return 'Choose a From address from the suggestions so we have a location.';
-      }
-      if (!toAddress.trim()) {
-        return 'To address is required.';
-      }
-      if (toLat == null || toLng == null) {
-        return 'Choose a To address from the suggestions so we have a location.';
-      }
-    }
-    if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) {
-      return 'Departure time is invalid.';
-    }
-    if (departureAt.getTime() <= Date.now()) {
-      return 'Departure time must be in the future.';
-    }
-    const minDeparture = Date.now() + 30 * 60 * 1000;
-    if (departureAt.getTime() < minDeparture) {
-      return 'Departure time must be at least 30 minutes from now';
-    }
-    if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) {
-      return 'Max parcels must be between 1 and 5.';
-    }
-    if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) {
-      return 'Please select boot space.';
-    }
-    if (driverType === 'commuter' && hasReturn) {
-      if (!(returnDepartureTime instanceof Date) || Number.isNaN(returnDepartureTime.getTime())) {
-        return 'Return departure time is invalid.';
-      }
-      if (returnDepartureTime.getTime() <= departureAt.getTime()) {
-        return 'Return time must be after your outbound departure time.';
-      }
-    }
-    // Meeting point required when sender drops off
-    if (pickupMethod === 'sender_drops_off' && (!meetingPointAddress.trim() || meetingPointLat == null)) {
-      return 'Please enter a meeting point address';
-    }
+    if (!fromAddress.trim()) return 'From address is required.';
+    if (fromLat == null || fromLng == null) return 'Choose a From address from the suggestions so we have a location.';
+    if (!toAddress.trim()) return 'To address is required.';
+    if (toLat == null || toLng == null) return 'Choose a To address from the suggestions so we have a location.';
+    if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) return 'Departure time is invalid.';
+    if (departureAt.getTime() <= Date.now()) return 'Departure time must be in the future.';
+    if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) return 'Max parcels must be between 1 and 5.';
+    if (!bootSpace || !['small', 'medium', 'large'].includes(bootSpace)) return 'Please select boot space.';
+    if (pickupMethod === 'sender_drops_off' && (!meetingPointAddress.trim() || meetingPointLat == null)) return 'Please enter a meeting point address';
     return null;
   }, [
-    driverType,
-    fromAddress,
-    fromLat,
-    fromLng,
-    toAddress,
-    toLat,
-    toLng,
-    departureAt,
-    maxParcels,
-    bootSpace,
-    hasReturn,
-    returnDepartureTime,
-    pickupMethod,
-    meetingPointAddress,
-    meetingPointLat,
+    fromAddress, fromLat, fromLng,
+    toAddress, toLat, toLng,
+    departureAt, maxParcels, bootSpace,
+    pickupMethod, meetingPointAddress, meetingPointLat,
   ]);
 
   const handlePostRoute = async () => {
@@ -402,60 +293,22 @@ const PostRoute = ({ navigation }) => {
 
     setSubmitting(true);
     try {
-      let body;
-
-      const intercityFields = {
+      const body = {
+        from_address: fromAddress.trim(),
+        from_lat: Number(fromLat),
+        from_lng: Number(fromLng),
+        to_address: toAddress.trim(),
+        to_lat: Number(toLat),
+        to_lng: Number(toLng),
+        departure_time: departureAt.toISOString(),
+        max_parcels: maxParcels,
+        boot_space: bootSpace,
         trip_type: tripType,
         pickup_method: pickupMethod,
         meeting_point_address: pickupMethod === 'sender_drops_off' ? meetingPointAddress : null,
         meeting_point_lat:     pickupMethod === 'sender_drops_off' ? meetingPointLat     : null,
         meeting_point_lng:     pickupMethod === 'sender_drops_off' ? meetingPointLng     : null,
       };
-
-      if (driverType === 'dedicated') {
-        const perm = await Location.requestForegroundPermissionsAsync();
-        if (perm.status !== 'granted') {
-          setErrorMessage('Location permission is required to post as available to deliver.');
-          setSubmitting(false);
-          return;
-        }
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        body = {
-          from_address: 'Current location',
-          from_lat: Number(lat),
-          from_lng: Number(lng),
-          to_address: 'Current location',
-          to_lat: Number(lat),
-          to_lng: Number(lng),
-          departure_time: departureAt.toISOString(),
-          max_parcels: maxParcels,
-          boot_space: bootSpace,
-          driver_type: 'dedicated',
-          ...intercityFields,
-        };
-      } else {
-        body = {
-          from_address: fromAddress.trim(),
-          from_lat: Number(fromLat),
-          from_lng: Number(fromLng),
-          to_address: toAddress.trim(),
-          to_lat: Number(toLat),
-          to_lng: Number(toLng),
-          departure_time: departureAt.toISOString(),
-          max_parcels: maxParcels,
-          boot_space: bootSpace,
-          driver_type: 'commuter',
-          ...intercityFields,
-        };
-        if (hasReturn) {
-          body.has_return = true;
-          body.return_departure_time = returnDepartureTime.toISOString();
-        }
-      }
 
       await postJson('/api/driver-routes', body, { token: auth.token });
 
@@ -470,14 +323,10 @@ const PostRoute = ({ navigation }) => {
     }
   };
 
-  const handleBack = () => {
-    navigation.goBack();
-  };
-
   const bootSpaceOptions = [
-    { key: 'small',  label: 'Small'  },
+    { key: 'small', label: 'Small' },
     { key: 'medium', label: 'Medium' },
-    { key: 'large',  label: 'Large'  },
+    { key: 'large', label: 'Large' },
   ];
 
   const incrementParcels = () => { if (maxParcels < 5) setMaxParcels(maxParcels + 1); };
@@ -485,17 +334,24 @@ const PostRoute = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Post Your Route</Text>
-          <View style={{ width: 28 }} />
+          <Text style={styles.headerTitle}>Post a trip</Text>
+          <View style={{ width: 40 }} />
         </View>
 
         <View style={styles.explanationContainer}>
@@ -518,8 +374,8 @@ const PostRoute = ({ navigation }) => {
 
         <View style={styles.formContainer}>
 
-          {/* ── ADD 1 — Trip type selector (top of form) ─────────────────── */}
-          <View style={{ marginBottom: 24 }}>
+          {/* Trip type selector */}
+          <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Trip type</Text>
             <View style={{ flexDirection: 'row', gap: 10 }}>
               {[
@@ -529,22 +385,16 @@ const PostRoute = ({ navigation }) => {
                 <TouchableOpacity
                   key={opt.key}
                   onPress={() => setTripType(opt.key)}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 12,
-                    borderRadius: 24,
-                    alignItems: 'center',
-                    backgroundColor: tripType === opt.key ? '#000000' : 'transparent',
-                    borderWidth: 1.5,
-                    borderColor: tripType === opt.key ? '#000000' : '#E0E0E0',
-                  }}
+                  style={[
+                    styles.tripTypePill,
+                    tripType === opt.key && styles.tripTypePillSelected,
+                  ]}
                 >
                   <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: '600',
-                      color: tripType === opt.key ? '#FFFFFF' : '#757575',
-                    }}
+                    style={[
+                      styles.tripTypePillText,
+                      tripType === opt.key && styles.tripTypePillTextSelected,
+                    ]}
                   >
                     {opt.label}
                   </Text>
@@ -552,132 +402,89 @@ const PostRoute = ({ navigation }) => {
               ))}
             </View>
             {tripType === 'intercity' && (
-              <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 8, lineHeight: 16 }}>
+              <Text style={styles.intercityHint}>
                 Post your route so clients can book parcels on your trip
               </Text>
             )}
           </View>
 
-          {/* Driver type selector (existing — unchanged) */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24 }}>
-            {[
-              { key: 'commuter',  label: 'Commuter trip'        },
-              { key: 'dedicated', label: 'Available to deliver' },
-            ].map((opt) => (
-              <TouchableOpacity
-                key={opt.key}
-                onPress={() => setDriverType(opt.key)}
-                style={{
-                  flex: 1,
-                  paddingVertical: 12,
-                  borderRadius: 24,
-                  alignItems: 'center',
-                  backgroundColor: driverType === opt.key ? '#000000' : 'transparent',
-                  borderWidth: 1.5,
-                  borderColor: driverType === opt.key ? '#000000' : '#E0E0E0',
+          {/* From */}
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>From</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={fromAddress}
+                onChangeText={(t) => {
+                  setFromAddress(t);
+                  if (!t.trim()) { setFromLat(null); setFromLng(null); }
                 }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: driverType === opt.key ? '#FFFFFF' : '#757575',
-                  }}
-                >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                placeholder="Search starting address"
+                placeholderTextColor="#BDBDBD"
+              />
+            </View>
+            {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
+            {fromPredictions.length > 0 && (
+              <View style={styles.predictionsBox}>
+                {fromPredictions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.predictionRow}
+                    onPress={() => onSelectFromPrediction(item)}
+                  >
+                    <Text style={styles.predictionMain} numberOfLines={2}>
+                      {item.structured_formatting?.main_text || item.description}
+                    </Text>
+                    <Text style={styles.predictionSub} numberOfLines={1}>
+                      {item.structured_formatting?.secondary_text || ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
           </View>
 
-          {driverType === 'dedicated' && (
-            <View style={{ backgroundColor: '#F5F5F5', borderRadius: 12, padding: 16, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, color: '#757575', textAlign: 'center', lineHeight: 20 }}>
-                You will receive nearby delivery orders based on your GPS location
-              </Text>
+          {/* To */}
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>To</Text>
+            <View style={styles.inputContainer}>
+              <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={toAddress}
+                onChangeText={(t) => {
+                  setToAddress(t);
+                  if (!t.trim()) { setToLat(null); setToLng(null); }
+                }}
+                placeholder="Search destination address"
+                placeholderTextColor="#BDBDBD"
+              />
             </View>
-          )}
-
-          {/* From / To address fields (existing — unchanged) */}
-          {driverType === 'commuter' && (
-            <>
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>From</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={fromAddress}
-                    onChangeText={(t) => {
-                      setFromAddress(t);
-                      if (!t.trim()) { setFromLat(null); setFromLng(null); }
-                    }}
-                    placeholder="Search starting address"
-                    placeholderTextColor={colors.textLight}
-                  />
-                </View>
-                {fromPlacesError ? <Text style={styles.placesErrorText}>{fromPlacesError}</Text> : null}
-                {fromPredictions.length > 0 && (
-                  <View style={styles.predictionsBox}>
-                    {fromPredictions.map((item) => (
-                      <TouchableOpacity
-                        key={item.place_id}
-                        style={styles.predictionRow}
-                        onPress={() => onSelectFromPrediction(item)}
-                      >
-                        <Text style={styles.predictionMain} numberOfLines={2}>
-                          {item.structured_formatting?.main_text || item.description}
-                        </Text>
-                        <Text style={styles.predictionSub} numberOfLines={1}>
-                          {item.structured_formatting?.secondary_text || ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
+            {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
+            {toPredictions.length > 0 && (
+              <View style={styles.predictionsBox}>
+                {toPredictions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.predictionRow}
+                    onPress={() => onSelectToPrediction(item)}
+                  >
+                    <Text style={styles.predictionMain} numberOfLines={2}>
+                      {item.structured_formatting?.main_text || item.description}
+                    </Text>
+                    <Text style={styles.predictionSub} numberOfLines={1}>
+                      {item.structured_formatting?.secondary_text || ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
+            )}
+            {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
+          </View>
 
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>To</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    value={toAddress}
-                    onChangeText={(t) => {
-                      setToAddress(t);
-                      if (!t.trim()) { setToLat(null); setToLng(null); }
-                    }}
-                    placeholder="Search destination address"
-                    placeholderTextColor={colors.textLight}
-                  />
-                </View>
-                {toPlacesError ? <Text style={styles.placesErrorText}>{toPlacesError}</Text> : null}
-                {toPredictions.length > 0 && (
-                  <View style={styles.predictionsBox}>
-                    {toPredictions.map((item) => (
-                      <TouchableOpacity
-                        key={item.place_id}
-                        style={styles.predictionRow}
-                        onPress={() => onSelectToPrediction(item)}
-                      >
-                        <Text style={styles.predictionMain} numberOfLines={2}>
-                          {item.structured_formatting?.main_text || item.description}
-                        </Text>
-                        <Text style={styles.predictionSub} numberOfLines={1}>
-                          {item.structured_formatting?.secondary_text || ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} /> : null}
-              </View>
-            </>
-          )}
-
-          {/* Departure time (existing — unchanged) */}
+          {/* Departure time */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Departure time</Text>
             <TouchableOpacity
@@ -687,7 +494,7 @@ const PostRoute = ({ navigation }) => {
                 setShowDeparturePicker(true);
               }}
             >
-              <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.dateIcon} />
+              <Ionicons name="calendar-outline" size={20} color="#000000" style={styles.dateIcon} />
               <Text style={styles.dateText}>{formatDepartureDisplay(departureAt)}</Text>
             </TouchableOpacity>
             {showDeparturePicker && Platform.OS === 'ios' && (
@@ -699,7 +506,10 @@ const PostRoute = ({ navigation }) => {
                   minimumDate={new Date()}
                   onChange={onDepartureChange}
                 />
-                <TouchableOpacity style={styles.iosPickerDone} onPress={() => setShowDeparturePicker(false)}>
+                <TouchableOpacity
+                  style={styles.iosPickerDone}
+                  onPress={() => setShowDeparturePicker(false)}
+                >
                   <Text style={styles.iosPickerDoneText}>Done</Text>
                 </TouchableOpacity>
               </>
@@ -715,7 +525,7 @@ const PostRoute = ({ navigation }) => {
             )}
           </View>
 
-          {/* Boot space (existing — unchanged) */}
+          {/* Boot space */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Boot space</Text>
             <View style={styles.chipsContainer}>
@@ -733,7 +543,7 @@ const PostRoute = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Max parcels stepper (existing — unchanged) */}
+          {/* Max parcels */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Max parcels</Text>
             <View style={styles.stepperContainer}>
@@ -757,8 +567,8 @@ const PostRoute = ({ navigation }) => {
             </View>
           </View>
 
-          {/* ── ADD 2 — Pickup method toggle ──────────────────────────────── */}
-          <View style={{ marginTop: 24 }}>
+          {/* Pickup method */}
+          <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>How will you collect parcels?</Text>
 
             {[
@@ -776,61 +586,40 @@ const PostRoute = ({ navigation }) => {
               <TouchableOpacity
                 key={opt.key}
                 onPress={() => setPickupMethod(opt.key)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingVertical: 14,
-                  paddingHorizontal: 16,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: pickupMethod === opt.key ? '#000000' : '#E0E0E0',
-                  backgroundColor: pickupMethod === opt.key ? '#F5F5F5' : '#FAFAFA',
-                  marginBottom: 10,
-                }}
+                style={[
+                  styles.pickupOption,
+                  pickupMethod === opt.key && styles.pickupOptionSelected,
+                ]}
               >
                 <View
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    borderWidth: 2,
-                    borderColor: pickupMethod === opt.key ? '#000' : '#E0E0E0',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginRight: 12,
-                  }}
+                  style={[
+                    styles.radioCircle,
+                    pickupMethod === opt.key && styles.radioCircleSelected,
+                  ]}
                 >
-                  {pickupMethod === opt.key && (
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#000' }} />
-                  )}
+                  {pickupMethod === opt.key && <View style={styles.radioDot} />}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#000' }}>{opt.label}</Text>
-                  <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 2 }}>{opt.sub}</Text>
+                  <Text style={styles.pickupLabel}>{opt.label}</Text>
+                  <Text style={styles.pickupSub}>{opt.sub}</Text>
                 </View>
               </TouchableOpacity>
             ))}
 
-            {/* ── ADD 3 — Meeting point (conditional on sender_drops_off) ── */}
             {pickupMethod === 'sender_drops_off' && (
               <View style={{ marginTop: 16 }}>
                 <Text style={styles.inputLabel}>Meeting point address</Text>
-                <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 8 }}>
-                  Where should the sender bring the parcel?
-                </Text>
+                <Text style={styles.meetingHint}>Where should the sender bring the parcel?</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="location-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter meeting point address"
-                    placeholderTextColor={colors.textLight}
+                    placeholderTextColor="#BDBDBD"
                     value={meetingPointAddress}
                     onChangeText={(t) => {
                       setMeetingPointAddress(t);
-                      if (!t.trim()) {
-                        setMeetingPointLat(null);
-                        setMeetingPointLng(null);
-                      }
+                      if (!t.trim()) { setMeetingPointLat(null); setMeetingPointLng(null); }
                     }}
                   />
                 </View>
@@ -856,83 +645,16 @@ const PostRoute = ({ navigation }) => {
                   </View>
                 )}
                 {meetingPlacesLoading ? (
-                  <ActivityIndicator style={{ marginTop: 8 }} color={colors.primary} />
+                  <ActivityIndicator style={{ marginTop: 8 }} color="#000000" />
                 ) : null}
               </View>
             )}
           </View>
 
-          {/* Return trip toggle (existing — unchanged) */}
-          {driverType === 'commuter' && (
-            <View style={{ marginTop: 24 }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingVertical: 4,
-                }}
-              >
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: '#000' }}>Returning today?</Text>
-                  <Text style={{ fontSize: 12, color: '#9E9E9E', marginTop: 2 }}>
-                    We will set up your return trip automatically
-                  </Text>
-                </View>
-                <Switch
-                  value={hasReturn}
-                  onValueChange={setHasReturn}
-                  trackColor={{ false: '#E0E0E0', true: '#000000' }}
-                  ios_backgroundColor="#E0E0E0"
-                />
-              </View>
-              {hasReturn ? (
-                <View style={{ marginTop: 16 }}>
-                  <Text style={[styles.inputLabel, { marginBottom: 8 }]}>Return departure time</Text>
-                  <TouchableOpacity
-                    style={styles.dateContainer}
-                    onPress={() => {
-                      if (Platform.OS === 'android') setAndroidReturnPickerMode('date');
-                      setShowReturnPicker(true);
-                    }}
-                  >
-                    <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.dateIcon} />
-                    <Text style={styles.dateText}>{formatDepartureDisplay(returnDepartureTime)}</Text>
-                  </TouchableOpacity>
-                  {showReturnPicker && Platform.OS === 'ios' && (
-                    <>
-                      <DateTimePicker
-                        value={returnDepartureTime}
-                        mode="datetime"
-                        display="spinner"
-                        minimumDate={departureAt}
-                        onChange={onReturnDepartureChange}
-                      />
-                      <TouchableOpacity
-                        style={styles.iosPickerDone}
-                        onPress={() => setShowReturnPicker(false)}
-                      >
-                        <Text style={styles.iosPickerDoneText}>Done</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {showReturnPicker && Platform.OS === 'android' && androidReturnPickerMode && (
-                    <DateTimePicker
-                      value={returnDepartureTime}
-                      mode={androidReturnPickerMode === 'date' ? 'date' : 'time'}
-                      display="default"
-                      minimumDate={androidReturnPickerMode === 'date' ? departureAt : undefined}
-                      onChange={onReturnDepartureChange}
-                    />
-                  )}
-                </View>
-              ) : null}
-            </View>
-          )}
         </View>
 
         <View style={styles.noticeBanner}>
-          <Ionicons name="notifications-outline" size={22} color={colors.accent} style={styles.noticeIcon} />
+          <Ionicons name="notifications-outline" size={22} color="#F59E0B" style={styles.noticeIcon} />
           <Text style={styles.noticeText}>
             You will be notified when parcels match your route. You choose which ones to accept.
           </Text>
@@ -941,12 +663,12 @@ const PostRoute = ({ navigation }) => {
 
       <View style={styles.bottomContainer}>
         <TouchableOpacity
-          style={[styles.postButton, submitting && styles.postButtonDisabled]}
+          style={[styles.postButton, submitting && { opacity: 0.6 }]}
           onPress={handlePostRoute}
           disabled={submitting || Boolean(successMessage)}
         >
           {submitting ? (
-            <ActivityIndicator color={colors.textWhite} />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.postButtonText}>Post Route</Text>
           )}
@@ -959,9 +681,7 @@ const PostRoute = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.textWhite,
-    width: width,
-    minHeight: height,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     paddingBottom: 120,
@@ -970,27 +690,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  backArrow: {
-    fontSize: 24,
-    color: colors.primary,
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
+  backButton: { padding: 8 },
+  backArrow: { fontSize: 22, color: '#000000' },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   explanationContainer: {
     paddingHorizontal: 20,
+    paddingTop: 14,
     marginBottom: 16,
   },
   explanationText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     lineHeight: 20,
     textAlign: 'center',
   },
@@ -999,12 +719,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: colors.dangerLight,
+    backgroundColor: '#FEE2E2',
     borderWidth: 1,
-    borderColor: colors.dangerLight,
+    borderColor: '#FCA5A5',
   },
   errorBannerText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -1013,12 +733,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     padding: 12,
     borderRadius: 10,
-    backgroundColor: colors.successLight,
+    backgroundColor: '#DCFCE7',
     borderWidth: 1,
-    borderColor: colors.successLight,
+    borderColor: '#86EFAC',
   },
   successBannerText: {
-    color: colors.success,
+    color: '#15803D',
     fontSize: 14,
     lineHeight: 20,
   },
@@ -1030,32 +750,58 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 8,
+  },
+  tripTypePill: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+  },
+  tripTypePillSelected: {
+    backgroundColor: '#000000',
+    borderColor: '#000000',
+  },
+  tripTypePillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  tripTypePillTextSelected: {
+    color: '#FFFFFF',
+  },
+  intercityHint: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 8,
+    lineHeight: 16,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 4,
   },
   inputIcon: {
-    fontSize: 20,
     paddingHorizontal: 12,
   },
   input: {
     flex: 1,
-    padding: 12,
-    fontSize: 16,
-    color: colors.textPrimary,
+    paddingVertical: 14,
+    paddingRight: 14,
+    fontSize: 15,
+    color: '#000000',
   },
   placesErrorText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontSize: 12,
     marginTop: 6,
   },
@@ -1063,42 +809,42 @@ const styles = StyleSheet.create({
     marginTop: 8,
     maxHeight: 180,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 10,
-    backgroundColor: colors.textWhite,
+    backgroundColor: '#FFFFFF',
   },
   predictionRow: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: '#E0E0E0',
   },
   predictionMain: {
     fontSize: 15,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   predictionSub: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     marginTop: 2,
   },
   dateContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   dateIcon: {
-    fontSize: 20,
     marginRight: 12,
   },
   dateText: {
-    fontSize: 16,
-    color: colors.textPrimary,
+    fontSize: 15,
+    color: '#000000',
     flex: 1,
   },
   iosPickerDone: {
@@ -1107,7 +853,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   iosPickerDoneText: {
-    color: colors.primary,
+    color: '#000000',
     fontWeight: '600',
     fontSize: 16,
   },
@@ -1117,47 +863,48 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   chip: {
-    backgroundColor: colors.background,
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   chipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
   chipText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#757575',
     fontWeight: '500',
   },
   chipTextSelected: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
   },
   stepperContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     borderRadius: 12,
-    padding: 4,
+    overflow: 'hidden',
   },
   stepperButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
   stepperText: {
-    fontSize: 20,
-    color: colors.primary,
+    fontSize: 22,
+    color: '#000000',
     fontWeight: 'bold',
   },
   stepperTextDisabled: {
-    color: colors.textLight,
+    color: '#BDBDBD',
   },
   stepperValue: {
     flex: 1,
@@ -1165,26 +912,76 @@ const styles = StyleSheet.create({
   },
   stepperNumber: {
     fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  pickupOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    marginBottom: 10,
+  },
+  pickupOptionSelected: {
+    borderColor: '#000000',
+    backgroundColor: '#F5F5F5',
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  radioCircleSelected: {
+    borderColor: '#000000',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#000000',
+  },
+  pickupLabel: {
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
+  },
+  pickupSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  meetingHint: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginBottom: 8,
   },
   noticeBanner: {
-    backgroundColor: colors.warningLight,
+    backgroundColor: '#FFFBEB',
     marginHorizontal: 20,
     padding: 16,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
   noticeIcon: {
-    fontSize: 20,
     marginRight: 12,
   },
   noticeText: {
     flex: 1,
     fontSize: 14,
-    color: colors.warning,
+    color: '#92400E',
     lineHeight: 20,
   },
   bottomContainer: {
@@ -1195,25 +992,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 30,
     paddingTop: 10,
-    backgroundColor: colors.textWhite,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: '#F0F0F0',
   },
   postButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 14,
     alignItems: 'center',
-    minHeight: 52,
     justifyContent: 'center',
   },
-  postButtonDisabled: {
-    opacity: 0.85,
-  },
   postButtonText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });
 
