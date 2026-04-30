@@ -3,9 +3,10 @@ import { clearAuth, getAuth } from './authStore';
 import { registerForPushNotificationsAsync } from './services/pushNotificationService';
 
 export function resetToRoleHome(navigation, user) {
-  const type = user?.role || user?.user_type;
-  let name = 'SenderHome';
+  const type = user?.user_type;
+  let name = 'Home';
   if (type === 'driver') name = 'DriverHome';
+  else if (type === 'admin') name = 'AdminOverview';
 
   navigation.dispatch(
     CommonActions.reset({
