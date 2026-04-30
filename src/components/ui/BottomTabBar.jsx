@@ -1,9 +1,8 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing } from '../../theme/theme';
-import AppText from './AppText';
 
 /**
  * @param {'customer' | 'driver'} variant
@@ -35,14 +34,13 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
               <Ionicons
                 name={isActive ? t.icon : t.iconOutline}
                 size={24}
-                color={isActive ? '#000000' : colors.textLight}
+                color={isActive ? '#000000' : colors.textMuted}
               />
-              <AppText
-                variant="small"
-                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textLight }]}
+              <Text
+                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textMuted }]}
               >
                 {t.label}
-              </AppText>
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -72,14 +70,13 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
               <Ionicons
                 name={isActive ? t.icon : t.iconOutline}
                 size={24}
-                color={isActive ? '#000000' : colors.textLight}
+                color={isActive ? '#000000' : colors.textMuted}
               />
-              <AppText
-                variant="small"
-                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textLight }]}
+              <Text
+                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textMuted }]}
               >
                 {t.label}
-              </AppText>
+              </Text>
             </TouchableOpacity>
           );
         })}
