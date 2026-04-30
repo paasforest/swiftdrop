@@ -106,6 +106,35 @@ function minTotalFor(zone, tier) {
   return typeof MIN_TOTAL_BY_ZONE_TIER[k] === 'number' ? MIN_TOTAL_BY_ZONE_TIER[k] : null;
 }
 
+const INTERCITY_PRICING = {
+  small: [
+    { maxKm: 150, price: 80 },
+    { maxKm: 400, price: 130 },
+    { maxKm: 700, price: 180 },
+    { maxKm: Infinity, price: 250 },
+  ],
+  medium: [
+    { maxKm: 150, price: 120 },
+    { maxKm: 400, price: 200 },
+    { maxKm: 700, price: 270 },
+    { maxKm: Infinity, price: 370 },
+  ],
+  large: [
+    { maxKm: 150, price: 170 },
+    { maxKm: 400, price: 280 },
+    { maxKm: 700, price: 380 },
+    { maxKm: Infinity, price: 500 },
+  ],
+};
+
+function getIntercityPrice(parcelSize, distanceKm) {
+  const d = Number(distanceKm);
+  if (!Number.isFinite(d) || d < 0) return INTERCITY_PRICING.small[0].price;
+  const tiers = INTERCITY_PRICING[String(parcelSize || 'small').toLowerCase()] || INTERCITY_PRICING.small;
+  const tier = tiers.find((t) => d <= t.maxKm);
+  return tier?.price ?? 250;
+}
+
 function generateOrderNumber() {
   return 'SD' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
@@ -123,16 +152,24 @@ async function createOrder(req, res) {
       delivery_tier, insurance_selected,
       payment_method = 'card',
       assigned_driver_route_id,
+      trip_type = 'local',
     } = req.body;
+
+    const isIntercity = String(trip_type) === 'intercity';
+    const deliveryTierForDb = isIntercity ? 'standard' : delivery_tier;
 
     if (!pickup_address || pickup_lat == null || pickup_lng == null ||
         !dropoff_address || dropoff_lat == null || dropoff_lng == null ||
-        !delivery_tier) {
+        (!isIntercity && !delivery_tier)) {
       return res.status(400).json({ error: 'pickup_address, pickup_lat, pickup_lng, dropoff_address, dropoff_lat, dropoff_lng, delivery_tier are required' });
     }
 
-    if (!['standard', 'express', 'urgent'].includes(delivery_tier)) {
+    if (!['standard', 'express', 'urgent'].includes(deliveryTierForDb)) {
       return res.status(400).json({ error: 'Invalid delivery_tier' });
+    }
+
+    if (isIntercity && !assigned_driver_route_id) {
+      return res.status(400).json({ error: 'assigned_driver_route_id is required for intercity bookings' });
     }
 
     // Intercity slot reservation: only when the customer is booking onto a posted trip.
@@ -165,35 +202,44 @@ async function createOrder(req, res) {
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
     );
 
-    const zone = zoneForDistance(dist);
-    const floor = floorForZone(dist, zone);
-    const urgency = urgencyMultiplierForTier(delivery_tier);
-    const driverEarningsRaw = floor * urgency; // driver earns full floor × urgency multiplier (before 20% commission)
-    const valueComponentRaw = valueComponentForParcelValue(parcel_value);
+    let basePrice;
+    let insuranceFee;
+    let commission;
+    let driverEarnings;
+    let totalPrice;
 
-    // Price component (customer) includes the platform's 20% uplift.
-    // valueComponentRaw is added separately to the final customer total.
-    const minPriceComponent = minTotalFor(zone, delivery_tier);
-    const priceComponentRaw = driverEarningsRaw * 1.2;
-    const priceComponentFinal =
-      minPriceComponent != null ? Math.max(priceComponentRaw, minPriceComponent) : priceComponentRaw;
+    if (isIntercity) {
+      const interBase = getIntercityPrice(parcel_size, dist);
+      const valueComponentRaw = valueComponentForParcelValue(parcel_value);
+      basePrice = roundMoney(interBase);
+      insuranceFee = roundMoney(valueComponentRaw);
+      driverEarnings = roundMoney(Math.round(interBase * 0.8));
+      commission = roundMoney(Math.round(interBase * 0.2));
+      totalPrice = roundMoney(interBase + valueComponentRaw);
+    } else {
+      const zone = zoneForDistance(dist);
+      const floor = floorForZone(dist, zone);
+      const urgency = urgencyMultiplierForTier(delivery_tier);
+      const driverEarningsRaw = floor * urgency;
+      const valueComponentRaw = valueComponentForParcelValue(parcel_value);
 
-    // Re-derive driver earnings from the final price component so minima are honored.
-    const driverEarningsFinal = priceComponentFinal / 1.2;
+      const minPriceComponent = minTotalFor(zone, delivery_tier);
+      const priceComponentRaw = driverEarningsRaw * 1.2;
+      const priceComponentFinal =
+        minPriceComponent != null ? Math.max(priceComponentRaw, minPriceComponent) : priceComponentRaw;
 
-    // Commission is the platform addition on top of driver earnings.
-    const commissionRaw = priceComponentFinal - driverEarningsFinal;
+      const driverEarningsFinal = priceComponentFinal / 1.2;
+      const commissionRaw = priceComponentFinal - driverEarningsFinal;
+      const insuranceFeeRaw = valueComponentRaw;
+      const basePriceRaw = priceComponentFinal;
+      const totalPriceRaw = priceComponentFinal + valueComponentRaw;
 
-    // value component goes to insurance pool only.
-    const insuranceFeeRaw = valueComponentRaw;
-    const basePriceRaw = priceComponentFinal;
-    const totalPriceRaw = priceComponentFinal + valueComponentRaw;
-
-    const basePrice = roundMoney(basePriceRaw);
-    const insuranceFee = roundMoney(insuranceFeeRaw);
-    const commission = roundMoney(commissionRaw);
-    const driverEarnings = roundMoney(driverEarningsFinal);
-    const totalPrice = roundMoney(totalPriceRaw);
+      basePrice = roundMoney(basePriceRaw);
+      insuranceFee = roundMoney(insuranceFeeRaw);
+      commission = roundMoney(commissionRaw);
+      driverEarnings = roundMoney(driverEarningsFinal);
+      totalPrice = roundMoney(totalPriceRaw);
+    }
 
     const pickupOtp = generateOTP();
     const deliveryOtp = generateOTP();
@@ -233,7 +279,7 @@ async function createOrder(req, res) {
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
           dropoff_address, dropoff_lat, dropoff_lng, parcel_type || null, parcel_size || null,
-          parcel_value || null, special_handling || null, delivery_tier,
+          parcel_value || null, special_handling || null, deliveryTierForDb,
           basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp,
           assigned_driver_route_id || null,
         ]
@@ -287,7 +333,10 @@ async function createOrder(req, res) {
 
 async function calculatePrice(req, res) {
   try {
-    const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, parcel_value } = req.body;
+    const {
+      pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+      parcel_value, trip_type, parcel_size,
+    } = req.body;
     if (pickup_lat == null || pickup_lng == null || dropoff_lat == null || dropoff_lng == null) {
       return res.status(400).json({ error: 'pickup and dropoff coordinates required' });
     }
@@ -296,6 +345,20 @@ async function calculatePrice(req, res) {
       parseFloat(pickup_lat), parseFloat(pickup_lng),
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
     );
+
+    if (String(trip_type) === 'intercity') {
+      const price = getIntercityPrice(parcel_size, dist);
+      const valueComponent = valueComponentForParcelValue(parcel_value);
+      return res.json({
+        intercity: true,
+        distance_km: Math.round(dist),
+        base_price: price,
+        insurance_fee: valueComponent,
+        total_price: price + valueComponent,
+        driver_earnings: Math.round(price * 0.8),
+        commission: Math.round(price * 0.2),
+      });
+    }
 
     const zone = zoneForDistance(dist);
     const floor = floorForZone(dist, zone);

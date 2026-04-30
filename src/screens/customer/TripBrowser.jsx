@@ -139,20 +139,7 @@ export default function TripBrowser({ navigation }) {
   }
 
   function handleBookTrip(trip) {
-    navigation.navigate('ParcelDescription', {
-      driver_route_id:       trip.id,
-      pickup_address:        trip.from_address,
-      pickup_lat:            trip.from_lat,
-      pickup_lng:            trip.from_lng,
-      dropoff_address:       trip.to_address,
-      dropoff_lat:           trip.to_lat,
-      dropoff_lng:           trip.to_lng,
-      pickup_method:         trip.pickup_method,
-      meeting_point_address: trip.meeting_point_address,
-      trip_type:             'intercity',
-      driver_name:           trip.driver_name,
-      departure_time:        trip.departure_time,
-    });
+    navigation.navigate('TripBookingConfirm', { trip });
   }
 
   return (

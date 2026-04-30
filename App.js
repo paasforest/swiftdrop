@@ -25,6 +25,7 @@ import OrderDetail from './src/screens/customer/OrderDetail';
 import OrderHistory from './src/screens/customer/OrderHistory';
 import Profile from './src/screens/customer/Profile';
 import TripBrowser from './src/screens/customer/TripBrowser';
+import TripBookingConfirm from './src/screens/customer/TripBookingConfirm';
 import RatingScreen from './src/screens/customer/RatingScreen';
 import OrderConfirmation from './src/screens/customer/OrderConfirmation';
 
@@ -122,6 +123,7 @@ export default function App() {
         <Stack.Screen name="OrderHistory" component={OrderHistory} />
         <Stack.Screen name="Profile" component={Profile} />
         <Stack.Screen name="TripBrowser" component={TripBrowser} options={{ headerShown: false }} />
+        <Stack.Screen name="TripBookingConfirm" component={TripBookingConfirm} options={{ headerShown: false }} />
         <Stack.Screen name="RatingScreen" component={RatingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="OrderConfirmation" component={OrderConfirmation} options={{ headerShown: false }} />
 
