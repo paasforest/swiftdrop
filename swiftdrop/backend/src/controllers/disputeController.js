@@ -133,6 +133,10 @@ async function getAllDisputes(req, res) {
       where = `WHERE d.status = $${params.length}`;
     }
 
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    params.push(limit);
+    const limitIdx = params.length;
+
     const rows = await db.query(
       `SELECT d.*,
         o.order_number, o.status AS order_status, o.total_price,
@@ -147,7 +151,8 @@ async function getAllDisputes(req, res) {
        INNER JOIN users c ON c.id = o.customer_id
        LEFT JOIN users dr ON dr.id = o.driver_id
        ${where}
-       ORDER BY d.created_at DESC`,
+       ORDER BY d.created_at DESC
+       LIMIT $${limitIdx}`,
       params
     );
     return res.json({ disputes: rows.rows });
@@ -261,7 +266,6 @@ async function getDisputeDetail(req, res) {
 
 /** PATCH /api/disputes/:id/resolve — admin */
 async function resolveDispute(req, res) {
-  const client = await db.pool.connect();
   try {
     requireAdmin(req.user);
     const id = parseInt(req.params.id, 10);
@@ -269,10 +273,56 @@ async function resolveDispute(req, res) {
       return res.status(400).json({ error: 'Invalid id' });
     }
 
-    const { resolution, resolution_notes, refund_amount } = req.body;
-    if (!resolution || !['refund_customer', 'no_refund', 'partial_refund'].includes(resolution)) {
-      return res.status(400).json({ error: 'resolution must be refund_customer, no_refund, or partial_refund' });
+    const decisionRaw = req.body.decision ?? req.body.resolution;
+    const notesInput =
+      req.body.resolution_notes != null
+        ? String(req.body.resolution_notes)
+        : req.body.resolution_note != null
+          ? String(req.body.resolution_note)
+          : '';
+
+    if (decisionRaw === 'escalate') {
+      const esc = await db.query(
+        `UPDATE disputes SET
+          status = 'in_review',
+          resolution_notes = COALESCE(NULLIF(TRIM($1::text), ''), resolution_notes),
+          updated_at = NOW()
+         WHERE id = $2 AND status = 'open'
+         RETURNING *`,
+        [notesInput, id]
+      );
+      if (esc.rows.length === 0) {
+        return res.status(400).json({ error: 'Dispute not found or not open for escalation' });
+      }
+      return res.json(esc.rows[0]);
     }
+  } catch (err) {
+    if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+    console.error('resolveDispute:', err);
+    return res.status(500).json({ error: err.message || 'Failed to resolve dispute' });
+  }
+
+  const id = parseInt(req.params.id, 10);
+  const decisionRaw = req.body.decision ?? req.body.resolution;
+  const notesInput =
+    req.body.resolution_notes != null
+      ? String(req.body.resolution_notes)
+      : req.body.resolution_note != null
+        ? String(req.body.resolution_note)
+        : '';
+
+  let resolution = decisionRaw;
+  if (resolution === 'refund') resolution = 'refund_customer';
+  const { refund_amount } = req.body;
+  const resolution_notes = notesInput || null;
+
+  if (!resolution || !['refund_customer', 'no_refund', 'partial_refund'].includes(resolution)) {
+    return res.status(400).json({ error: 'resolution must be refund_customer, no_refund, or partial_refund' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    requireAdmin(req.user);
 
     await client.query('BEGIN');
 

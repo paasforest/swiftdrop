@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius } from '../../theme/theme';
+import AdminBottomNav from './AdminBottomNav';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,7 +48,7 @@ const Thumb = ({ uri, label }) => (
   </View>
 );
 
-const DriverReview = () => {
+const DriverReview = ({ navigation }) => {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState(null);
@@ -162,6 +163,7 @@ const DriverReview = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.body}>
       <View style={styles.header}>
         <Text style={styles.title}>Driver applications</Text>
         {successMsg ? <Text style={styles.successBanner}>{successMsg}</Text> : null}
@@ -296,6 +298,8 @@ const DriverReview = () => {
           </View>
         </View>
       </Modal>
+      </View>
+      <AdminBottomNav navigation={navigation} activeScreen="DriverReview" />
     </View>
   );
 };
@@ -305,6 +309,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     minHeight: height,
+  },
+  body: {
+    flex: 1,
   },
   header: {
     paddingHorizontal: spacing.lg,

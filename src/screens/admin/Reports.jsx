@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import AdminBottomNav from './AdminBottomNav';
 
 const { width, height } = Dimensions.get('window');
 
-const Reports = () => {
+const Reports = ({ navigation }) => {
   const [selectedReport, setSelectedReport] = useState('overview');
   const [dateRange, setDateRange] = useState('last7days');
 
@@ -476,6 +477,7 @@ const Reports = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.body}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Reports & Analytics</Text>
@@ -494,6 +496,8 @@ const Reports = () => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {renderReportContent()}
       </ScrollView>
+      </View>
+      <AdminBottomNav navigation={navigation} activeScreen="Reports" />
     </View>
   );
 };
@@ -504,6 +508,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     width: width,
     height: height,
+  },
+  body: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

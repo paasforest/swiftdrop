@@ -1,73 +1,85 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Image,
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { getAuth } from '../../authStore';
+import { getJson, patchJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
+function statusLabel(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'open') return 'Open';
+  if (s === 'in_review') return 'In Review';
+  if (s === 'resolved') return 'Resolved';
+  return s || '—';
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString();
+  } catch {
+    return '—';
+  }
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return '—';
+  }
+}
+
 const DisputeResolution = () => {
+  const [disputes, setDisputes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState(null);
   const [selectedDispute, setSelectedDispute] = useState(null);
   const [decision, setDecision] = useState('');
   const [notes, setNotes] = useState('');
+  const [sending, setSending] = useState(false);
 
-  const disputes = [
-    {
-      id: '#DSP001',
-      customer: 'Sarah L.',
-      driver: 'David R.',
-      deliveryId: '#SD2024031804',
-      reason: 'Damaged parcel',
-      date: '2024-03-18',
-      urgency: 'Open',
-      timeRemaining: '23h 45m',
-      customerClaim: 'Package arrived with broken items inside. The box was crushed on one side.',
-      driverResponse: 'I delivered the package as received. The damage must have occurred during transit or at pickup.',
-      evidence: {
-        pickupPhoto: 'pickup_damaged.jpg',
-        deliveryPhoto: 'delivery_damaged.jpg',
-        otpConfirmed: true,
-        pickupTime: '3:30 PM',
-        deliveryTime: '4:15 PM'
-      }
-    },
-    {
-      id: '#DSP002',
-      customer: 'Mike T.',
-      driver: 'Lisa S.',
-      deliveryId: '#SD2024031805',
-      reason: 'Late delivery',
-      date: '2024-03-17',
-      urgency: 'In Review',
-      timeRemaining: '18h 20m',
-      customerClaim: 'Driver was 2 hours late for pickup, causing me to miss my appointment.',
-      driverResponse: 'Traffic was heavy due to accident on N1. I kept the customer updated via chat.',
-      evidence: {
-        pickupPhoto: null,
-        deliveryPhoto: null,
-        otpConfirmed: false,
-        pickupTime: null,
-        deliveryTime: null
-      }
-    },
-    {
-      id: '#DSP003',
-      customer: 'Anna B.',
-      driver: 'Tom W.',
-      deliveryId: '#SD2024031806',
-      reason: 'Wrong item delivered',
-      date: '2024-03-16',
-      urgency: 'Resolved',
-      timeRemaining: 'Resolved',
-      customerClaim: 'Driver delivered wrong package to wrong address.',
-      driverResponse: 'Customer gave incorrect address initially. Corrected the mistake within 30 minutes.',
-      evidence: {
-        pickupPhoto: 'pickup_wrong.jpg',
-        deliveryPhoto: 'delivery_corrected.jpg',
-        otpConfirmed: true,
-        pickupTime: '2:45 PM',
-        deliveryTime: '3:15 PM'
-      }
+  const fetchDisputes = useCallback(async () => {
+    const auth = getAuth();
+    if (!auth?.token) {
+      setListError('Not signed in');
+      setDisputes([]);
+      setLoading(false);
+      return;
     }
-  ];
+    setLoading(true);
+    setListError(null);
+    try {
+      const data = await getJson('/api/disputes?status=open&limit=50', { token: auth.token });
+      setDisputes(Array.isArray(data.disputes) ? data.disputes : []);
+    } catch (err) {
+      console.error('Disputes fetch:', err);
+      setListError(err.message || 'Failed to load disputes');
+      setDisputes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDisputes();
+    }, [fetchDisputes])
+  );
 
   const handleSelectDispute = (dispute) => {
     setSelectedDispute(dispute);
@@ -81,8 +93,32 @@ const DisputeResolution = () => {
     setNotes('');
   };
 
-  const handleSendDecision = () => {
-    console.log('Send decision:', { dispute: selectedDispute.id, decision, notes });
+  const handleSendDecision = async () => {
+    if (!selectedDispute?.id || !decision) return;
+    const auth = getAuth();
+    if (!auth?.token) {
+      Alert.alert('Error', 'Not signed in');
+      return;
+    }
+    setSending(true);
+    try {
+      const body = {
+        decision,
+        resolution_note: notes.trim() || undefined,
+      };
+      if (decision === 'partial_refund') {
+        const total = parseFloat(selectedDispute.total_price) || 0;
+        body.refund_amount = Math.max(1, Math.round(total / 2));
+      }
+      await patchJson(`/api/disputes/${selectedDispute.id}/resolve`, body, { token: auth.token });
+      Alert.alert('Success', 'Dispute updated.');
+      handleCloseDetail();
+      await fetchDisputes();
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Request failed');
+    } finally {
+      setSending(false);
+    }
   };
 
   const getUrgencyColor = (urgency) => {
@@ -113,68 +149,75 @@ const DisputeResolution = () => {
 
   const renderDisputeList = () => (
     <View style={styles.disputeList}>
-      {disputes.map((dispute) => (
-        <TouchableOpacity
-          key={dispute.id}
-          style={[
-            styles.disputeCard,
-            selectedDispute?.id === dispute.id && styles.disputeCardSelected
-          ]}
-          onPress={() => handleSelectDispute(dispute)}
-        >
-          <View style={styles.disputeHeader}>
-            <View style={styles.disputeInfo}>
-              <Text style={styles.disputeId}>{dispute.id}</Text>
-              <Text style={styles.disputeReason}>{dispute.reason}</Text>
-              <Text style={styles.disputeDetails}>
-                {dispute.customer} vs {dispute.driver}
-              </Text>
-              <Text style={styles.disputeDate}>{dispute.date}</Text>
-            </View>
-            <View style={[
-              styles.urgencyBadge,
-              { backgroundColor: getUrgencyBg(dispute.urgency) }
-            ]}>
-              <Text style={[
-                styles.urgencyText,
-                { color: getUrgencyColor(dispute.urgency) }
-              ]}>
-                {dispute.urgency}
-              </Text>
-            </View>
-          </View>
-          {dispute.urgency !== 'Resolved' && (
-            <View style={styles.timerContainer}>
-              <Text style={styles.timerText}>Time remaining: {dispute.timeRemaining}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      ))}
+      {loading ? (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
+      ) : listError ? (
+        <Text style={styles.disputeDate}>{listError}</Text>
+      ) : (
+        disputes.map((dispute) => {
+          const urgency = statusLabel(dispute.status);
+          return (
+            <TouchableOpacity
+              key={String(dispute.id)}
+              style={[
+                styles.disputeCard,
+                selectedDispute?.id === dispute.id && styles.disputeCardSelected,
+              ]}
+              onPress={() => handleSelectDispute(dispute)}
+            >
+              <View style={styles.disputeHeader}>
+                <View style={styles.disputeInfo}>
+                  <Text style={styles.disputeId}>#{dispute.id}</Text>
+                  <Text style={styles.disputeReason}>{dispute.dispute_type || 'Dispute'}</Text>
+                  <Text style={styles.disputeDetails}>
+                    {(dispute.customer_name || 'Customer') + ' vs ' + (dispute.driver_name || 'Driver')}
+                  </Text>
+                  <Text style={styles.disputeDate}>{formatDate(dispute.created_at)}</Text>
+                </View>
+                <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyBg(urgency) }]}>
+                  <Text style={[styles.urgencyText, { color: getUrgencyColor(urgency) }]}>{urgency}</Text>
+                </View>
+              </View>
+              {urgency !== 'Resolved' && (
+                <View style={styles.timerContainer}>
+                  <Text style={styles.timerText}>Order: {dispute.order_number || dispute.order_id}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })
+      )}
+      {!loading && !listError && disputes.length === 0 ? (
+        <Text style={styles.disputeDate}>No open disputes.</Text>
+      ) : null}
     </View>
   );
 
   const renderTimeline = () => {
     if (!selectedDispute) return null;
 
+    const pickupTime = formatDateTime(selectedDispute.pickup_confirmed_at);
+    const deliveryTime = formatDateTime(selectedDispute.delivery_confirmed_at);
+
     const timelineEvents = [
       {
-        time: selectedDispute.evidence.pickupTime || 'N/A',
+        time: pickupTime,
         title: 'Pickup',
         description: 'Driver collected parcel',
-        status: selectedDispute.evidence.pickupTime ? 'completed' : 'pending'
+        status: selectedDispute.pickup_confirmed_at ? 'completed' : 'pending',
       },
       {
-        time: selectedDispute.evidence.deliveryTime || 'N/A',
+        time: deliveryTime,
         title: 'Delivery',
         description: 'Parcel delivered to recipient',
-        status: selectedDispute.evidence.deliveryTime ? 'completed' : 'pending'
+        status: selectedDispute.delivery_confirmed_at ? 'completed' : 'pending',
       },
       {
-        time: selectedDispute.date,
-        title: 'Dispute Opened',
+        time: formatDate(selectedDispute.created_at),
+        title: 'Dispute opened',
         description: 'Customer filed dispute',
-        status: 'completed'
-      }
+        status: 'completed',
+      },
     ];
 
     return (
@@ -182,18 +225,18 @@ const DisputeResolution = () => {
         <Text style={styles.sectionTitle}>Delivery Timeline</Text>
         {timelineEvents.map((event, index) => (
           <View key={index} style={styles.timelineItem}>
-            <View style={[
-              styles.timelineDot,
-              event.status === 'completed' ? styles.timelineDotCompleted : styles.timelineDotPending
-            ]} />
+            <View
+              style={[
+                styles.timelineDot,
+                event.status === 'completed' ? styles.timelineDotCompleted : styles.timelineDotPending,
+              ]}
+            />
             <View style={styles.timelineContent}>
               <Text style={styles.timelineTime}>{event.time}</Text>
               <Text style={styles.timelineTitle}>{event.title}</Text>
               <Text style={styles.timelineDescription}>{event.description}</Text>
             </View>
-            {index < timelineEvents.length - 1 && (
-              <View style={styles.timelineLine} />
-            )}
+            {index < timelineEvents.length - 1 && <View style={styles.timelineLine} />}
           </View>
         ))}
       </View>
@@ -203,30 +246,27 @@ const DisputeResolution = () => {
   const renderEvidence = () => {
     if (!selectedDispute) return null;
 
+    const pickupUrl = selectedDispute.pickup_photo_url;
+    const deliveryUrl = selectedDispute.delivery_photo_url;
+
     return (
       <View style={styles.evidenceSection}>
         <Text style={styles.sectionTitle}>Evidence</Text>
-        
+
         <View style={styles.photosContainer}>
           <View style={styles.photoBlock}>
             <Text style={styles.photoLabel}>Pickup Photo</Text>
-            {selectedDispute.evidence.pickupPhoto ? (
-              <TouchableOpacity style={styles.photoThumbnail}>
-                <Text style={styles.photoIcon}>📷</Text>
-                <Text style={styles.photoText}>Tap to view</Text>
-              </TouchableOpacity>
+            {pickupUrl ? (
+              <Image source={{ uri: pickupUrl }} style={styles.evidenceImage} resizeMode="cover" />
             ) : (
               <Text style={styles.noPhotoText}>No photo available</Text>
             )}
           </View>
-          
+
           <View style={styles.photoBlock}>
             <Text style={styles.photoLabel}>Delivery Photo</Text>
-            {selectedDispute.evidence.deliveryPhoto ? (
-              <TouchableOpacity style={styles.photoThumbnail}>
-                <Text style={styles.photoIcon}>📷</Text>
-                <Text style={styles.photoText}>Tap to view</Text>
-              </TouchableOpacity>
+            {deliveryUrl ? (
+              <Image source={{ uri: deliveryUrl }} style={styles.evidenceImage} resizeMode="cover" />
             ) : (
               <Text style={styles.noPhotoText}>No photo available</Text>
             )}
@@ -234,23 +274,21 @@ const DisputeResolution = () => {
         </View>
 
         <View style={styles.otpSection}>
-          <Text style={styles.otpLabel}>OTP Confirmation Log</Text>
+          <Text style={styles.otpLabel}>OTP confirmation</Text>
           <View style={styles.otpRow}>
             <Text style={styles.otpField}>Pickup OTP:</Text>
             <Text style={styles.otpValue}>
-              {selectedDispute.evidence.otpConfirmed ? 
-                `Confirmed at ${selectedDispute.evidence.pickupTime}` : 
-                'Not confirmed'
-              }
+              {selectedDispute.pickup_confirmed_at
+                ? `Confirmed at ${formatDateTime(selectedDispute.pickup_confirmed_at)}`
+                : 'Not confirmed'}
             </Text>
           </View>
           <View style={styles.otpRow}>
             <Text style={styles.otpField}>Delivery OTP:</Text>
             <Text style={styles.otpValue}>
-              {selectedDispute.evidence.deliveryTime ? 
-                `Confirmed at ${selectedDispute.evidence.deliveryTime}` : 
-                'Not confirmed'
-              }
+              {selectedDispute.delivery_confirmed_at
+                ? `Confirmed at ${formatDateTime(selectedDispute.delivery_confirmed_at)}`
+                : 'Not confirmed'}
             </Text>
           </View>
         </View>
@@ -263,21 +301,23 @@ const DisputeResolution = () => {
 
     return (
       <View style={styles.claimsSection}>
-        <Text style={styles.sectionTitle}>Claims & Responses</Text>
-        
+        <Text style={styles.sectionTitle}>Claim</Text>
+
         <View style={styles.claimBlock}>
-          <Text style={styles.claimTitle}>Customer Claim</Text>
+          <Text style={styles.claimTitle}>Customer description</Text>
           <View style={styles.claimContent}>
-            <Text style={styles.claimAuthor}>{selectedDispute.customer}</Text>
-            <Text style={styles.claimText}>{selectedDispute.customerClaim}</Text>
+            <Text style={styles.claimAuthor}>{selectedDispute.customer_name || 'Customer'}</Text>
+            <Text style={styles.claimText}>{selectedDispute.description || '—'}</Text>
           </View>
         </View>
 
         <View style={styles.claimBlock}>
-          <Text style={styles.claimTitle}>Driver Response</Text>
+          <Text style={styles.claimTitle}>Driver</Text>
           <View style={styles.claimContent}>
-            <Text style={styles.claimAuthor}>{selectedDispute.driver}</Text>
-            <Text style={styles.claimText}>{selectedDispute.driverResponse}</Text>
+            <Text style={styles.claimAuthor}>{selectedDispute.driver_name || '—'}</Text>
+            <Text style={styles.claimText}>
+              Driver details are available on the order. No separate response is stored for this dispute.
+            </Text>
           </View>
         </View>
       </View>
@@ -285,32 +325,25 @@ const DisputeResolution = () => {
   };
 
   const renderDecision = () => {
-    if (!selectedDispute || selectedDispute.urgency === 'Resolved') return null;
+    if (!selectedDispute || String(selectedDispute.status).toLowerCase() === 'resolved') return null;
 
     return (
       <View style={styles.decisionSection}>
         <Text style={styles.sectionTitle}>Admin Decision</Text>
-        
+
         <View style={styles.decisionOptions}>
           {[
             { value: 'refund', label: 'Refund Customer' },
             { value: 'no_refund', label: 'No Refund' },
             { value: 'partial_refund', label: 'Partial Refund' },
-            { value: 'escalate', label: 'Escalate' }
+            { value: 'escalate', label: 'Escalate' },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}
-              style={[
-                styles.decisionOption,
-                decision === option.value && styles.decisionOptionSelected
-              ]}
+              style={[styles.decisionOption, decision === option.value && styles.decisionOptionSelected]}
               onPress={() => setDecision(option.value)}
             >
-              <View style={styles.radioCircle}>
-                {decision === option.value && (
-                  <View style={styles.radioSelected} />
-                )}
-              </View>
+              <View style={styles.radioCircle}>{decision === option.value && <View style={styles.radioSelected} />}</View>
               <Text style={styles.decisionLabel}>{option.label}</Text>
             </TouchableOpacity>
           ))}
@@ -330,14 +363,11 @@ const DisputeResolution = () => {
         </View>
 
         <TouchableOpacity
-          style={[
-            styles.sendDecisionButton,
-            !decision && styles.sendDecisionButtonDisabled
-          ]}
+          style={[styles.sendDecisionButton, (!decision || sending) && styles.sendDecisionButtonDisabled]}
           onPress={handleSendDecision}
-          disabled={!decision}
+          disabled={!decision || sending}
         >
-          <Text style={styles.sendDecisionButtonText}>Send Decision</Text>
+          <Text style={styles.sendDecisionButtonText}>{sending ? 'Sending…' : 'Send Decision'}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -345,6 +375,8 @@ const DisputeResolution = () => {
 
   const renderDisputeDetail = () => {
     if (!selectedDispute) return null;
+
+    const urgency = statusLabel(selectedDispute.status);
 
     return (
       <View style={styles.detailPanel}>
@@ -356,46 +388,29 @@ const DisputeResolution = () => {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Dispute Info */}
           <View style={styles.disputeInfoHeader}>
-            <Text style={styles.disputeTitle}>{selectedDispute.id}</Text>
+            <Text style={styles.disputeTitle}>#{selectedDispute.id}</Text>
             <View style={styles.disputeMeta}>
-              <Text style={styles.disputeReasonLarge}>{selectedDispute.reason}</Text>
+              <Text style={styles.disputeReasonLarge}>{selectedDispute.dispute_type || 'Dispute'}</Text>
               <Text style={styles.disputeParticipants}>
-                {selectedDispute.customer} vs {selectedDispute.driver}
+                {(selectedDispute.customer_name || 'Customer') + ' vs ' + (selectedDispute.driver_name || 'Driver')}
               </Text>
-              <View style={[
-                styles.urgencyBadgeLarge,
-                { backgroundColor: getUrgencyBg(selectedDispute.urgency) }
-              ]}>
-                <Text style={[
-                  styles.urgencyTextLarge,
-                  { color: getUrgencyColor(selectedDispute.urgency) }
-                ]}>
-                  {selectedDispute.urgency}
-                </Text>
+              <View style={[styles.urgencyBadgeLarge, { backgroundColor: getUrgencyBg(urgency) }]}>
+                <Text style={[styles.urgencyTextLarge, { color: getUrgencyColor(urgency) }]}>{urgency}</Text>
               </View>
             </View>
           </View>
 
-          {/* Timer */}
-          {selectedDispute.urgency !== 'Resolved' && (
+          {urgency !== 'Resolved' && (
             <View style={styles.resolutionTimer}>
-              <Text style={styles.timerLabel}>24hr Resolution Timer</Text>
-              <Text style={styles.timerValue}>{selectedDispute.timeRemaining} remaining</Text>
+              <Text style={styles.timerLabel}>Order</Text>
+              <Text style={styles.timerValue}>{selectedDispute.order_number || selectedDispute.order_id}</Text>
             </View>
           )}
 
-          {/* Timeline */}
           {renderTimeline()}
-
-          {/* Evidence */}
           {renderEvidence()}
-
-          {/* Claims */}
           {renderClaims()}
-
-          {/* Decision */}
           {renderDecision()}
         </ScrollView>
       </View>
@@ -404,17 +419,12 @@ const DisputeResolution = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Dispute Resolution</Text>
       </View>
 
-      {/* Main Content */}
       <View style={styles.content}>
-        {/* Dispute List */}
         {renderDisputeList()}
-
-        {/* Dispute Detail */}
         {renderDisputeDetail()}
       </View>
     </View>
@@ -681,6 +691,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
     fontStyle: 'italic',
+  },
+  evidenceImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+    backgroundColor: colors.border,
   },
   otpSection: {
     backgroundColor: colors.background,

@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { colors, spacing, radius } from '../../theme/theme';
+import AdminBottomNav from './AdminBottomNav';
 
 const { width, height } = Dimensions.get('window');
 
@@ -48,7 +49,7 @@ function statusBadgeStyle(status) {
   return { bg: colors.primaryLight, fg: colors.primary };
 }
 
-const Deliveries = () => {
+const Deliveries = ({ navigation }) => {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -137,6 +138,7 @@ const Deliveries = () => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.body}>
       <View style={styles.header}>
         <Text style={styles.title}>Deliveries</Text>
       </View>
@@ -323,6 +325,8 @@ const Deliveries = () => {
           )}
         </TouchableOpacity>
       ) : null}
+      </View>
+      <AdminBottomNav navigation={navigation} activeScreen="Deliveries" />
     </View>
   );
 };
@@ -332,6 +336,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     minHeight: height,
+  },
+  body: {
+    flex: 1,
   },
   header: {
     paddingHorizontal: spacing.lg,

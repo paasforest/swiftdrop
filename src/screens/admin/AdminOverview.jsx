@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } fro
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import { colors, spacing, radius, shadows } from '../../theme/theme';
+import AdminBottomNav from './AdminBottomNav';
 
 const { width, height } = Dimensions.get('window');
 
@@ -12,7 +13,7 @@ function formatMoney(n) {
   return `R${x.toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-const AdminOverview = () => {
+const AdminOverview = ({ navigation }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -91,42 +92,45 @@ const AdminOverview = () => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Dashboard Overview</Text>
-        <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
-      </View>
+      <View style={styles.body}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Dashboard Overview</Text>
+          <Text style={styles.headerDate}>{new Date().toLocaleDateString()}</Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.kpiContainer}>
-            {cards.map((c) => (
-              <View
-                key={c.key}
-                style={[styles.kpiCard, { borderTopColor: c.border, borderTopWidth: 4 }]}
-              >
-                <View style={styles.kpiTop}>
-                  <Text style={[styles.kpiNumber, { color: c.color }]}>{c.value}</Text>
-                  {c.badge ? <View style={styles.alertDot} /> : null}
+        {loading ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : (
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.kpiContainer}>
+              {cards.map((c) => (
+                <View
+                  key={c.key}
+                  style={[styles.kpiCard, { borderTopColor: c.border, borderTopWidth: 4 }]}
+                >
+                  <View style={styles.kpiTop}>
+                    <Text style={[styles.kpiNumber, { color: c.color }]}>{c.value}</Text>
+                    {c.badge ? <View style={styles.alertDot} /> : null}
+                  </View>
+                  <Text style={styles.kpiLabel}>{c.label}</Text>
                 </View>
-                <Text style={styles.kpiLabel}>{c.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.mapContainer}>
-            <Text style={styles.mapTitle}>Operations</Text>
-            <View style={styles.mapPlaceholder}>
-              <Text style={styles.mapSub}>
-                Live map can be added here. Stats above refresh when you open this screen.
-              </Text>
+              ))}
             </View>
-          </View>
-        </ScrollView>
-      )}
+
+            <View style={styles.mapContainer}>
+              <Text style={styles.mapTitle}>Operations</Text>
+              <View style={styles.mapPlaceholder}>
+                <Text style={styles.mapSub}>
+                  Live map can be added here. Stats above refresh when you open this screen.
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+      <AdminBottomNav navigation={navigation} activeScreen="AdminOverview" />
     </View>
   );
 };
@@ -137,6 +141,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     width: width,
     minHeight: height,
+  },
+  body: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

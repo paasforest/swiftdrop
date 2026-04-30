@@ -2,6 +2,7 @@ const db = require('../database/connection');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const smsService = require('../services/smsService');
+const { uploadImage } = require('../services/cloudinaryService');
 const { generateOTP, storeOTP, validateOTP } = require('../utils/otpHelper');
 const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
 
@@ -266,11 +267,12 @@ async function verifyPhone(req, res) {
   if (!req.user) {
     return res.status(404).json({ error: 'Profile not found', code: 'PROFILE_NOT_FOUND' });
   }
-  const code = String(req.body?.code || '').trim();
-  if (!code) {
-    return res.status(400).json({ error: 'code is required' });
+  const { code, otp } = req.body || {};
+  const verificationCode = String(code || otp || '').trim();
+  if (!verificationCode) {
+    return res.status(400).json({ error: 'code or otp is required' });
   }
-  const verifiedUserId = await validateOTP(req.user.phone, code, 'phone_verification');
+  const verifiedUserId = await validateOTP(req.user.phone, verificationCode, 'phone_verification');
   if (!verifiedUserId || Number(verifiedUserId) !== Number(req.user.id)) {
     return res.status(400).json({ error: 'Invalid or expired OTP' });
   }
@@ -280,10 +282,13 @@ async function verifyPhone(req, res) {
      SET is_verified = true,
          updated_at = NOW()
      WHERE id = $1
-     RETURNING id, firebase_uid, full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
+     RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+               full_name, email, phone, user_type, is_verified, is_active, profile_photo_url, wallet_balance`,
     [req.user.id]
   );
-  return res.json({ user: buildUserPayload(result.rows[0]) });
+  const userRow = result.rows[0];
+  const { token, refreshToken } = signTokens(userRow);
+  return res.json({ token, refreshToken, user: buildUserPayload(userRow) });
 }
 
 async function login(req, res) {
@@ -372,6 +377,232 @@ async function registerCustomer(req, res) {
   }
 }
 
+function mergeDriverVerificationNotes(existingRaw, patch) {
+  let base = {};
+  if (existingRaw && typeof existingRaw === 'string') {
+    try {
+      const j = JSON.parse(existingRaw);
+      if (typeof j === 'object' && j !== null) base = j;
+    } catch {
+      base = {};
+    }
+  }
+  return JSON.stringify({ ...base, ...patch });
+}
+
+function pickUploadedFile(files, fieldname) {
+  if (!files || !Array.isArray(files)) return null;
+  return files.find((f) => f.fieldname === fieldname) || null;
+}
+
+async function uploadFieldToUrl(files, fieldname) {
+  const f = pickUploadedFile(files, fieldname);
+  if (!f || !f.buffer) return null;
+  const r = await uploadImage(f);
+  return r.secure_url || null;
+}
+
+/** POST /api/auth/register-driver — email/password driver signup */
+async function registerDriver(req, res) {
+  const full_name = String(req.body?.full_name || '').trim();
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const rawPhone = String(req.body?.phone || '').trim();
+  const password = String(req.body?.password || '').trim();
+
+  if (!full_name || !email || !rawPhone || !password) {
+    return res.status(400).json({ error: 'Name, email, phone and password are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  const phone = normalizeSouthAfricaToE164(rawPhone);
+  if (!phone) {
+    return res.status(400).json({ error: 'A valid South African phone number is required' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      `SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 OR phone = $2 LIMIT 1`,
+      [email, phone]
+    );
+    if (existing.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Account already exists' });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+    const inserted = await client.query(
+      `INSERT INTO users (
+         full_name, email, phone, password_hash, user_type, app_role,
+         profile_completed, is_verified, is_active, wallet_balance
+       )
+       VALUES ($1, $2, $3, $4, 'driver', 'driver', false, true, true, 0)
+       RETURNING id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                 full_name, email, phone, user_type, is_verified, is_active,
+                 profile_photo_url, wallet_balance`,
+      [full_name, email, phone, password_hash]
+    );
+    const user = inserted.rows[0];
+
+    const prof = await client.query(`SELECT id FROM driver_profiles WHERE user_id = $1 LIMIT 1`, [user.id]);
+    if (prof.rows.length === 0) {
+      await client.query(
+        `INSERT INTO driver_profiles (user_id, verification_status)
+         VALUES ($1, 'pending')`,
+        [user.id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    const { token, refreshToken } = signTokens(user);
+    return res.status(201).json({
+      token,
+      refreshToken,
+      user: buildUserPayload(user),
+      phoneVerificationRequired: false,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('registerDriver:', err);
+    return res.status(500).json({ error: 'Registration failed' });
+  } finally {
+    client.release();
+  }
+}
+
+/** POST /api/auth/driver/submit-application — multipart; requires driver JWT */
+async function submitDriverApplication(req, res) {
+  if (!req.user || req.user.user_type !== 'driver') {
+    return res.status(403).json({ error: 'Driver account required' });
+  }
+
+  const application_path = String(req.body?.application_path || '').trim();
+  if (!application_path || !['uber_bolt', 'new_driver'].includes(application_path)) {
+    return res.status(400).json({ error: 'application_path must be uber_bolt or new_driver' });
+  }
+
+  const files = req.files;
+  const vehicle_make = req.body?.vehicle_make != null ? String(req.body.vehicle_make).trim() : null;
+  const vehicle_model = req.body?.vehicle_model != null ? String(req.body.vehicle_model).trim() : null;
+  const vehicle_year_raw = req.body?.vehicle_year;
+  let vehicle_year = null;
+  if (vehicle_year_raw !== undefined && vehicle_year_raw !== null && String(vehicle_year_raw).trim() !== '') {
+    const y = parseInt(String(vehicle_year_raw).trim(), 10);
+    vehicle_year = Number.isInteger(y) ? y : null;
+  }
+  const vehicle_color = req.body?.vehicle_color != null ? String(req.body.vehicle_color).trim() : null;
+  const vehicle_plate = req.body?.vehicle_plate != null ? String(req.body.vehicle_plate).trim() : null;
+
+  try {
+    const selfieUrl = await uploadFieldToUrl(files, 'selfie');
+    if (!selfieUrl) {
+      return res.status(400).json({ error: 'selfie image is required' });
+    }
+
+    let id_document_url = null;
+    let license_url = null;
+    let vehicle_registration_url = null;
+    let license_disc_url = null;
+    let saps_clearance_url = null;
+    let vehicle_photo_url = null;
+    let uber_profile_screenshot_url = null;
+    let vehicle_photo_back_url = null;
+    let vehicle_photo_side_url = null;
+
+    if (application_path === 'uber_bolt') {
+      uber_profile_screenshot_url = await uploadFieldToUrl(files, 'uber_profile_screenshot');
+      vehicle_photo_url = await uploadFieldToUrl(files, 'vehicle_photo');
+      if (!uber_profile_screenshot_url || !vehicle_photo_url) {
+        return res.status(400).json({ error: 'uber_profile_screenshot and vehicle_photo are required' });
+      }
+    } else {
+      id_document_url = await uploadFieldToUrl(files, 'national_id');
+      license_url = await uploadFieldToUrl(files, 'drivers_license');
+      vehicle_registration_url = await uploadFieldToUrl(files, 'vehicle_registration');
+      license_disc_url = await uploadFieldToUrl(files, 'license_disc');
+      saps_clearance_url = await uploadFieldToUrl(files, 'saps_clearance');
+      const vehicle_front = await uploadFieldToUrl(files, 'vehicle_photo_front');
+      vehicle_photo_back_url = await uploadFieldToUrl(files, 'vehicle_photo_back');
+      vehicle_photo_side_url = await uploadFieldToUrl(files, 'vehicle_photo_side');
+      vehicle_photo_url = vehicle_front;
+      if (!id_document_url || !license_url || !vehicle_registration_url || !license_disc_url) {
+        return res.status(400).json({ error: 'national_id, drivers_license, vehicle_registration, and license_disc are required' });
+      }
+      if (!vehicle_photo_url || !vehicle_photo_back_url || !vehicle_photo_side_url) {
+        return res.status(400).json({ error: 'vehicle_photo_front, vehicle_photo_back, and vehicle_photo_side are required' });
+      }
+    }
+
+    const profRes = await db.query(`SELECT verification_notes FROM driver_profiles WHERE user_id = $1 LIMIT 1`, [
+      req.user.id,
+    ]);
+    if (profRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Driver profile not found' });
+    }
+
+    const notesPatch = {
+      application_path,
+      uberProfileScreenshotUrl: uber_profile_screenshot_url,
+      vehiclePhotoBackUrl: vehicle_photo_back_url,
+      vehiclePhotoSideUrl: vehicle_photo_side_url,
+      submitted_at: new Date().toISOString(),
+    };
+    const verification_notes = mergeDriverVerificationNotes(profRes.rows[0].verification_notes, notesPatch);
+
+    await db.query(
+      `UPDATE driver_profiles SET
+         selfie_url = $1,
+         id_document_url = COALESCE($2, id_document_url),
+         license_url = COALESCE($3, license_url),
+         vehicle_registration_url = COALESCE($4, vehicle_registration_url),
+         license_disc_url = COALESCE($5, license_disc_url),
+         saps_clearance_url = COALESCE($6, saps_clearance_url),
+         vehicle_photo_url = COALESCE($7, vehicle_photo_url),
+         vehicle_make = COALESCE($8, vehicle_make),
+         vehicle_model = COALESCE($9, vehicle_model),
+         vehicle_year = COALESCE($10, vehicle_year),
+         vehicle_color = COALESCE($11, vehicle_color),
+         vehicle_plate = COALESCE($12, vehicle_plate),
+         verification_status = 'pending',
+         verification_notes = $13
+       WHERE user_id = $14`,
+      [
+        selfieUrl,
+        id_document_url,
+        license_url,
+        vehicle_registration_url,
+        license_disc_url,
+        saps_clearance_url,
+        vehicle_photo_url,
+        vehicle_make,
+        vehicle_model,
+        vehicle_year,
+        vehicle_color,
+        vehicle_plate,
+        verification_notes,
+        req.user.id,
+      ]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Application submitted. We will review and contact you.',
+    });
+  } catch (err) {
+    console.error('submitDriverApplication:', err);
+    const msg = err.message || 'Application submission failed';
+    if (msg.includes('Cloudinary')) {
+      return res.status(503).json({ error: msg });
+    }
+    return res.status(500).json({ error: msg });
+  }
+}
+
 async function refreshToken(req, res) {
   const rt = String(req.body?.refreshToken || '').trim();
   if (!rt) return res.status(400).json({ error: 'refreshToken is required' });
@@ -401,6 +632,8 @@ module.exports = {
   login,
   register,
   registerCustomer,
+  registerDriver,
+  submitDriverApplication,
   refreshToken,
   setRole,
   completeProfile,
