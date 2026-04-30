@@ -200,8 +200,17 @@ const Home = ({ navigation }) => {
           <ActivityIndicator style={{ marginVertical: 24 }} color={COLORS.green} />
         ) : orders.length === 0 ? (
           <View style={styles.emptyState}>
+            <View style={styles.emptyIconCircle}>
+              <Text style={styles.emptyIcon}>📬</Text>
+            </View>
             <Text style={styles.emptyText}>No deliveries yet</Text>
-            <Text style={styles.emptySubtext}>Your history will appear here</Text>
+            <Text style={styles.emptySubtext}>Send your first parcel today</Text>
+            <TouchableOpacity
+              style={styles.emptyButton}
+              onPress={() => navigation.navigate('AddressEntry')}
+            >
+              <Text style={styles.emptyButtonText}>Send a parcel</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           orders.map((order) => (
@@ -408,15 +417,39 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     paddingHorizontal: 20,
   },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyIcon: {
+    fontSize: 36,
+  },
   emptyText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#BDBDBD',
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 6,
   },
   emptySubtext: {
     fontSize: 13,
-    color: '#BDBDBD',
+    color: '#9E9E9E',
+    marginBottom: 24,
+  },
+  emptyButton: {
+    backgroundColor: '#000000',
+    borderRadius: 14,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+  },
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   errorText: {
     fontSize: 13,

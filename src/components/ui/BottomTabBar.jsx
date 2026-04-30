@@ -35,11 +35,11 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
               <Ionicons
                 name={isActive ? t.icon : t.iconOutline}
                 size={24}
-                color={isActive ? colors.primary : colors.textLight}
+                color={isActive ? '#000000' : colors.textLight}
               />
               <AppText
                 variant="small"
-                style={[styles.tabLabel, { color: isActive ? colors.primary : colors.textLight }]}
+                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textLight }]}
               >
                 {t.label}
               </AppText>
@@ -72,11 +72,11 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
               <Ionicons
                 name={isActive ? t.icon : t.iconOutline}
                 size={24}
-                color={isActive ? colors.primary : colors.textLight}
+                color={isActive ? '#000000' : colors.textLight}
               />
               <AppText
                 variant="small"
-                style={[styles.tabLabel, { color: isActive ? colors.primary : colors.textLight }]}
+                style={[styles.tabLabel, { color: isActive ? '#000000' : colors.textLight }]}
               >
                 {t.label}
               </AppText>
