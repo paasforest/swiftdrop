@@ -5,24 +5,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ScrollView,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import GradientHeader from '../../components/GradientHeader';
 import * as Location from 'expo-location';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson, patchJson } from '../../apiClient';
 import { resetToLogin } from '../../navigationHelpers';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { spacing, radius, shadows } from '../../theme/theme';
 import { BottomTabBar } from '../../components/ui';
-import AvatarPlaceholder from '../../components/AvatarPlaceholder';
-
-const { width, height } = Dimensions.get('window');
 
 function formatMoney(n) {
   const x = Number(n);
@@ -39,6 +35,18 @@ function tierLabel(tier) {
   if (!tier) return 'Driver';
   const t = String(tier);
   return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function firstNameOf(fullName) {
+  if (!fullName || typeof fullName !== 'string') return 'Driver';
+  return fullName.trim().split(/\s+/)[0] || 'Driver';
 }
 
 const STATUS_ERR = 'Could not update status. Check connection.';
@@ -152,6 +160,7 @@ const DriverHome = ({ navigation }) => {
   }, [stopLocationUpdates]);
 
   const userName = dashboard?.user?.full_name || getAuth()?.user?.full_name || 'Driver';
+  const firstName = firstNameOf(userName);
   const rating =
     dashboard?.current_rating != null && !Number.isNaN(Number(dashboard.current_rating))
       ? Number(dashboard.current_rating).toFixed(1)
@@ -206,33 +215,29 @@ const DriverHome = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <GradientHeader>
-        <View style={styles.header}>
-          <View style={styles.driverInfo}>
-            <Text style={styles.driverNameLight}>{userName}</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={18} color={colors.warning} />
-              <Text style={styles.driverRatingLight}> {rating}</Text>
-            </View>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              onPress={() => resetToLogin(navigation)}
-              style={styles.logoutHeaderBtn}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Log out"
-              accessibilityHint="Signs out and returns to the login screen"
-            >
-              <Ionicons name="log-out-outline" size={20} color="rgba(255,255,255,0.95)" />
-              <Text style={styles.logoutHeaderBtnText}>Log out</Text>
-            </TouchableOpacity>
-            <AvatarPlaceholder size={60} />
-          </View>
-        </View>
-      </GradientHeader>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      {/* Clean white header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>
+            {getGreeting()}, {firstName}
+          </Text>
+          <Text style={styles.subtitle}>Ready to earn today?</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.avatar}
+          onPress={() => navigation.navigate('Profile')}
+        >
+          <Text style={styles.avatarText}>
+            {firstName?.[0]?.toUpperCase() || 'D'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+
+        {/* Online / Offline toggle */}
         <View style={styles.toggleSection}>
           <TouchableOpacity
             activeOpacity={0.88}
@@ -249,7 +254,7 @@ const DriverHome = ({ navigation }) => {
               ]}
             >
               {statusBusy ? (
-                <ActivityIndicator color={isOnline ? colors.textWhite : colors.textSecondary} />
+                <ActivityIndicator color={isOnline ? '#FFFFFF' : '#9E9E9E'} />
               ) : (
                 <View
                   style={[
@@ -269,12 +274,14 @@ const DriverHome = ({ navigation }) => {
           </Text>
         </View>
 
+        {/* Today's earnings */}
         <View style={styles.earningsCard}>
           <Text style={styles.earningsLabel}>Today (completed)</Text>
           <Text style={styles.earningsAmount}>{formatMoney(todayEarnings)}</Text>
           <Text style={styles.deliveriesCount}>{todayDeliveries} deliveries completed today</Text>
         </View>
 
+        {/* Action buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.postRouteButton}
@@ -291,6 +298,7 @@ const DriverHome = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
+        {/* Stats card */}
         <View style={styles.ratingCard}>
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>Your stats</Text>
@@ -315,13 +323,16 @@ const DriverHome = ({ navigation }) => {
           </View>
         </View>
 
+        {/* Recent jobs */}
         <View style={styles.recentSection}>
           <Text style={styles.sectionTitle}>Recent jobs</Text>
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {loading ? (
-            <ActivityIndicator style={{ marginVertical: 20 }} color={colors.primary} />
+            <ActivityIndicator style={{ marginVertical: 20 }} color="#00C853" />
           ) : recent.length === 0 ? (
-            <Text style={styles.emptyText}>No assigned jobs yet. Check available jobs or post a route.</Text>
+            <Text style={styles.emptyText}>
+              No assigned jobs yet. Check available jobs or post a route.
+            </Text>
           ) : (
             <View style={styles.activityList}>
               {recent.map((o) => (
@@ -336,7 +347,7 @@ const DriverHome = ({ navigation }) => {
                   }}
                 >
                   <View style={styles.activityIcon}>
-                    <Ionicons name="cube-outline" size={18} color={colors.primary} />
+                    <Ionicons name="cube-outline" size={18} color="#000000" />
                   </View>
                   <View style={styles.activityInfo}>
                     <Text style={styles.activityTitle} numberOfLines={1}>
@@ -355,6 +366,7 @@ const DriverHome = ({ navigation }) => {
             </View>
           )}
         </View>
+
       </ScrollView>
 
       <BottomTabBar navigation={navigation} variant="driver" active="home" />
@@ -365,58 +377,39 @@ const DriverHome = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-    width,
-    minHeight: height,
-    paddingBottom: 72,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  driverInfo: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: spacing.sm,
-  },
-  headerRight: {
-    flexDirection: 'row',
     alignItems: 'center',
-    flexShrink: 0,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
   },
-  logoutHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 10,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  logoutHeaderBtnText: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.95)',
-  },
-  driverNameLight: {
+  greeting: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textWhite,
-    marginBottom: 4,
+    fontWeight: '700',
+    color: '#000000',
   },
-  ratingRow: {
-    flexDirection: 'row',
+  subtitle: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  avatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#000000',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
   },
-  driverRatingLight: {
+  avatarText: {
+    color: '#FFFFFF',
     fontSize: 16,
-    color: colors.textWhite,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   toggleSection: {
     paddingHorizontal: 16,
@@ -437,18 +430,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   toggleCircleOffline: {
-    backgroundColor: colors.border,
-    shadowColor: colors.black,
+    backgroundColor: '#E0E0E0',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
   },
   toggleCircleOnline: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
   },
   toggleGlowOnline: {
-    shadowColor: '#10B981',
+    shadowColor: '#00C853',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.95,
     shadowRadius: 32,
@@ -461,46 +454,48 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.textWhite,
+    backgroundColor: '#FFFFFF',
   },
   toggleIndicatorOffline: {
-    backgroundColor: colors.textSecondary,
+    backgroundColor: '#9E9E9E',
   },
   toggleIndicatorOnline: {
-    backgroundColor: colors.success,
+    backgroundColor: '#00C853',
   },
   motivationalText: {
     marginTop: 20,
     fontSize: 17,
     fontWeight: '700',
     textAlign: 'center',
-    color: colors.textPrimary,
+    color: '#000000',
     paddingHorizontal: spacing.md,
     lineHeight: 24,
   },
   earningsCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     marginHorizontal: spacing.md,
     padding: spacing.lg,
     borderRadius: radius.md,
     alignItems: 'center',
     marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
     ...shadows.card,
   },
   earningsLabel: {
     fontSize: 16,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     marginBottom: spacing.sm,
   },
   earningsAmount: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: colors.accent,
+    color: '#000000',
     marginBottom: 4,
   },
   deliveriesCount: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
   },
   actionButtons: {
     paddingHorizontal: 20,
@@ -509,34 +504,36 @@ const styles = StyleSheet.create({
   },
   postRouteButton: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: '#000000',
     paddingVertical: 16,
     borderRadius: radius.md,
     alignItems: 'center',
   },
   postRouteText: {
-    color: colors.primary,
+    color: '#000000',
     fontSize: 16,
     fontWeight: '600',
   },
   viewJobsButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     paddingVertical: 16,
     borderRadius: radius.md,
     alignItems: 'center',
   },
   viewJobsText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
   ratingCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     marginHorizontal: spacing.md,
     padding: spacing.lg,
     borderRadius: radius.md,
     marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
     ...shadows.card,
   },
   ratingHeader: {
@@ -548,16 +545,16 @@ const styles = StyleSheet.create({
   ratingTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
   },
   tierBadge: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   tierText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -571,38 +568,40 @@ const styles = StyleSheet.create({
   ratingValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 4,
   },
   ratingLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     textAlign: 'center',
   },
   recentSection: {
     paddingHorizontal: 20,
-    marginBottom: 88,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 16,
   },
   errorText: {
-    color: colors.danger,
+    color: '#FF3B30',
     marginBottom: 8,
     fontSize: 14,
   },
   emptyText: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     marginBottom: 12,
   },
   activityList: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
-    padding: 4,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    overflow: 'hidden',
     ...shadows.card,
   },
   activityItem: {
@@ -610,13 +609,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomColor: '#F5F5F5',
   },
   activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primaryLight,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
@@ -627,22 +626,22 @@ const styles = StyleSheet.create({
   activityTitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 2,
   },
   activitySubtitle: {
     fontSize: 12,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     marginBottom: 2,
   },
   activityTime: {
     fontSize: 11,
-    color: colors.textLight,
+    color: '#BDBDBD',
   },
   activityAmount: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.success,
+    color: '#00C853',
   },
 });
 
