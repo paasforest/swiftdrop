@@ -5,18 +5,16 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
   ActivityIndicator,
   Linking,
+  StatusBar,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
 import SwiftDropLogoMark from '../../components/SwiftDropLogoMark';
 import AvatarPlaceholder from '../../components/AvatarPlaceholder';
-
-const { width, height } = Dimensions.get('window');
 
 function humanStatus(status) {
   if (!status) return '';
@@ -27,6 +25,28 @@ function formatMoney(n) {
   const x = Number(n);
   if (Number.isNaN(x)) return 'R0.00';
   return `R${x.toFixed(2)}`;
+}
+
+function statusColor(status) {
+  const s = String(status || '');
+  if (['cancelled', 'refunded'].includes(s)) return '#FF3B30';
+  if (['delivered', 'completed'].includes(s)) return '#000000';
+  return '#00C853';
+}
+
+const PROGRESS_STEPS = [
+  { key: 'placed',    label: 'Order placed' },
+  { key: 'en_route',  label: 'Driver en route' },
+  { key: 'collected', label: 'Parcel collected' },
+  { key: 'delivered', label: 'Delivered' },
+];
+
+function stepIndexFromStatus(status) {
+  const s = String(status || '');
+  if (['delivered', 'completed'].includes(s)) return 3;
+  if (['collected', 'delivery_en_route', 'delivery_arrived'].includes(s)) return 2;
+  if (['pickup_en_route', 'pickup_arrived'].includes(s)) return 1;
+  return 0;
 }
 
 const Tracking = ({ navigation, route }) => {
@@ -64,9 +84,7 @@ const Tracking = ({ navigation, route }) => {
       }
     }
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [orderId]);
 
   const handleCall = () => {
@@ -77,6 +95,7 @@ const Tracking = ({ navigation, route }) => {
   if (!orderId) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Track a delivery</Text>
           <Text style={styles.emptySub}>
@@ -93,8 +112,9 @@ const Tracking = ({ navigation, route }) => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.emptyWrap}>
-          <ActivityIndicator size="large" color={colors.primary} />
+          <ActivityIndicator size="large" color="#00C853" />
           <Text style={styles.emptySub}>Loading order…</Text>
         </View>
       </SafeAreaView>
@@ -104,6 +124,7 @@ const Tracking = ({ navigation, route }) => {
   if (error || !order) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyTitle}>Could not load order</Text>
           <Text style={styles.emptySub}>{error || 'Unknown error'}</Text>
@@ -119,84 +140,141 @@ const Tracking = ({ navigation, route }) => {
   const vehicleBits = [order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ');
   const plate = order.vehicle_plate || '';
   const parcelBits = [order.parcel_type, order.parcel_size].filter(Boolean).join(' — ');
+  const currentStep = stepIndexFromStatus(order.status);
+  const sColor = statusColor(order.status);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.mapContainer}>
-        <View style={styles.mapPlaceholder}>
-          <SwiftDropLogoMark />
-        </View>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Track delivery</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <View style={styles.bottomSheet}>
-        {order.driver_id ? (
-          <View style={styles.driverInfo}>
-            <AvatarPlaceholder size={60} />
-            <View style={styles.driverDetails}>
-              <Text style={styles.driverName}>{driverName}</Text>
-              {order.driver_rating != null ? (
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={16} color={colors.accent} style={{ marginRight: 4 }} />
-                  <Text style={styles.driverRating}>{Number(order.driver_rating).toFixed(1)}</Text>
-                </View>
-              ) : null}
-              <Text style={styles.driverVehicle} numberOfLines={2}>
-                {[vehicleBits, plate].filter(Boolean).join(' • ') || 'Vehicle details pending'}
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <Text style={styles.noDriver}>Matching a driver…</Text>
-        )}
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
 
-        <View style={styles.statusBanner}>
-          <Text style={styles.statusText}>{humanStatus(order.status)}</Text>
-          <Text style={styles.etaText}>#{order.order_number}</Text>
+        {/* Map placeholder */}
+        <View style={styles.mapContainer}>
+          <SwiftDropLogoMark />
         </View>
 
-        {order.driver_phone ? (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
-              <Ionicons name="call-outline" size={24} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-        ) : null}
+        {/* Status banner */}
+        <View style={styles.statusBanner}>
+          <View style={[styles.statusDot, { backgroundColor: sColor }]} />
+          <Text style={[styles.statusText, { color: sColor }]}>
+            {humanStatus(order.status)}
+          </Text>
+          <Text style={styles.orderNumber}>#{order.order_number}</Text>
+        </View>
 
+        {/* Progress steps */}
+        <View style={styles.progressSection}>
+          {PROGRESS_STEPS.map((step, index) => {
+            const isCompleted = index < currentStep;
+            const isCurrent = index === currentStep;
+            const isFuture = index > currentStep;
+            return (
+              <View key={step.key} style={styles.progressStep}>
+                <View style={styles.progressLeft}>
+                  <View
+                    style={[
+                      styles.stepDot,
+                      isCompleted && styles.stepDotCompleted,
+                      isCurrent && styles.stepDotCurrent,
+                      isFuture && styles.stepDotFuture,
+                    ]}
+                  />
+                  {index < PROGRESS_STEPS.length - 1 && (
+                    <View
+                      style={[
+                        styles.stepConnector,
+                        isCompleted ? styles.stepConnectorCompleted : styles.stepConnectorFuture,
+                      ]}
+                    />
+                  )}
+                </View>
+                <Text
+                  style={[
+                    styles.stepLabel,
+                    (isCompleted || isCurrent) && styles.stepLabelActive,
+                    isFuture && styles.stepLabelFuture,
+                  ]}
+                >
+                  {step.label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Driver card */}
+        <View style={styles.driverCard}>
+          {order.driver_id ? (
+            <View style={styles.driverRow}>
+              <AvatarPlaceholder size={52} />
+              <View style={styles.driverDetails}>
+                <Text style={styles.driverName}>{driverName}</Text>
+                {order.driver_rating != null ? (
+                  <View style={styles.ratingRow}>
+                    <Ionicons name="star" size={14} color="#FFB800" style={{ marginRight: 4 }} />
+                    <Text style={styles.driverRating}>
+                      {Number(order.driver_rating).toFixed(1)}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text style={styles.driverVehicle} numberOfLines={2}>
+                  {[vehicleBits, plate].filter(Boolean).join(' • ') || 'Vehicle details pending'}
+                </Text>
+              </View>
+              {order.driver_phone ? (
+                <TouchableOpacity style={styles.callButton} onPress={handleCall}>
+                  <Ionicons name="call-outline" size={22} color="#000000" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : (
+            <Text style={styles.noDriver}>Matching a driver…</Text>
+          )}
+        </View>
+
+        {/* Delivery details */}
         <View style={styles.deliveryDetails}>
+          <Text style={styles.sectionLabel}>DELIVERY DETAILS</Text>
+
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>From:</Text>
-            <Text style={styles.detailValue} numberOfLines={2}>
-              {order.pickup_address}
-            </Text>
+            <Text style={styles.detailLabel}>From</Text>
+            <Text style={styles.detailValue} numberOfLines={2}>{order.pickup_address}</Text>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>To:</Text>
-            <Text style={styles.detailValue} numberOfLines={2}>
-              {order.dropoff_address}
-            </Text>
+          <View style={[styles.detailRow, styles.detailRowBorder]}>
+            <Text style={styles.detailLabel}>To</Text>
+            <Text style={styles.detailValue} numberOfLines={2}>{order.dropoff_address}</Text>
           </View>
           {parcelBits ? (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Parcel:</Text>
+            <View style={[styles.detailRow, styles.detailRowBorder]}>
+              <Text style={styles.detailLabel}>Parcel</Text>
               <Text style={styles.detailValue}>{parcelBits}</Text>
             </View>
           ) : null}
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Tier:</Text>
-            <View style={styles.deliveryTypeBadge}>
-              <Text style={styles.deliveryTypeText}>{order.delivery_tier || '—'}</Text>
+          <View style={[styles.detailRow, styles.detailRowBorder]}>
+            <Text style={styles.detailLabel}>Tier</Text>
+            <View style={styles.tierBadge}>
+              <Text style={styles.tierBadgeText}>{order.delivery_tier || '—'}</Text>
             </View>
           </View>
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Total:</Text>
-            <Text style={styles.detailValue}>{formatMoney(order.total_price)}</Text>
+          <View style={[styles.detailRow, styles.detailRowBorder]}>
+            <Text style={styles.detailLabel}>Total</Text>
+            <Text style={[styles.detailValue, { fontWeight: '700' }]}>
+              {formatMoney(order.total_price)}
+            </Text>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
-          <Text style={styles.backLinkText}>← Back to home</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -204,176 +282,242 @@ const Tracking = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width,
-    minHeight: height,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  backButton: { padding: 8 },
+  backArrow: { fontSize: 22, color: '#000000' },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   emptyWrap: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 28,
+    alignItems: 'center',
   },
   emptyTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: '#000000',
     marginBottom: 12,
     textAlign: 'center',
   },
   emptySub: {
     fontSize: 15,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
   },
   backBtn: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#000000',
     paddingVertical: 14,
-    borderRadius: radius.md,
+    paddingHorizontal: 32,
+    borderRadius: 14,
     alignItems: 'center',
   },
   backBtnText: {
-    color: colors.textWhite,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
   mapContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
+    height: 180,
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  mapPlaceholder: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  bottomSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    ...shadows.modal,
-  },
-  noDriver: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  driverInfo: {
+  statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  statusText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    textTransform: 'capitalize',
+  },
+  orderNumber: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    fontWeight: '500',
+  },
+  progressSection: {
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  progressStep: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  progressLeft: {
+    alignItems: 'center',
+    width: 24,
+    marginRight: 14,
+  },
+  stepDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  stepDotCompleted: {
+    backgroundColor: '#00C853',
+  },
+  stepDotCurrent: {
+    backgroundColor: '#000000',
+  },
+  stepDotFuture: {
+    backgroundColor: '#E0E0E0',
+  },
+  stepConnector: {
+    width: 2,
+    height: 28,
+    marginVertical: 2,
+  },
+  stepConnectorCompleted: {
+    backgroundColor: '#00C853',
+  },
+  stepConnectorFuture: {
+    backgroundColor: '#E0E0E0',
+  },
+  stepLabel: {
+    fontSize: 14,
+    paddingTop: 0,
+    marginBottom: 28,
+  },
+  stepLabelActive: {
+    color: '#000000',
+    fontWeight: '600',
+  },
+  stepLabelFuture: {
+    color: '#9E9E9E',
+  },
+  driverCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    padding: 16,
+    margin: 16,
+  },
+  driverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   driverDetails: {
     flex: 1,
-    marginLeft: spacing.md,
+    marginLeft: 14,
   },
   driverName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 3,
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 3,
   },
   driverRating: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.textPrimary,
+    color: '#9E9E9E',
   },
   driverVehicle: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    fontSize: 13,
+    color: '#9E9E9E',
   },
-  statusBanner: {
-    backgroundColor: colors.primaryLight,
-    padding: 12,
-    borderRadius: radius.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  statusText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.primary,
-    flex: 1,
-    textTransform: 'capitalize',
-  },
-  etaText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginBottom: 20,
-  },
-  actionButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.background,
+  callButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E0E0E0',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+  },
+  noDriver: {
+    fontSize: 15,
+    color: '#9E9E9E',
+    textAlign: 'center',
+    paddingVertical: 8,
   },
   deliveryDetails: {
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    padding: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    padding: 16,
+    marginHorizontal: 16,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 14,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    paddingVertical: 10,
+  },
+  detailRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#F5F5F5',
   },
   detailLabel: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     width: 56,
   },
   detailValue: {
     flex: 1,
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#000000',
     textAlign: 'right',
     fontWeight: '500',
   },
-  deliveryTypeBadge: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 8,
+  tierBadge: {
+    backgroundColor: '#000000',
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  deliveryTypeText: {
-    color: colors.textWhite,
+  tierBadgeText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'capitalize',
-  },
-  backLink: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  backLinkText: {
-    color: colors.primary,
-    fontSize: 15,
-    fontWeight: '600',
   },
 });
 

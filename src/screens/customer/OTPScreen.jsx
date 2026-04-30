@@ -1,20 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, Dimensions, TextInput } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+  StatusBar,
+} from 'react-native';
 import { postJson } from '../../apiClient';
 import { setAuth } from '../../authStore';
 import { resetToRoleHome } from '../../navigationHelpers';
-import { colors, spacing, radius, typography } from '../../theme/theme';
-import { AppButton } from '../../components/ui';
-
-const { width, height } = Dimensions.get('window');
 
 const OTPScreen = ({ navigation, route }) => {
   const phone = route?.params?.phone;
 
-  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
+  const [timeRemaining, setTimeRemaining] = useState(600);
   const [otp, setOtp] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+
+  const inputRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -26,7 +33,6 @@ const OTPScreen = ({ navigation, route }) => {
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, []);
 
@@ -34,6 +40,25 @@ const OTPScreen = ({ navigation, route }) => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleDigitChange = (text, index) => {
+    const digit = text.replace(/[^0-9]/g, '').slice(-1);
+    const arr = Array.from({ length: 4 }, (_, i) => otp[i] || '');
+    arr[index] = digit;
+    setOtp(arr.join(''));
+    if (digit && index < 3) {
+      inputRefs[index + 1].current?.focus();
+    }
+  };
+
+  const handleKeyPress = (e, index) => {
+    if (e.nativeEvent.key === 'Backspace' && index > 0 && !otp[index]) {
+      const arr = Array.from({ length: 4 }, (_, i) => otp[i] || '');
+      arr[index - 1] = '';
+      setOtp(arr.join(''));
+      inputRefs[index - 1].current?.focus();
+    }
   };
 
   const handleVerify = async () => {
@@ -49,10 +74,7 @@ const OTPScreen = ({ navigation, route }) => {
         return;
       }
 
-      const data = await postJson('/api/auth/verify-phone', {
-        phone,
-        otp,
-      });
+      const data = await postJson('/api/auth/verify-phone', { phone, otp });
 
       setAuth({
         token: data.token,
@@ -68,46 +90,95 @@ const OTPScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleResend = () => {
+    setTimeRemaining(600);
+    setOtp('');
+    setErrorMessage(null);
+    inputRefs[0].current?.focus();
+  };
+
+  const canVerify = otp.length === 4 && !isVerifying && timeRemaining > 0;
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Verify your phone</Text>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        {/* OTP Info Box */}
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>
-            Enter the 4-digit code we sent to your phone.
-          </Text>
+      {/* Top section */}
+      <View style={styles.topSection}>
+        <View style={styles.otpIconCircle}>
+          <Text style={styles.otpIcon}>💬</Text>
         </View>
-
-        {/* OTP Input */}
-        <View style={styles.otpInputRow}>
-          <TextInput
-            style={styles.otpInput}
-            value={otp}
-            onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, '').slice(0, 4))}
-            keyboardType="number-pad"
-            placeholder="1234"
-            editable={!isVerifying && timeRemaining > 0}
-            maxLength={4}
-          />
-        </View>
-
-        {/* Expiry Notice */}
-        <Text style={styles.expiryText}>
-          This code expires in {formatTime(timeRemaining)}
+        <Text style={styles.otpTitle}>Verify your number</Text>
+        <Text style={styles.otpSubtitle}>
+          Enter the code sent to {phone || 'your phone'}
         </Text>
-
-        {errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
-
-        <AppButton
-          label="Confirm OTP"
-          onPress={handleVerify}
-          variant="primary"
-          loading={isVerifying}
-          disabled={isVerifying || timeRemaining <= 0}
-        />
       </View>
+
+      {/* OTP boxes */}
+      <View style={styles.otpBoxRow}>
+        {[0, 1, 2, 3].map((index) => (
+          <TextInput
+            key={index}
+            ref={inputRefs[index]}
+            style={[
+              styles.otpBox,
+              otp[index] ? styles.otpBoxFilled : null,
+            ]}
+            value={otp[index] || ''}
+            onChangeText={(text) => handleDigitChange(text, index)}
+            onKeyPress={(e) => handleKeyPress(e, index)}
+            keyboardType="number-pad"
+            maxLength={1}
+            editable={!isVerifying && timeRemaining > 0}
+            selectTextOnFocus
+          />
+        ))}
+      </View>
+
+      {/* Timer */}
+      <Text style={styles.timerText}>
+        {timeRemaining > 0
+          ? `Code expires in ${formatTime(timeRemaining)}`
+          : 'Code has expired'}
+      </Text>
+
+      {/* Error */}
+      {errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
+
+      {/* Verify button */}
+      <View style={styles.buttonWrap}>
+        <TouchableOpacity
+          style={[styles.verifyButton, !canVerify && { opacity: 0.4 }]}
+          onPress={handleVerify}
+          disabled={!canVerify}
+        >
+          {isVerifying ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.verifyButtonText}>Verify</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Resend */}
+      <TouchableOpacity
+        style={styles.resendWrap}
+        onPress={handleResend}
+        disabled={timeRemaining > 0}
+      >
+        <Text
+          style={[
+            styles.resendText,
+            timeRemaining === 0 && styles.resendTextReady,
+          ]}
+        >
+          {timeRemaining > 0
+            ? `Resend code in ${formatTime(timeRemaining)}`
+            : 'Resend code'}
+        </Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -115,63 +186,97 @@ const OTPScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
-    width: width,
-    height: height,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 24,
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: 40,
+  topSection: {
     alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 40,
   },
-  title: {
-    ...typography.h2,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 40,
-  },
-  infoBox: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: 40,
-    width: '100%',
-  },
-  infoText: {
-    ...typography.body,
-    color: colors.primary,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  otpInputRow: {
-    marginBottom: 12,
-    width: '100%',
+  otpIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
-  otpInput: {
-    width: '60%',
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    fontSize: 22,
-    textAlign: 'center',
-    color: colors.textPrimary,
+  otpIcon: { fontSize: 32 },
+  otpTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 8,
   },
-  expiryText: {
+  otpSubtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     textAlign: 'center',
-    marginBottom: 40,
+    lineHeight: 20,
+  },
+  otpBoxRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 14,
+    marginBottom: 24,
+  },
+  otpBox: {
+    width: 64,
+    height: 72,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    fontSize: 28,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#000000',
+  },
+  otpBoxFilled: {
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  timerText: {
+    fontSize: 14,
+    color: '#BDBDBD',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   errorText: {
-    color: colors.danger,
+    color: '#DC2626',
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  buttonWrap: {
+    marginBottom: 20,
+  },
+  verifyButton: {
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  resendWrap: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  resendText: {
+    fontSize: 14,
+    color: '#9E9E9E',
+  },
+  resendTextReady: {
+    color: '#000000',
+    fontWeight: '600',
   },
 });
 
