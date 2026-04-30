@@ -12,12 +12,12 @@ import {
   ActivityIndicator,
   Animated,
   Keyboard,
+  StatusBar,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { spacing, radius, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -416,6 +416,18 @@ const AddressEntry = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Clean white header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>New delivery</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Map */}
       <View style={styles.mapWrap}>
         <MapView
           ref={mapRef}
@@ -429,15 +441,15 @@ const AddressEntry = ({ navigation }) => {
           pitchEnabled={false}
         >
           {pickupCoords && (
-            <Marker coordinate={pickupCoords} title="Pickup" pinColor={colors.success} />
+            <Marker coordinate={pickupCoords} title="Pickup" pinColor="#00C853" />
           )}
           {dropoffCoords && (
-            <Marker coordinate={dropoffCoords} title="Delivery" pinColor={colors.danger} />
+            <Marker coordinate={dropoffCoords} title="Delivery" pinColor="#FF3B30" />
           )}
           {polylineCoords && (
             <Polyline
               coordinates={polylineCoords}
-              strokeColor={colors.primary}
+              strokeColor="#00C853"
               strokeWidth={3}
               lineDashPattern={[8, 6]}
             />
@@ -447,7 +459,7 @@ const AddressEntry = ({ navigation }) => {
         <View style={styles.topBanner} pointerEvents="box-none">
           {mapCentering ? (
             <View style={styles.topBannerInner}>
-              <ActivityIndicator color={colors.primary} size="small" />
+              <ActivityIndicator color="#00C853" size="small" />
               <Text style={[styles.topBannerText, { marginLeft: 8 }]}>Loading map…</Text>
             </View>
           ) : locationError ? (
@@ -458,21 +470,22 @@ const AddressEntry = ({ navigation }) => {
         </View>
       </View>
 
+      {/* Bottom panel */}
       <View style={styles.bottomPanel}>
-        <View style={styles.inputBlock}>
-          <View style={styles.row}>
-            <View style={styles.greenDot} />
+
+        {/* Uber-style address card with connected dots */}
+        <View style={styles.addressCard}>
+          <View style={styles.addressRow}>
+            <View style={styles.dotGreen} />
             <TextInput
-              style={styles.input}
+              style={styles.addressInput}
+              placeholder="Pickup address"
+              placeholderTextColor="#9E9E9E"
               value={pickupAddress}
               onChangeText={(t) => {
                 setPickupAddress(t);
-                if (!t.trim()) {
-                  setPickupCoords(null);
-                }
+                if (!t.trim()) setPickupCoords(null);
               }}
-              placeholder="Enter pickup address"
-              placeholderTextColor={colors.textLight}
               returnKeyType="search"
               onFocus={() => setFocusedField('pickup')}
               onBlur={() => {
@@ -481,41 +494,19 @@ const AddressEntry = ({ navigation }) => {
             />
           </View>
 
-          {showPickupDropdown ? (
-            <PredictionDropdown
-              loading={placesLoadingPickup}
-              predictions={pickupPredictions}
-              error={placesErrorPickup}
-              onSelect={onSelectPickupPrediction}
-            />
-          ) : null}
+          <View style={styles.addressConnector} />
 
-          <TouchableOpacity
-            style={styles.useLocationLink}
-            onPress={useCurrentLocation}
-            disabled={locationBusy || mapCentering}
-            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-            accessibilityRole="button"
-            accessibilityLabel="Use current location for pickup"
-          >
-            {locationBusy ? (
-              <ActivityIndicator color={colors.primary} size="small" />
-            ) : (
-              <Text style={styles.useLocationLinkText}>Use current location</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={[styles.row, { marginTop: spacing.sm }]}>
-            <View style={styles.redDot} />
+          <View style={styles.addressRow}>
+            <View style={styles.dotBlack} />
             <TextInput
-              style={styles.input}
+              style={styles.addressInput}
+              placeholder="Dropoff address"
+              placeholderTextColor="#9E9E9E"
               value={deliveryAddress}
               onChangeText={(t) => {
                 setDeliveryAddress(t);
                 if (!t.trim()) setDropoffCoords(null);
               }}
-              placeholder="Enter delivery address"
-              placeholderTextColor={colors.textLight}
               returnKeyType="search"
               onFocus={() => setFocusedField('delivery')}
               onBlur={() => {
@@ -523,17 +514,44 @@ const AddressEntry = ({ navigation }) => {
               }}
             />
           </View>
-
-          {showDeliveryDropdown ? (
-            <PredictionDropdown
-              loading={placesLoadingDelivery}
-              predictions={deliveryPredictions}
-              error={placesErrorDelivery}
-              onSelect={onSelectDeliveryPrediction}
-            />
-          ) : null}
         </View>
 
+        {/* Pickup predictions */}
+        {showPickupDropdown ? (
+          <PredictionDropdown
+            loading={placesLoadingPickup}
+            predictions={pickupPredictions}
+            error={placesErrorPickup}
+            onSelect={onSelectPickupPrediction}
+          />
+        ) : null}
+
+        {/* Delivery predictions */}
+        {showDeliveryDropdown ? (
+          <PredictionDropdown
+            loading={placesLoadingDelivery}
+            predictions={deliveryPredictions}
+            error={placesErrorDelivery}
+            onSelect={onSelectDeliveryPrediction}
+          />
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.useLocationLink}
+          onPress={useCurrentLocation}
+          disabled={locationBusy || mapCentering}
+          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+          accessibilityRole="button"
+          accessibilityLabel="Use current location for pickup"
+        >
+          {locationBusy ? (
+            <ActivityIndicator color="#00C853" size="small" />
+          ) : (
+            <Text style={styles.useLocationLinkText}>📍 Use current location</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Confirm card — slides up when both addresses set */}
         <Animated.View
           style={[styles.confirmCard, { transform: [{ translateY: confirmTranslateY }] }]}
         >
@@ -541,13 +559,13 @@ const AddressEntry = ({ navigation }) => {
             <>
               <View style={styles.confirmRow}>
                 <View style={styles.greenDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={3}>
+                <Text style={styles.confirmAddr} numberOfLines={2}>
                   {pickupAddress.trim()}
                 </Text>
               </View>
               <View style={styles.confirmRow}>
-                <View style={styles.redDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={3}>
+                <View style={styles.blackDotSmall} />
+                <Text style={styles.confirmAddr} numberOfLines={2}>
                   {deliveryAddress.trim()}
                 </Text>
               </View>
@@ -556,22 +574,21 @@ const AddressEntry = ({ navigation }) => {
                   ? `${Math.round(distanceKm * 1000)} m apart`
                   : `${distanceKm.toFixed(1)} km apart`}
               </Text>
-              <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-                <Text style={styles.confirmButtonText}>Confirm</Text>
+              <TouchableOpacity
+                style={[styles.continueButton, !canConfirm && styles.continueButtonDisabled]}
+                onPress={handleConfirm}
+                disabled={!canConfirm}
+              >
+                <Text style={styles.continueButtonText}>Continue</Text>
               </TouchableOpacity>
             </>
           ) : (
             <Text style={styles.confirmHint}>
-              Select pickup and delivery from the suggestions, or use &quot;Use current location&quot;
-              for pickup.
+              Select pickup and delivery from the suggestions, or use &quot;Use current location&quot; for pickup.
             </Text>
           )}
         </Animated.View>
 
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backLink}>
-          <Ionicons name="chevron-back" size={22} color={colors.primary} />
-          <Text style={[styles.backLinkText, { marginLeft: 4 }]}>Back</Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -582,7 +599,7 @@ function PredictionDropdown({ loading, predictions, error, onSelect }) {
     <View style={styles.predictionsWrap}>
       {loading ? (
         <View style={styles.predictionsLoadingInner}>
-          <ActivityIndicator color={colors.primary} size="small" />
+          <ActivityIndicator color="#00C853" size="small" />
         </View>
       ) : error ? (
         <Text style={styles.predictionsError}>{error}</Text>
@@ -631,11 +648,33 @@ function useDebounced(value, delay) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  backButton: {
+    padding: 8,
+  },
+  backArrow: {
+    fontSize: 22,
+    color: '#000000',
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#000000',
   },
   mapWrap: {
     flex: 1,
-    minHeight: height * 0.38,
+    minHeight: height * 0.32,
   },
   topBanner: {
     position: 'absolute',
@@ -656,94 +695,102 @@ const styles = StyleSheet.create({
   },
   topBannerText: {
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#000000',
     fontWeight: '600',
   },
   topBannerError: {
     fontSize: 13,
-    color: colors.danger,
+    color: '#FF3B30',
   },
   bottomPanel: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: spacing.md,
     paddingTop: 14,
     paddingBottom: spacing.sm,
-    shadowColor: colors.black,
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 12,
-    maxHeight: height * 0.55,
+    maxHeight: height * 0.58,
   },
-  inputBlock: {
-    marginBottom: 6,
+  addressCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  row: {
+  addressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 0,
-    paddingHorizontal: 4,
+    paddingVertical: 10,
   },
-  greenDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.success,
-    marginLeft: spacing.sm,
+  dotGreen: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#00C853',
+    marginRight: 14,
+    flexShrink: 0,
   },
-  redDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.danger,
-    marginLeft: spacing.sm,
+  dotBlack: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    backgroundColor: '#000000',
+    marginRight: 14,
+    flexShrink: 0,
   },
-  input: {
+  addressConnector: {
+    width: 2,
+    height: 20,
+    backgroundColor: '#E0E0E0',
+    marginLeft: 5,
+  },
+  addressInput: {
     flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    fontSize: 16,
-    color: colors.textPrimary,
+    fontSize: 15,
+    color: '#000000',
+    paddingVertical: 2,
   },
   useLocationLink: {
     alignSelf: 'flex-start',
-    marginTop: spacing.sm,
-    marginLeft: spacing.sm + 10,
-    marginBottom: spacing.xs,
-    minHeight: 22,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+    minHeight: 24,
     justifyContent: 'center',
   },
   useLocationLinkText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
-    color: colors.primary,
+    color: '#000000',
   },
   predictionsWrap: {
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-    maxHeight: 220,
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: radius.md,
-    borderBottomRightRadius: radius.md,
+    marginBottom: 6,
+    maxHeight: 200,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: colors.black,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
-      },
-      android: { elevation: 4 },
-    }),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
   predictionsScroll: {
-    maxHeight: 220,
+    maxHeight: 200,
   },
   predictionsLoadingInner: {
     paddingVertical: spacing.lg,
@@ -751,44 +798,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   predictionsError: {
-    color: colors.danger,
+    color: '#FF3B30',
     fontSize: 13,
     padding: spacing.md,
   },
   predictionsEmpty: {
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     fontSize: 14,
     padding: spacing.md,
     textAlign: 'center',
   },
   predictionRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF',
   },
   predictionRowLast: {
     borderBottomWidth: 0,
   },
   predictionMain: {
-    fontSize: 15,
-    color: colors.textPrimary,
-    fontWeight: '700',
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '600',
   },
   predictionSub: {
     fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-    fontWeight: '400',
+    color: '#9E9E9E',
+    marginTop: 2,
   },
   confirmCard: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
+    backgroundColor: '#F5F5F5',
+    borderRadius: radius.md,
     padding: 14,
     marginTop: 4,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: '#E0E0E0',
   },
   confirmRow: {
     flexDirection: 'row',
@@ -799,59 +845,54 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.success,
+    backgroundColor: '#00C853',
     marginTop: 6,
     marginRight: 10,
+    flexShrink: 0,
   },
-  redDotSmall: {
+  blackDotSmall: {
     width: 8,
     height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.danger,
+    borderRadius: 2,
+    backgroundColor: '#000000',
     marginTop: 6,
     marginRight: 10,
+    flexShrink: 0,
   },
   confirmAddr: {
     flex: 1,
-    fontSize: 14,
-    color: colors.textPrimary,
-    lineHeight: 20,
+    fontSize: 13,
+    color: '#000000',
+    lineHeight: 18,
   },
   distanceText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
+    color: '#00C853',
     marginBottom: 12,
     marginLeft: 18,
   },
-  confirmButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: radius.md,
+  continueButton: {
+    backgroundColor: '#000000',
+    borderRadius: 14,
+    height: 52,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  confirmButtonText: {
-    color: colors.textWhite,
+  continueButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
+  continueButtonDisabled: {
+    opacity: 0.4,
+  },
   confirmHint: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: '#9E9E9E',
     textAlign: 'center',
     paddingVertical: spacing.sm,
     lineHeight: 18,
-  },
-  backLink: {
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  backLinkText: {
-    color: colors.primary,
-    fontSize: 15,
-    fontWeight: '600',
   },
 });
 
