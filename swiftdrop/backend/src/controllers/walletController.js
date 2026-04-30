@@ -33,6 +33,30 @@ async function getWalletBalance(req, res) {
   }
 }
 
+/**
+ * GET /api/wallet/transactions?limit=20 — recent wallet rows for the authenticated user.
+ */
+async function getTransactions(req, res) {
+  try {
+    const raw = req.query.limit;
+    const n = raw != null ? parseInt(String(raw), 10) : 20;
+    const limit = Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 20;
+    const { rows } = await db.query(
+      `SELECT id, user_id, type, amount, reference, description, created_at
+       FROM wallet_transactions
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [req.user.id, limit]
+    );
+    return res.json({ transactions: rows });
+  } catch (err) {
+    console.error('getTransactions:', err);
+    return res.status(500).json({ error: 'Could not load transactions' });
+  }
+}
+
 module.exports = {
   getWalletBalance,
+  getTransactions,
 };

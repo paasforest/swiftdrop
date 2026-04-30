@@ -25,6 +25,8 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminDriverRoutes);
 app.use('/api', ratingsRoutes);
 app.use('/api/drivers', driverRoutes);
+/** Alias: mobile app calls /api/driver/earnings/* */
+app.use('/api/driver', driverRoutes);
 app.use('/api/driver-routes', driverRouteRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/notifications', notificationRoutes);
