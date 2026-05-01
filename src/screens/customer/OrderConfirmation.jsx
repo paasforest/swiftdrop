@@ -17,6 +17,7 @@ const OrderConfirmation = ({ navigation, route }) => {
     total_price,
     delivery_tier,
     trip_type,
+    departure_time,
   } = route?.params || {};
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -28,13 +29,21 @@ const OrderConfirmation = ({ navigation, route }) => {
       friction: 7,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [scaleAnim]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (trip_type === 'intercity' && orderId) {
+        navigation.replace('Tracking', { orderId });
+      }
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [navigation, trip_type, orderId]);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Success animation */}
       <View style={styles.successSection}>
         <Animated.View style={[styles.successCircle, { transform: [{ scale: scaleAnim }] }]}>
           <Text style={styles.successIcon}>✓</Text>
@@ -43,7 +52,6 @@ const OrderConfirmation = ({ navigation, route }) => {
         <Text style={styles.successSubtitle}>We are finding you a driver</Text>
       </View>
 
-      {/* Order summary */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>DELIVERY DETAILS</Text>
 
@@ -56,6 +64,21 @@ const OrderConfirmation = ({ navigation, route }) => {
           <View style={styles.dotBlack} />
           <Text style={styles.routeText} numberOfLines={1}>{dropoff_address || 'Dropoff'}</Text>
         </View>
+
+        {trip_type === 'intercity' && departure_time ? (
+          <View style={styles.departureChip}>
+            <Text style={styles.departureText}>
+              🕐 Driver departs{' '}
+              {new Date(departure_time).toLocaleString('en-ZA', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.divider} />
 
@@ -71,7 +94,6 @@ const OrderConfirmation = ({ navigation, route }) => {
         </View>
       </View>
 
-      {/* CTA */}
       <TouchableOpacity
         style={styles.trackButton}
         onPress={() => navigation.replace('DriverMatching', { orderId })}
@@ -118,6 +140,18 @@ const styles = StyleSheet.create({
     width: 2, height: 16, backgroundColor: '#E0E0E0', marginLeft: 4,
   },
   routeText: { fontSize: 14, color: '#000000', flex: 1 },
+  departureChip: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginTop: 12,
+  },
+  departureText: {
+    fontSize: 13,
+    color: '#00C853',
+    fontWeight: '600',
+  },
   divider: { height: 1, backgroundColor: '#F5F5F5', marginVertical: 16 },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   metaLabel: { fontSize: 13, color: '#9E9E9E' },

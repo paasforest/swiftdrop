@@ -1,18 +1,16 @@
 const crypto = require('crypto');
 
 function getPayFastBaseUrl() {
-  const useSandbox =
+  const SANDBOX =
+    process.env.PAYFAST_SANDBOX === 'true' ||
     String(process.env.PAYFAST_USE_SANDBOX || '').toLowerCase() === 'true' ||
     String(process.env.NODE_ENV || '').toLowerCase() !== 'production';
 
-  if (useSandbox) {
-    return (
-      process.env.PAYFAST_SANDBOX_PROCESS_URL ||
-      'https://sandbox.payfast.co.za/eng/process'
-    );
-  }
+  const PAYFAST_URL = SANDBOX
+    ? process.env.PAYFAST_SANDBOX_PROCESS_URL || 'https://sandbox.payfast.co.za/eng/process'
+    : process.env.PAYFAST_PROCESS_URL || 'https://www.payfast.co.za/eng/process';
 
-  return process.env.PAYFAST_PROCESS_URL || 'https://www.payfast.co.za/eng/process';
+  return PAYFAST_URL;
 }
 
 function md5(text) {

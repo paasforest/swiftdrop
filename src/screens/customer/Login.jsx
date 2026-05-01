@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { postJson } from '../../apiClient';
@@ -25,7 +26,7 @@ const Login = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [loginEmail, setLoginEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
   const [registerName, setRegisterName] = useState('');
@@ -47,18 +48,39 @@ const Login = ({ navigation }) => {
     return '';
   };
 
+  function getLoginPayload() {
+    const val = cleanLoginInput(loginId);
+    const password = cleanLoginInput(loginPassword);
+    const compact = val.replace(/\s/g, '');
+    let isPhone = /^(\+27|0)\d{9}$/.test(compact);
+    if (!isPhone && /^[678]\d{8}$/.test(compact)) {
+      isPhone = true;
+    }
+    if (isPhone) {
+      let phone = compact;
+      if (/^[678]\d{8}$/.test(phone)) {
+        phone = `+27${phone}`;
+      } else if (phone.startsWith('0')) {
+        phone = `+27${phone.slice(1)}`;
+      }
+      return { phone, password };
+    }
+    return { email: val.toLowerCase(), password };
+  }
+
   const handleLogin = async () => {
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const email = cleanLoginInput(loginEmail).toLowerCase();
+      const val = cleanLoginInput(loginId);
       const password = cleanLoginInput(loginPassword);
-      if (!email || !password) {
-        setErrorMessage('Email and password are required.');
+      if (!val || !password) {
+        setErrorMessage('Phone or email and password are required.');
         return;
       }
 
-      const data = await postJson('/api/auth/login', { email, password });
+      const payload = getLoginPayload();
+      const data = await postJson('/api/auth/login', payload);
 
       setAuth({
         token: data.token,
@@ -73,6 +95,40 @@ const Login = ({ navigation }) => {
       setIsSubmitting(false);
     }
   };
+
+  async function handleForgotPassword() {
+    if (!cleanLoginInput(loginId)) {
+      Alert.alert(
+        'Enter your details',
+        'Please enter your phone number or email first, then tap Forgot password.'
+      );
+      return;
+    }
+    try {
+      const val = cleanLoginInput(loginId);
+      const compact = val.replace(/\s/g, '');
+      let isPhone = /^(\+27|0)\d{9}$/.test(compact);
+      if (!isPhone && /^[678]\d{8}$/.test(compact)) {
+        isPhone = true;
+      }
+      let body;
+      if (isPhone) {
+        let phone = compact;
+        if (/^[678]\d{8}$/.test(phone)) {
+          phone = `+27${phone}`;
+        } else if (phone.startsWith('0')) {
+          phone = `+27${phone.slice(1)}`;
+        }
+        body = { phone };
+      } else {
+        body = { email: val.toLowerCase() };
+      }
+      await postJson('/api/auth/forgot-password', body);
+      Alert.alert('Code sent', 'We sent a reset code to your phone or email.');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not send code');
+    }
+  }
 
   const handleRegister = async () => {
     setErrorMessage(null);
@@ -123,7 +179,6 @@ const Login = ({ navigation }) => {
   };
 
   const handleGoogleSignIn = () => {};
-  const handleForgotPassword = () => {};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -168,12 +223,13 @@ const Login = ({ navigation }) => {
           <View style={styles.formContainer}>
             <TextInput
               style={styles.textInput}
-              placeholder="Email or phone"
+              placeholder="Phone number or email"
               placeholderTextColor="#BDBDBD"
-              value={loginEmail}
-              onChangeText={setLoginEmail}
-              keyboardType="email-address"
+              value={loginId}
+              onChangeText={setLoginId}
+              keyboardType="default"
               autoCapitalize="none"
+              autoCorrect={false}
             />
 
             <View style={styles.passwordRow}>

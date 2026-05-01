@@ -10,6 +10,7 @@ const driverApplicationUpload = multer({
 });
 
 router.post('/login', authController.login);
+router.post('/forgot-password', authController.forgotPassword);
 router.post('/register-customer', authController.registerCustomer);
 router.post('/register-driver', authController.registerDriver);
 router.post('/refresh-token', authController.refreshToken);

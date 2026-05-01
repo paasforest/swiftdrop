@@ -99,6 +99,7 @@ export default function TripBookingConfirm({ navigation, route }) {
       delivery_total: priceData.total_price,
       delivery_base_price: priceData.base_price,
       delivery_insurance_fee: priceData.insurance_fee ?? 0,
+      departure_time: trip.departure_time,
     });
   };
 

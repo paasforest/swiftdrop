@@ -16,6 +16,7 @@ import Home from './src/screens/customer/Home';
 import AddressEntry from './src/screens/customer/AddressEntry';
 import ParcelDescription from './src/screens/customer/ParcelDescription';
 import DeliveryTiers from './src/screens/customer/DeliveryTiers';
+import PriceConfirm from './src/screens/customer/PriceConfirm';
 import Payment from './src/screens/customer/Payment';
 import DriverMatching from './src/screens/customer/DriverMatching';
 import TrackingWithMap from './src/screens/customer/TrackingWithMap';
@@ -114,6 +115,7 @@ export default function App() {
         <Stack.Screen name="Home" component={Home} />
         <Stack.Screen name="AddressEntry" component={AddressEntry} />
         <Stack.Screen name="ParcelDescription" component={ParcelDescription} />
+        <Stack.Screen name="PriceConfirm" component={PriceConfirm} options={{ headerShown: false }} />
         <Stack.Screen name="DeliveryTiers" component={DeliveryTiers} />
         <Stack.Screen name="Payment" component={Payment} />
         <Stack.Screen name="DriverMatching" component={DriverMatching} />

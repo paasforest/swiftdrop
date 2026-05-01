@@ -31,7 +31,7 @@ function parseEstimatedValueToNumber(range) {
 
 const ParcelDescription = ({ navigation, route }) => {
   const baseParams = route?.params || {};
-  const [selectedCategory, setSelectedCategory] = useState('Documents');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedSize, setSelectedSize] = useState('medium');
   const [estimatedValue, setEstimatedValue] = useState('R200-R500');
   const [fragile, setFragile] = useState(false);
@@ -69,35 +69,40 @@ const ParcelDescription = ({ navigation, route }) => {
 
   const valueRanges = ['Under R200', 'R200-R500', 'R500-R1000', 'R1000-R2000'];
 
-  const handleNext = () => {
-    if (!prohibitedConfirmed) {
-      setShowProhibitedModal(true);
-    } else {
-      const parcel_value = parseEstimatedValueToNumber(estimatedValue);
-      const special_handling = JSON.stringify({ fragile, upright, careful });
-      navigation.navigate('DeliveryTiers', {
-        ...baseParams,
-        parcel_type: selectedCategory,
-        parcel_size: selectedSize,
-        parcel_value,
-        special_handling,
-      });
-    }
-  };
-
-  const handleProhibitedConfirm = () => {
-    setProhibitedConfirmed(true);
-    setShowProhibitedModal(false);
+  const goPriceConfirm = () => {
     const parcel_value = parseEstimatedValueToNumber(estimatedValue);
     const special_handling = JSON.stringify({ fragile, upright, careful });
-    navigation.navigate('DeliveryTiers', {
-      ...baseParams,
-      parcel_type: selectedCategory,
+    navigation.navigate('PriceConfirm', {
+      pickup_address: baseParams.pickup_address,
+      pickup_lat: baseParams.pickup_lat,
+      pickup_lng: baseParams.pickup_lng,
+      dropoff_address: baseParams.dropoff_address,
+      dropoff_lat: baseParams.dropoff_lat,
+      dropoff_lng: baseParams.dropoff_lng,
       parcel_size: selectedSize,
+      parcel_type: selectedCategory,
       parcel_value,
       special_handling,
     });
   };
+
+  const handleNext = () => {
+    if (!selectedCategory || !selectedSize) return;
+    if (!prohibitedConfirmed) {
+      setShowProhibitedModal(true);
+    } else {
+      goPriceConfirm();
+    }
+  };
+
+  const handleProhibitedConfirm = () => {
+    if (!selectedCategory || !selectedSize) return;
+    setProhibitedConfirmed(true);
+    setShowProhibitedModal(false);
+    goPriceConfirm();
+  };
+
+  const nextDisabled = !selectedCategory || !selectedSize;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -221,7 +226,11 @@ const ParcelDescription = ({ navigation, route }) => {
 
       {/* Next Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+        <TouchableOpacity
+          style={[styles.nextButton, nextDisabled && { opacity: 0.45 }]}
+          onPress={handleNext}
+          disabled={nextDisabled}
+        >
           <Text style={styles.nextButtonText}>Next</Text>
         </TouchableOpacity>
       </View>

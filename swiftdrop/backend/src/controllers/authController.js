@@ -292,35 +292,115 @@ async function verifyPhone(req, res) {
 }
 
 async function login(req, res) {
-  const email = String(req.body?.email || '').trim().toLowerCase();
+  const emailRaw = String(req.body?.email || '').trim().toLowerCase();
+  const phoneRaw = req.body?.phone != null ? String(req.body.phone).trim() : '';
   const password = String(req.body?.password || '').trim();
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
   }
+
+  let user;
   try {
-    const result = await db.query(
-      `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
-              full_name, email, phone, user_type, is_verified, is_active,
-              profile_photo_url, wallet_balance, password_hash
-       FROM users WHERE LOWER(email) = $1 LIMIT 1`,
-      [email]
-    );
-    const user = result.rows[0];
+    if (phoneRaw) {
+      let normPhone = phoneRaw.replace(/\s/g, '');
+      if (/^[678]\d{8}$/.test(normPhone)) {
+        normPhone = `+27${normPhone}`;
+      } else if (normPhone.startsWith('0')) {
+        normPhone = `+27${normPhone.slice(1)}`;
+      } else {
+        const normalized = normalizeSouthAfricaToE164(phoneRaw);
+        if (normalized) normPhone = normalized;
+      }
+      if (!normPhone || !normPhone.startsWith('+')) {
+        return res.status(400).json({ error: 'Invalid phone number' });
+      }
+      const result = await db.query(
+        `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                full_name, email, phone, user_type, is_verified, is_active,
+                profile_photo_url, wallet_balance, password_hash
+         FROM users WHERE phone = $1 LIMIT 1`,
+        [normPhone]
+      );
+      user = result.rows[0];
+    } else if (emailRaw) {
+      const result = await db.query(
+        `SELECT id, firebase_uid, app_role, profile_completed, default_pickup_address,
+                full_name, email, phone, user_type, is_verified, is_active,
+                profile_photo_url, wallet_balance, password_hash
+         FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        [emailRaw]
+      );
+      user = result.rows[0];
+    } else {
+      return res.status(400).json({ error: 'Email or phone is required' });
+    }
+
     if (!user || !user.is_active) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
     if (!user.password_hash || user.password_hash === 'firebase-auth') {
       return res.status(401).json({ error: 'This account uses a different sign-in method' });
     }
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
     const { token, refreshToken } = signTokens(user);
     return res.json({ token, refreshToken, user: buildUserPayload(user) });
   } catch (err) {
     console.error('login:', err);
     return res.status(500).json({ error: 'Login failed' });
+  }
+}
+
+async function forgotPassword(req, res) {
+  const emailRaw = String(req.body?.email || '').trim().toLowerCase();
+  const phoneRaw = req.body?.phone != null ? String(req.body.phone).trim() : '';
+
+  try {
+    let user = null;
+    if (phoneRaw) {
+      let normPhone = phoneRaw.replace(/\s/g, '');
+      if (/^[678]\d{8}$/.test(normPhone)) {
+        normPhone = `+27${normPhone}`;
+      } else if (normPhone.startsWith('0')) {
+        normPhone = `+27${normPhone.slice(1)}`;
+      } else {
+        const normalized = normalizeSouthAfricaToE164(phoneRaw);
+        if (normalized) normPhone = normalized;
+      }
+      if (normPhone && normPhone.startsWith('+')) {
+        const result = await db.query(
+          `SELECT id, phone, password_hash FROM users WHERE phone = $1 AND is_active = true LIMIT 1`,
+          [normPhone]
+        );
+        user = result.rows[0];
+      }
+    } else if (emailRaw) {
+      const result = await db.query(
+        `SELECT id, phone, password_hash FROM users WHERE LOWER(email) = $1 AND is_active = true LIMIT 1`,
+        [emailRaw]
+      );
+      user = result.rows[0];
+    } else {
+      return res.status(400).json({ error: 'email or phone is required' });
+    }
+
+    if (!user || !user.password_hash || user.password_hash === 'firebase-auth' || !user.phone) {
+      return res.json({ ok: true, message: 'If an account exists, a code will be sent.' });
+    }
+
+    const code = generateOTP();
+    await storeOTP(user.id, user.phone, code, 'password_reset');
+    const smsResult = await smsService.sendOTP(user.phone, code);
+    if (!smsResult.ok) {
+      return res.status(503).json({ error: 'Failed to send reset code', code: 'OTP_SEND_FAILED' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('forgotPassword:', err);
+    return res.status(500).json({ error: 'Request failed' });
   }
 }
 
@@ -630,6 +710,7 @@ async function refreshToken(req, res) {
 module.exports = {
   getMe,
   login,
+  forgotPassword,
   register,
   registerCustomer,
   registerDriver,

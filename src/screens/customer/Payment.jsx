@@ -103,6 +103,7 @@ const Payment = ({ navigation, route }) => {
         total_price: totalPrice != null ? totalPrice : delivery_total,
         delivery_tier,
         trip_type: params.trip_type || 'local',
+        departure_time: params.departure_time,
       });
     },
     [
@@ -112,6 +113,7 @@ const Payment = ({ navigation, route }) => {
       delivery_tier,
       delivery_total,
       params.trip_type,
+      params.departure_time,
     ]
   );
 
