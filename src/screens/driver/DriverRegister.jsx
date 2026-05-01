@@ -70,14 +70,13 @@ const DriverRegister = ({ navigation }) => {
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehiclePhotoExisting, setVehiclePhotoExisting] = useState(null);
 
-  const [nationalId, setNationalId] = useState(null);
-  const [driversLicense, setDriversLicense] = useState(null);
+  const [idDocument, setIdDocument] = useState(null);
+  const [driverLicence, setDriverLicence] = useState(null);
   const [vehicleRegistration, setVehicleRegistration] = useState(null);
   const [licenseDisc, setLicenseDisc] = useState(null);
+  const [selfieWithId, setSelfieWithId] = useState(null);
+  const [vehiclePhoto, setVehiclePhoto] = useState(null);
   const [sapsClearance, setSapsClearance] = useState(null);
-  const [vehiclePhotoFront, setVehiclePhotoFront] = useState(null);
-  const [vehiclePhotoBack, setVehiclePhotoBack] = useState(null);
-  const [vehiclePhotoSide, setVehiclePhotoSide] = useState(null);
 
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -128,6 +127,47 @@ const DriverRegister = ({ navigation }) => {
     [requestPickImage]
   );
 
+  async function pickDocument(setter) {
+    const ok = await requestPickImage();
+    if (!ok) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: false,
+    });
+    if (result.canceled) return;
+    const asset = result.assets?.[0];
+    if (!asset) return;
+    setter({
+      uri: asset.uri,
+      type: normalizeAssetType(asset.type),
+      fileName: asset.fileName || fileNameFromUri(asset.uri, 'upload.jpg'),
+    });
+  }
+
+  async function takeSelfie(setter) {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow camera access to take your selfie with ID.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: true,
+      aspect: [1, 1],
+      cameraType: ImagePicker.CameraType.front,
+    });
+    if (result.canceled) return;
+    const asset = result.assets?.[0];
+    if (!asset) return;
+    setter({
+      uri: asset.uri,
+      type: normalizeAssetType(asset.type),
+      fileName: asset.fileName || fileNameFromUri(asset.uri, 'selfie.jpg'),
+    });
+  }
+
   const validateCommon = () => {
     if (!termsAccepted) return TERMS_ERROR;
     if (!fullName.trim()) return 'Full name is required.';
@@ -152,13 +192,17 @@ const DriverRegister = ({ navigation }) => {
   };
 
   const validateNewDriver = () => {
-    if (!nationalId) return 'National ID is required.';
-    if (!driversLicense) return "Driver's license is required.";
+    if (!idDocument) return 'SA ID document is required.';
+    if (!driverLicence) return "Driver's licence is required.";
     if (!vehicleRegistration) return 'Vehicle registration is required.';
     if (!licenseDisc) return 'License disc is required.';
-    if (!vehiclePhotoFront) return 'Vehicle front photo is required.';
-    if (!vehiclePhotoBack) return 'Vehicle back photo is required.';
-    if (!vehiclePhotoSide) return 'Vehicle side photo is required.';
+    if (!selfieWithId) return 'Selfie with ID is required.';
+    if (!vehiclePhoto) return 'Vehicle photo is required.';
+    if (!vehicleMake.trim()) return 'Vehicle make is required.';
+    if (!vehicleModel.trim()) return 'Vehicle model is required.';
+    if (!vehicleYear.trim()) return 'Vehicle year is required.';
+    if (!vehicleColor.trim()) return 'Vehicle colour is required.';
+    if (!vehiclePlate.trim()) return 'Vehicle plate number is required.';
     return null;
   };
 
@@ -214,9 +258,9 @@ const DriverRegister = ({ navigation }) => {
     try {
       const formData = new FormData();
       formData.append('application_path', applicationPath);
-      appendImageFile(formData, 'selfie', profilePhoto);
 
       if (applicationPath === 'uber_bolt') {
+        appendImageFile(formData, 'selfie', profilePhoto);
         appendImageFile(formData, 'uber_profile_screenshot', uberProfileScreenshot);
         appendImageFile(formData, 'vehicle_photo', vehiclePhotoExisting);
         formData.append('vehicle_make', vehicleMake.trim());
@@ -226,14 +270,20 @@ const DriverRegister = ({ navigation }) => {
         formData.append('vehicle_plate', vehiclePlate.trim());
       }
       if (applicationPath === 'new_driver') {
-        appendImageFile(formData, 'national_id', nationalId);
-        appendImageFile(formData, 'drivers_license', driversLicense);
+        appendImageFile(formData, 'selfie', selfieWithId || profilePhoto);
+        appendImageFile(formData, 'national_id', idDocument);
+        appendImageFile(formData, 'drivers_license', driverLicence);
         appendImageFile(formData, 'vehicle_registration', vehicleRegistration);
         appendImageFile(formData, 'license_disc', licenseDisc);
         appendImageFile(formData, 'saps_clearance', sapsClearance);
-        appendImageFile(formData, 'vehicle_photo_front', vehiclePhotoFront);
-        appendImageFile(formData, 'vehicle_photo_back', vehiclePhotoBack);
-        appendImageFile(formData, 'vehicle_photo_side', vehiclePhotoSide);
+        appendImageFile(formData, 'vehicle_photo_front', vehiclePhoto);
+        appendImageFile(formData, 'vehicle_photo_back', vehiclePhoto);
+        appendImageFile(formData, 'vehicle_photo_side', vehiclePhoto);
+        formData.append('vehicle_make', vehicleMake.trim());
+        formData.append('vehicle_model', vehicleModel.trim());
+        formData.append('vehicle_year', vehicleYear.trim());
+        formData.append('vehicle_color', vehicleColor.trim());
+        formData.append('vehicle_plate', vehiclePlate.trim().toUpperCase());
       }
 
       const res = await fetch(`${API_BASE_URL}/api/auth/driver/submit-application`, {
@@ -339,24 +389,71 @@ const DriverRegister = ({ navigation }) => {
   );
 
   const renderNewDriverPath = () => (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Documents required</Text>
-      {[
-        { label: 'National ID', state: nationalId, setter: setNationalId },
-        { label: "Driver's licence", state: driversLicense, setter: setDriversLicense },
-        { label: 'Vehicle registration', state: vehicleRegistration, setter: setVehicleRegistration },
-        { label: 'Licence disc', state: licenseDisc, setter: setLicenseDisc },
-        { label: 'SAPS clearance (optional)', state: sapsClearance, setter: setSapsClearance },
-        { label: 'Vehicle photo — front', state: vehiclePhotoFront, setter: setVehiclePhotoFront },
-        { label: 'Vehicle photo — back', state: vehiclePhotoBack, setter: setVehiclePhotoBack },
-        { label: 'Vehicle photo — side', state: vehiclePhotoSide, setter: setVehiclePhotoSide },
-      ].map(({ label, state, setter }) => (
-        <TouchableOpacity key={label} style={[styles.uploadButton, { marginBottom: 10 }]} onPress={() => pickSingleImage(setter)}>
-          <Ionicons name={state ? 'checkmark-circle-outline' : 'cloud-upload-outline'} size={18} color="#000000" style={{ marginRight: 8 }} />
-          <Text style={styles.uploadButtonText}>{state ? `✓ ${label}` : `Upload ${label}`}</Text>
+    <>
+      <View style={styles.docsSection}>
+        <Text style={styles.docsSectionTitle}>Required documents</Text>
+        <Text style={styles.docsSectionSub}>Upload clear photos of your documents</Text>
+
+        {[
+          { label: 'SA ID document', key: 'id', value: idDocument, setter: setIdDocument, camera: false },
+          { label: "Driver's licence", key: 'licence', value: driverLicence, setter: setDriverLicence, camera: false },
+          { label: 'Vehicle registration', key: 'vehicle_reg', value: vehicleRegistration, setter: setVehicleRegistration, camera: false },
+          { label: 'Licence disc', key: 'disc', value: licenseDisc, setter: setLicenseDisc, camera: false },
+          { label: 'Selfie with ID', key: 'selfie', value: selfieWithId, setter: setSelfieWithId, camera: true },
+          { label: 'Vehicle photo', key: 'vehicle_photo', value: vehiclePhoto, setter: setVehiclePhoto, camera: false },
+        ].map((doc) => (
+          <TouchableOpacity
+            key={doc.key}
+            style={[styles.docUploadRow, doc.value && styles.docUploadDone]}
+            onPress={() => (doc.camera ? takeSelfie(doc.setter) : pickDocument(doc.setter))}
+          >
+            <View style={styles.docIcon}>
+              <Text style={{ fontSize: 20 }}>{doc.value ? '✓' : '📄'}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.docLabel}>{doc.label}</Text>
+              <Text style={styles.docStatus}>{doc.value ? 'Uploaded ✓' : 'Tap to upload'}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        <TouchableOpacity
+          style={[styles.docUploadRow, sapsClearance && styles.docUploadDone, { marginTop: 4 }]}
+          onPress={() => pickDocument(setSapsClearance)}
+        >
+          <View style={styles.docIcon}>
+            <Text style={{ fontSize: 20 }}>{sapsClearance ? '✓' : '📄'}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.docLabel}>SAPS clearance (optional)</Text>
+            <Text style={styles.docStatus}>{sapsClearance ? 'Uploaded ✓' : 'Tap to upload'}</Text>
+          </View>
         </TouchableOpacity>
-      ))}
-    </View>
+      </View>
+
+      <View style={styles.vehicleSection}>
+        <Text style={styles.docsSectionTitle}>Vehicle details</Text>
+
+        {[
+          { label: 'Make (e.g. Toyota)', value: vehicleMake, setter: setVehicleMake },
+          { label: 'Model (e.g. Corolla)', value: vehicleModel, setter: setVehicleModel },
+          { label: 'Year (e.g. 2019)', value: vehicleYear, setter: setVehicleYear, keyboard: 'numeric' },
+          { label: 'Color', value: vehicleColor, setter: setVehicleColor },
+          { label: 'Number plate', value: vehiclePlate, setter: setVehiclePlate, autoCapitalize: 'characters' },
+        ].map((field) => (
+          <TextInput
+            key={field.label}
+            style={styles.vehicleInput}
+            placeholder={field.label}
+            placeholderTextColor="#9E9E9E"
+            value={field.value}
+            onChangeText={field.setter}
+            keyboardType={field.keyboard || 'default'}
+            autoCapitalize={field.autoCapitalize || 'words'}
+          />
+        ))}
+      </View>
+    </>
   );
 
   const canSubmit = useMemo(() => {
@@ -367,8 +464,7 @@ const DriverRegister = ({ navigation }) => {
     return false;
   }, [applicationPath, termsAccepted, fullName, email, phone, password, confirmPassword, profilePhoto,
     uberProfileScreenshot, vehicleMake, vehicleModel, vehicleYear, vehicleColor, vehiclePlate, vehiclePhotoExisting,
-    nationalId, driversLicense, vehicleRegistration, licenseDisc, sapsClearance,
-    vehiclePhotoFront, vehiclePhotoBack, vehiclePhotoSide]);
+    idDocument, driverLicence, vehicleRegistration, licenseDisc, sapsClearance, selfieWithId, vehiclePhoto]);
 
   if (underReview) {
     return (
@@ -521,6 +617,69 @@ const styles = StyleSheet.create({
   underReviewTitle: { fontSize: 20, fontWeight: '800', color: '#000000', marginBottom: 10 },
   underReviewText: { fontSize: 15, fontWeight: '500', color: '#000000', lineHeight: 22 },
   underReviewSub: { marginTop: 12, fontSize: 13, color: '#9E9E9E' },
+  docsSection: {
+    marginTop: 24,
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  docsSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  docsSectionSub: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginBottom: 16,
+  },
+  docUploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    marginBottom: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  docUploadDone: {
+    borderColor: '#00C853',
+    backgroundColor: '#F0FFF4',
+  },
+  docIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  docLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  docStatus: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  vehicleSection: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  vehicleInput: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#000000',
+    marginBottom: 10,
+  },
 });
 
 export default DriverRegister;

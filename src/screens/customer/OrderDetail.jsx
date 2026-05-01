@@ -10,16 +10,13 @@ import {
   Image,
   ActivityIndicator,
   Share,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
-import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import { getJson } from '../../apiClient';
+import { colors } from '../../theme/theme';
+import ReportProblemModal, { ReportProblemButton, shouldShowReportProblem } from '../../components/customer/ReportProblem';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 import {
@@ -58,32 +55,6 @@ function Stars({ rating }) {
   );
 }
 
-/** Values must match backend DISPUTE_TYPES / DB constraint */
-const DISPUTE_TYPES = [
-  { value: 'damaged', label: 'Item was damaged' },
-  { value: 'lost_item', label: 'Item was lost' },
-  { value: 'wrong_item', label: 'Wrong item delivered' },
-  { value: 'not_delivered', label: 'Item not delivered' },
-  { value: 'driver_behaviour', label: 'Driver behaviour' },
-  { value: 'other', label: 'Other' },
-];
-
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-
-function deliveryReferenceMs(order) {
-  if (!order) return null;
-  const d = order.delivery_confirmed_at || order.updated_at || order.created_at;
-  if (!d) return null;
-  const t = new Date(d).getTime();
-  return Number.isFinite(t) ? t : null;
-}
-
-function isWithinDisputeWindow(order) {
-  const t = deliveryReferenceMs(order);
-  if (t == null) return true;
-  return Date.now() - t <= SEVEN_DAYS_MS;
-}
-
 const OrderDetail = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
   const [order, setOrder] = useState(null);
@@ -92,12 +63,7 @@ const OrderDetail = ({ navigation, route }) => {
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
 
-  const [disputeModalVisible, setDisputeModalVisible] = useState(false);
-  const [disputeType, setDisputeType] = useState('other');
-  const [disputeDescription, setDisputeDescription] = useState('');
-  const [disputeSubmitting, setDisputeSubmitting] = useState(false);
-  const [disputeFormError, setDisputeFormError] = useState(null);
-  const [disputeSuccess, setDisputeSuccess] = useState(null);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,60 +164,6 @@ Thank you for using SwiftDrop!
     );
   }, [myDisputes, order?.id]);
 
-  const canRaiseDispute =
-    order &&
-    ['delivered', 'completed'].includes(String(order.status)) &&
-    !hasOpenDisputeForOrder &&
-    isWithinDisputeWindow(order);
-
-  const openDisputeModal = () => {
-    setDisputeFormError(null);
-    setDisputeSuccess(null);
-    setDisputeDescription('');
-    setDisputeType('other');
-    setDisputeModalVisible(true);
-  };
-
-  const submitDispute = async () => {
-    setDisputeFormError(null);
-    if (!disputeType) {
-      setDisputeFormError('Select a dispute type.');
-      return;
-    }
-    const desc = disputeDescription.trim();
-    if (desc.length < 20) {
-      setDisputeFormError('Description must be at least 20 characters.');
-      return;
-    }
-    const auth = getAuth();
-    if (!auth?.token) {
-      setDisputeFormError('Not signed in.');
-      return;
-    }
-    setDisputeSubmitting(true);
-    try {
-      await postJson(
-        '/api/disputes',
-        {
-          order_id: Number(order.id),
-          dispute_type: disputeType,
-          description: desc,
-        },
-        { token: auth.token }
-      );
-      setDisputeModalVisible(false);
-      setDisputeSuccess(
-        'Dispute raised successfully.\nWe will resolve this within 24 hours.'
-      );
-      const d = await getJson('/api/disputes/my', { token: auth.token });
-      setMyDisputes(Array.isArray(d.disputes) ? d.disputes : []);
-    } catch (e) {
-      setDisputeFormError(e.message || 'Could not submit dispute.');
-    } finally {
-      setDisputeSubmitting(false);
-    }
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -284,9 +196,14 @@ Thank you for using SwiftDrop!
     order?.driver_deliveries_completed
   );
 
+  const showReportCta = shouldShowReportProblem(order) && !hasOpenDisputeForOrder;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[styles.container, styles.flexFill]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={showReportCta ? styles.scrollWithReport : undefined}
+      >
         <View style={styles.header}>
           <TouchableOpacity style={styles.backArrowWrap} onPress={() => navigation.goBack()}>
             <Text style={styles.backArrowText}>←</Text>
@@ -405,96 +322,45 @@ Thank you for using SwiftDrop!
           </TouchableOpacity>
         </View>
 
-        {disputeSuccess ? (
-          <View style={styles.disputeSuccessBanner}>
-            <Text style={styles.disputeSuccessText}>{disputeSuccess}</Text>
-          </View>
-        ) : null}
-
-        {canRaiseDispute ? (
-          <View style={styles.section}>
-            <TouchableOpacity style={styles.disputeBtn} onPress={openDisputeModal}>
-              <Text style={styles.disputeBtnText}>Raise Dispute</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         <View style={{ height: 24 }} />
       </ScrollView>
 
-      <Modal visible={disputeModalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView
-          style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Raise a Dispute</Text>
-            <Text style={styles.modalHint}>What went wrong with this delivery?</Text>
+      {showReportCta ? (
+        <View style={styles.reportBar}>
+          <ReportProblemButton onPress={() => setShowReport(true)} />
+        </View>
+      ) : null}
 
-            <Text style={styles.modalLabel}>Dispute type</Text>
-            <ScrollView style={styles.typeList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-              {DISPUTE_TYPES.map((t) => (
-                <TouchableOpacity
-                  key={t.value}
-                  style={[styles.typeRow, disputeType === t.value && styles.typeRowSelected]}
-                  onPress={() => setDisputeType(t.value)}
-                >
-                  <Text style={[styles.typeRowText, disputeType === t.value && styles.typeRowTextSelected]}>
-                    {t.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <Text style={styles.modalLabel}>Description</Text>
-            <TextInput
-              style={styles.modalInput}
-              multiline
-              numberOfLines={5}
-              placeholder="Describe what happened (minimum 20 characters)"
-              value={disputeDescription}
-              onChangeText={setDisputeDescription}
-              textAlignVertical="top"
-            />
-            <Text style={styles.charCounter}>
-              {disputeDescription.trim().length}/20 minimum
-            </Text>
-
-            {disputeFormError ? <Text style={styles.modalError}>{disputeFormError}</Text> : null}
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setDisputeModalVisible(false)}
-                disabled={disputeSubmitting}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSubmit, disputeSubmitting && { opacity: 0.85 }]}
-                onPress={submitDispute}
-                disabled={disputeSubmitting}
-              >
-                {disputeSubmitting ? (
-                  <ActivityIndicator color={colors.textWhite} />
-                ) : (
-                  <Text style={styles.modalSubmitText}>Submit</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      <ReportProblemModal
+        visible={showReport}
+        onClose={() => setShowReport(false)}
+        orderId={orderId}
+        orderStatus={order?.status}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  flexFill: { flex: 1 },
   container: {
     flex: 1,
     backgroundColor: colors.background,
     width,
     height,
+  },
+  scrollWithReport: {
+    paddingBottom: 96,
+  },
+  reportBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingBottom: 8,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   center: {
     flex: 1,
@@ -726,135 +592,6 @@ const styles = StyleSheet.create({
   receiptBtnText: {
     color: colors.textWhite,
     fontWeight: '900',
-  },
-  disputeBtn: {
-    backgroundColor: colors.warning,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  disputeBtnText: {
-    color: colors.textWhite,
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  disputeSuccessBanner: {
-    marginHorizontal: 16,
-    marginBottom: 14,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: colors.successLight,
-    borderWidth: 1,
-    borderColor: colors.successLight,
-  },
-  disputeSuccessText: {
-    color: colors.success,
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  modalCard: {
-    backgroundColor: colors.textWhite,
-    borderRadius: 16,
-    padding: 18,
-    maxHeight: height * 0.88,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.textPrimary,
-    marginBottom: 6,
-  },
-  modalHint: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 14,
-  },
-  modalLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  typeList: {
-    maxHeight: 160,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-  },
-  typeRow: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  typeRowSelected: {
-    backgroundColor: colors.primaryLight,
-  },
-  typeRowText: {
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  typeRowTextSelected: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-    minHeight: 100,
-    fontSize: 15,
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  charCounter: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  modalError: {
-    color: colors.danger,
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 8,
-  },
-  modalCancel: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  modalCancelText: {
-    color: colors.textSecondary,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  modalSubmit: {
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 22,
-    borderRadius: 10,
-    minWidth: 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalSubmitText: {
-    color: colors.textWhite,
-    fontWeight: '800',
-    fontSize: 16,
   },
 });
 

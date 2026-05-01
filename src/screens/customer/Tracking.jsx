@@ -15,6 +15,7 @@ import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
 import SwiftDropLogoMark from '../../components/SwiftDropLogoMark';
 import AvatarPlaceholder from '../../components/AvatarPlaceholder';
+import ReportProblemModal, { ReportProblemButton, shouldShowReportProblem } from '../../components/customer/ReportProblem';
 
 function humanStatus(status) {
   if (!status) return '';
@@ -54,6 +55,7 @@ const Tracking = ({ navigation, route }) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +146,7 @@ const Tracking = ({ navigation, route }) => {
   const sColor = statusColor(order.status);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, styles.flexFill]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -156,7 +158,10 @@ const Tracking = ({ navigation, route }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: shouldShowReportProblem(order) ? 100 : 40 }}
+      >
 
         {/* Map placeholder */}
         <View style={styles.mapContainer}>
@@ -290,14 +295,38 @@ const Tracking = ({ navigation, route }) => {
         )}
 
       </ScrollView>
+
+      {shouldShowReportProblem(order) ? (
+        <View style={styles.reportBar}>
+          <ReportProblemButton onPress={() => setShowReport(true)} />
+        </View>
+      ) : null}
+
+      <ReportProblemModal
+        visible={showReport}
+        onClose={() => setShowReport(false)}
+        orderId={orderId}
+        orderStatus={order?.status}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  flexFill: { flex: 1 },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  reportBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#F0F0F0',
   },
   header: {
     flexDirection: 'row',

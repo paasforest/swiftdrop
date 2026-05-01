@@ -19,6 +19,7 @@ import { API_BASE_URL } from '../../apiConfig';
 import { subscribeToDriverLocation, calculateETA } from '../../services/locationTracking';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
+import ReportProblemModal, { ReportProblemButton, shouldShowReportProblem } from '../../components/customer/ReportProblem';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,6 +72,7 @@ const TrackingWithMap = ({ navigation, route }) => {
   const [stopPolling, setStopPolling] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const pollingErrorRef = useRef(null);
   const mapRef = useRef(null);
 
@@ -580,6 +582,10 @@ const TrackingWithMap = ({ navigation, route }) => {
             <Text style={styles.liveText}>Live tracking active</Text>
           </View>
         )}
+
+        {shouldShowReportProblem(order) ? (
+          <ReportProblemButton onPress={() => setShowReport(true)} />
+        ) : null}
       </View>
 
       {unmatchedModalVisible && (
@@ -674,6 +680,13 @@ const TrackingWithMap = ({ navigation, route }) => {
           </View>
         </View>
       )}
+
+      <ReportProblemModal
+        visible={showReport}
+        onClose={() => setShowReport(false)}
+        orderId={orderId}
+        orderStatus={order?.status}
+      />
     </SafeAreaView>
   );
 };
