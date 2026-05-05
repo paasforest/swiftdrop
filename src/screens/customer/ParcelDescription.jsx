@@ -7,11 +7,16 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
+  TextInput,
 } from 'react-native';
 
 function parseEstimatedValueToNumber(range) {
   const v = String(range ?? '').trim();
   if (!v) return null;
+
+  if (/^\d+(\.\d+)?$/.test(v)) {
+    return Number(v);
+  }
 
   if (v.toLowerCase().startsWith('under')) {
     const m = v.match(/R(\d+(?:\.\d+)?)/i);
@@ -33,7 +38,7 @@ const ParcelDescription = ({ navigation, route }) => {
   const baseParams = route?.params || {};
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedSize, setSelectedSize] = useState('medium');
-  const [estimatedValue, setEstimatedValue] = useState('R200-R500');
+  const [estimatedValue, setEstimatedValue] = useState('500');
   const [fragile, setFragile] = useState(false);
   const [upright, setUpright] = useState(false);
   const [careful, setCareful] = useState(false);
@@ -67,10 +72,20 @@ const ParcelDescription = ({ navigation, route }) => {
     { id: 'large', name: 'Large', icon: '🧳', description: 'Suitcase size' },
   ];
 
-  const valueRanges = ['Under R200', 'R200-R500', 'R500-R1000', 'R1000-R2000'];
+  const trimmedValue = String(estimatedValue ?? '').trim();
+  const parsedParcelValue =
+    trimmedValue === ''
+      ? 0
+      : parseEstimatedValueToNumber(trimmedValue);
+
+  let valueError = null;
+  if (trimmedValue !== '') {
+    if (parsedParcelValue === null) valueError = 'Enter a valid amount (numbers only, or e.g. R200-R500)';
+    else if (parsedParcelValue < 0) valueError = 'Amount cannot be negative';
+  }
 
   const goPriceConfirm = () => {
-    const parcel_value = parseEstimatedValueToNumber(estimatedValue);
+    const parcel_value = trimmedValue === '' ? 0 : parsedParcelValue ?? 0;
     const special_handling = JSON.stringify({ fragile, upright, careful });
     navigation.navigate('PriceConfirm', {
       pickup_address: baseParams.pickup_address,
@@ -87,7 +102,7 @@ const ParcelDescription = ({ navigation, route }) => {
   };
 
   const handleNext = () => {
-    if (!selectedCategory || !selectedSize) return;
+    if (!selectedCategory || !selectedSize || valueError) return;
     if (!prohibitedConfirmed) {
       setShowProhibitedModal(true);
     } else {
@@ -96,13 +111,14 @@ const ParcelDescription = ({ navigation, route }) => {
   };
 
   const handleProhibitedConfirm = () => {
-    if (!selectedCategory || !selectedSize) return;
+    if (!selectedCategory || !selectedSize || valueError) return;
     setProhibitedConfirmed(true);
     setShowProhibitedModal(false);
     goPriceConfirm();
   };
 
-  const nextDisabled = !selectedCategory || !selectedSize;
+  const nextDisabled =
+    !selectedCategory || !selectedSize || valueError != null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -117,7 +133,12 @@ const ParcelDescription = ({ navigation, route }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+      >
 
         {/* Progress */}
         <View style={styles.progressContainer}>
@@ -130,22 +151,29 @@ const ParcelDescription = ({ navigation, route }) => {
         {/* Category */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>WHAT ARE YOU SENDING?</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.categoriesScrollContent}
+          >
             <View style={styles.categoriesContainer}>
               {categories.map((category) => (
                 <TouchableOpacity
                   key={category.id}
+                  activeOpacity={0.7}
                   style={[
                     styles.categoryChip,
-                    selectedCategory === category.name && styles.categoryChipSelected,
+                    selectedCategory === category.id && styles.categoryChipSelected,
                   ]}
-                  onPress={() => setSelectedCategory(category.name)}
+                  onPress={() => setSelectedCategory(category.id)}
                 >
                   <Text style={styles.categoryIcon}>{category.icon}</Text>
                   <Text
                     style={[
                       styles.categoryText,
-                      selectedCategory === category.name && styles.categoryTextSelected,
+                      selectedCategory === category.id && styles.categoryTextSelected,
                     ]}
                   >
                     {category.name}
@@ -177,31 +205,22 @@ const ParcelDescription = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* Value */}
+        {/* Value — default 500 (Option B); leave blank for R0 insurance */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>ESTIMATED VALUE</Text>
-          <View style={styles.valueContainer}>
-            {valueRanges.map((range, index) => (
-              <TouchableOpacity
-                key={range}
-                style={[
-                  styles.valueOption,
-                  estimatedValue === range && styles.valueOptionSelected,
-                  index === valueRanges.length - 1 && { borderBottomWidth: 0 },
-                ]}
-                onPress={() => setEstimatedValue(range)}
-              >
-                <Text
-                  style={[
-                    styles.valueText,
-                    estimatedValue === range && styles.valueTextSelected,
-                  ]}
-                >
-                  {range}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.sectionLabel}>ESTIMATED VALUE (ZAR)</Text>
+          <TextInput
+            style={[styles.valueInput, valueError ? styles.valueInputError : null]}
+            value={estimatedValue}
+            onChangeText={(t) => setEstimatedValue(t)}
+            keyboardType="decimal-pad"
+            placeholder="500"
+            placeholderTextColor="#BDBDBD"
+          />
+          {valueError ? (
+            <Text style={styles.valueErrorText}>{valueError}</Text>
+          ) : (
+            <Text style={styles.valueHint}>Used for insurance. Clear field for R0.</Text>
+          )}
         </View>
 
         {/* Special Handling */}
@@ -329,9 +348,37 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 12,
   },
+  categoriesScrollContent: {
+    flexGrow: 0,
+    alignItems: 'center',
+    paddingRight: 20,
+  },
   categoriesContainer: {
     flexDirection: 'row',
-    paddingRight: 20,
+    alignItems: 'center',
+  },
+  valueInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#000000',
+    backgroundColor: '#FFFFFF',
+  },
+  valueInputError: {
+    borderColor: '#D32F2F',
+  },
+  valueErrorText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#D32F2F',
+  },
+  valueHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#9E9E9E',
   },
   categoryChip: {
     backgroundColor: '#F5F5F5',
