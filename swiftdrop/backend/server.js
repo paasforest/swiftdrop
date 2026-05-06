@@ -34,7 +34,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/trips', tripRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ name: 'SwiftDrop API', version: '1.1.0' });
+  res.json({ name: 'SwiftDrop API', version: '1.2.0' });
 });
 
 const HOST = process.env.HOST || '0.0.0.0';
