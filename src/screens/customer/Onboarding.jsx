@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 12,
     gap: 8,
   },
   dot: {
@@ -222,7 +222,8 @@ const styles = StyleSheet.create({
   },
   bottomContainer: {
     paddingHorizontal: 24,
-    paddingBottom: 32,
+    paddingBottom: 18,
+    marginBottom: 4,
   },
   continueButton: {
     backgroundColor: '#000000',

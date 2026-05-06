@@ -13,9 +13,11 @@ import {
   Animated,
   Keyboard,
   StatusBar,
+  KeyboardAvoidingView,
 } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 import { spacing, radius, shadows } from '../../theme/theme';
 
@@ -102,6 +104,7 @@ async function fetchPlaceDetails(placeId) {
 
 /** Centers map on user GPS only — does not set pickup/delivery state. */
 const AddressEntry = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
   const cardSlideAnim = useRef(new Animated.Value(0)).current;
 
@@ -181,7 +184,9 @@ const AddressEntry = ({ navigation }) => {
         return;
       }
       if (!GOOGLE_MAPS_API_KEY) {
-        setPlacesErrorPickup('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
+        setPlacesErrorPickup(
+          'Maps API key missing — add extra.googleMapsApiKey in app.json or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'
+        );
         setPickupPredictions([]);
         return;
       }
@@ -219,7 +224,9 @@ const AddressEntry = ({ navigation }) => {
         return;
       }
       if (!GOOGLE_MAPS_API_KEY) {
-        setPlacesErrorDelivery('Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY or app.json googleMaps.apiKey');
+        setPlacesErrorDelivery(
+          'Maps API key missing — add extra.googleMapsApiKey in app.json or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'
+        );
         setDeliveryPredictions([]);
         return;
       }
@@ -427,169 +434,187 @@ const AddressEntry = ({ navigation }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Map */}
-      <View style={styles.mapWrap}>
-        <MapView
-          ref={mapRef}
-          style={StyleSheet.absoluteFillObject}
-          provider={PROVIDER_GOOGLE}
-          initialRegion={DEFAULT_REGION}
-          showsUserLocation
-          showsMyLocationButton={false}
-          mapType="standard"
-          rotateEnabled
-          pitchEnabled={false}
-        >
-          {pickupCoords && (
-            <Marker coordinate={pickupCoords} title="Pickup" pinColor="#00C853" />
-          )}
-          {dropoffCoords && (
-            <Marker coordinate={dropoffCoords} title="Delivery" pinColor="#FF3B30" />
-          )}
-          {polylineCoords && (
-            <Polyline
-              coordinates={polylineCoords}
-              strokeColor="#00C853"
-              strokeWidth={3}
-              lineDashPattern={[8, 6]}
-            />
-          )}
-        </MapView>
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <View style={styles.bodyColumn}>
+          {/* Map */}
+          <View style={styles.mapWrap}>
+            <MapView
+              ref={mapRef}
+              style={StyleSheet.absoluteFillObject}
+              provider={PROVIDER_GOOGLE}
+              initialRegion={DEFAULT_REGION}
+              showsUserLocation
+              showsMyLocationButton={false}
+              mapType="standard"
+              rotateEnabled
+              pitchEnabled={false}
+            >
+              {pickupCoords && (
+                <Marker coordinate={pickupCoords} title="Pickup" pinColor="#00C853" />
+              )}
+              {dropoffCoords && (
+                <Marker coordinate={dropoffCoords} title="Delivery" pinColor="#FF3B30" />
+              )}
+              {polylineCoords && (
+                <Polyline
+                  coordinates={polylineCoords}
+                  strokeColor="#00C853"
+                  strokeWidth={3}
+                  lineDashPattern={[8, 6]}
+                />
+              )}
+            </MapView>
 
-        <View style={styles.topBanner} pointerEvents="box-none">
-          {mapCentering ? (
-            <View style={styles.topBannerInner}>
-              <ActivityIndicator color="#00C853" size="small" />
-              <Text style={[styles.topBannerText, { marginLeft: 8 }]}>Loading map…</Text>
+            <View style={styles.topBanner} pointerEvents="box-none">
+              {mapCentering ? (
+                <View style={styles.topBannerInner}>
+                  <ActivityIndicator color="#00C853" size="small" />
+                  <Text style={[styles.topBannerText, { marginLeft: 8 }]}>Loading map…</Text>
+                </View>
+              ) : locationError ? (
+                <View style={styles.topBannerInner}>
+                  <Text style={styles.topBannerError}>{locationError}</Text>
+                </View>
+              ) : null}
             </View>
-          ) : locationError ? (
-            <View style={styles.topBannerInner}>
-              <Text style={styles.topBannerError}>{locationError}</Text>
-            </View>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Bottom panel */}
-      <View style={styles.bottomPanel}>
-
-        {/* Uber-style address card with connected dots */}
-        <View style={styles.addressCard}>
-          <View style={styles.addressRow}>
-            <View style={styles.dotGreen} />
-            <TextInput
-              style={styles.addressInput}
-              placeholder="Pickup address"
-              placeholderTextColor="#9E9E9E"
-              value={pickupAddress}
-              onChangeText={(t) => {
-                setPickupAddress(t);
-                if (!t.trim()) setPickupCoords(null);
-              }}
-              returnKeyType="search"
-              onFocus={() => setFocusedField('pickup')}
-              onBlur={() => {
-                setTimeout(() => setFocusedField((f) => (f === 'pickup' ? null : f)), 220);
-              }}
-            />
           </View>
 
-          <View style={styles.addressConnector} />
+          <ScrollView
+            style={styles.bottomScroll}
+            contentContainerStyle={[
+              styles.bottomScrollInner,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Uber-style address card with connected dots */}
+            <View style={styles.addressCard}>
+              <View style={styles.addressBlock}>
+                <Text style={styles.fieldLabel}>Pickup location</Text>
+                <View style={styles.addressRow}>
+                  <View style={styles.dotGreen} />
+                  <TextInput
+                    style={styles.addressInput}
+                    placeholder="Search street, suburb, or place name"
+                    placeholderTextColor="#9E9E9E"
+                    value={pickupAddress}
+                    onChangeText={(t) => {
+                      setPickupAddress(t);
+                      if (!t.trim()) setPickupCoords(null);
+                    }}
+                    returnKeyType="search"
+                    onFocus={() => setFocusedField('pickup')}
+                    onBlur={() => {
+                      setTimeout(() => setFocusedField((f) => (f === 'pickup' ? null : f)), 220);
+                    }}
+                  />
+                </View>
+              </View>
 
-          <View style={styles.addressRow}>
-            <View style={styles.dotBlack} />
-            <TextInput
-              style={styles.addressInput}
-              placeholder="Dropoff address"
-              placeholderTextColor="#9E9E9E"
-              value={deliveryAddress}
-              onChangeText={(t) => {
-                setDeliveryAddress(t);
-                if (!t.trim()) setDropoffCoords(null);
-              }}
-              returnKeyType="search"
-              onFocus={() => setFocusedField('delivery')}
-              onBlur={() => {
-                setTimeout(() => setFocusedField((f) => (f === 'delivery' ? null : f)), 220);
-              }}
-            />
-          </View>
+              <View style={styles.addressConnector} />
+
+              <View style={styles.addressBlock}>
+                <Text style={styles.fieldLabel}>Deliver parcel to</Text>
+                <View style={styles.addressRow}>
+                  <View style={styles.dotBlack} />
+                  <TextInput
+                    style={styles.addressInput}
+                    placeholder="Where should we drop off your parcel?"
+                    placeholderTextColor="#9E9E9E"
+                    value={deliveryAddress}
+                    onChangeText={(t) => {
+                      setDeliveryAddress(t);
+                      if (!t.trim()) setDropoffCoords(null);
+                    }}
+                    returnKeyType="search"
+                    onFocus={() => setFocusedField('delivery')}
+                    onBlur={() => {
+                      setTimeout(() => setFocusedField((f) => (f === 'delivery' ? null : f)), 220);
+                    }}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {showPickupDropdown ? (
+              <PredictionDropdown
+                loading={placesLoadingPickup}
+                predictions={pickupPredictions}
+                error={placesErrorPickup}
+                onSelect={onSelectPickupPrediction}
+              />
+            ) : null}
+
+            {showDeliveryDropdown ? (
+              <PredictionDropdown
+                loading={placesLoadingDelivery}
+                predictions={deliveryPredictions}
+                error={placesErrorDelivery}
+                onSelect={onSelectDeliveryPrediction}
+              />
+            ) : null}
+
+            <TouchableOpacity
+              style={styles.useLocationLink}
+              onPress={useCurrentLocation}
+              disabled={locationBusy || mapCentering}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Use current location for pickup"
+            >
+              {locationBusy ? (
+                <ActivityIndicator color="#00C853" size="small" />
+              ) : (
+                <Text style={styles.useLocationLinkText}>📍 Use current location</Text>
+              )}
+            </TouchableOpacity>
+
+            <Animated.View
+              style={[styles.confirmCard, { transform: [{ translateY: confirmTranslateY }] }]}
+            >
+              {canConfirm ? (
+                <>
+                  <View style={styles.confirmRow}>
+                    <View style={styles.greenDotSmall} />
+                    <Text style={styles.confirmAddr} numberOfLines={2}>
+                      {pickupAddress.trim()}
+                    </Text>
+                  </View>
+                  <View style={styles.confirmRow}>
+                    <View style={styles.blackDotSmall} />
+                    <Text style={styles.confirmAddr} numberOfLines={2}>
+                      {deliveryAddress.trim()}
+                    </Text>
+                  </View>
+                  <Text style={styles.distanceText}>
+                    {distanceKm < 1
+                      ? `${Math.round(distanceKm * 1000)} m apart`
+                      : `${distanceKm.toFixed(1)} km apart`}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.continueButton, !canConfirm && styles.continueButtonDisabled]}
+                    onPress={handleConfirm}
+                    disabled={!canConfirm}
+                  >
+                    <Text style={styles.continueButtonText}>Continue</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.confirmHint}>
+                  Select pickup and delivery from the suggestions, or use &quot;Use current location&quot;
+                  for pickup.
+                </Text>
+              )}
+            </Animated.View>
+          </ScrollView>
         </View>
-
-        {/* Pickup predictions */}
-        {showPickupDropdown ? (
-          <PredictionDropdown
-            loading={placesLoadingPickup}
-            predictions={pickupPredictions}
-            error={placesErrorPickup}
-            onSelect={onSelectPickupPrediction}
-          />
-        ) : null}
-
-        {/* Delivery predictions */}
-        {showDeliveryDropdown ? (
-          <PredictionDropdown
-            loading={placesLoadingDelivery}
-            predictions={deliveryPredictions}
-            error={placesErrorDelivery}
-            onSelect={onSelectDeliveryPrediction}
-          />
-        ) : null}
-
-        <TouchableOpacity
-          style={styles.useLocationLink}
-          onPress={useCurrentLocation}
-          disabled={locationBusy || mapCentering}
-          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-          accessibilityRole="button"
-          accessibilityLabel="Use current location for pickup"
-        >
-          {locationBusy ? (
-            <ActivityIndicator color="#00C853" size="small" />
-          ) : (
-            <Text style={styles.useLocationLinkText}>📍 Use current location</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Confirm card — slides up when both addresses set */}
-        <Animated.View
-          style={[styles.confirmCard, { transform: [{ translateY: confirmTranslateY }] }]}
-        >
-          {canConfirm ? (
-            <>
-              <View style={styles.confirmRow}>
-                <View style={styles.greenDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={2}>
-                  {pickupAddress.trim()}
-                </Text>
-              </View>
-              <View style={styles.confirmRow}>
-                <View style={styles.blackDotSmall} />
-                <Text style={styles.confirmAddr} numberOfLines={2}>
-                  {deliveryAddress.trim()}
-                </Text>
-              </View>
-              <Text style={styles.distanceText}>
-                {distanceKm < 1
-                  ? `${Math.round(distanceKm * 1000)} m apart`
-                  : `${distanceKm.toFixed(1)} km apart`}
-              </Text>
-              <TouchableOpacity
-                style={[styles.continueButton, !canConfirm && styles.continueButtonDisabled]}
-                onPress={handleConfirm}
-                disabled={!canConfirm}
-              >
-                <Text style={styles.continueButtonText}>Continue</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <Text style={styles.confirmHint}>
-              Select pickup and delivery from the suggestions, or use &quot;Use current location&quot; for pickup.
-            </Text>
-          )}
-        </Animated.View>
-
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -650,6 +675,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  keyboardFlex: {
+    flex: 1,
+  },
+  bodyColumn: {
+    flex: 1,
+  },
+  bottomScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: height * 0.56,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 12,
+  },
+  bottomScrollInner: {
+    paddingHorizontal: spacing.md,
+    paddingTop: 14,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -674,7 +722,7 @@ const styles = StyleSheet.create({
   },
   mapWrap: {
     flex: 1,
-    minHeight: height * 0.32,
+    minHeight: height * 0.28,
   },
   topBanner: {
     position: 'absolute',
@@ -702,20 +750,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#FF3B30',
   },
-  bottomPanel: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: spacing.md,
-    paddingTop: 14,
-    paddingBottom: spacing.sm,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 12,
-    maxHeight: height * 0.58,
-  },
   addressCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -729,10 +763,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
+  addressBlock: {
+    marginBottom: 2,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 0.9,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginLeft: 26,
+  },
   addressRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
+    alignItems: 'flex-start',
+    paddingVertical: 4,
   },
   dotGreen: {
     width: 12,
@@ -760,7 +806,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: '#000000',
-    paddingVertical: 2,
+    minHeight: 44,
+    paddingVertical: Platform.OS === 'android' ? 8 : 10,
+    textAlignVertical: 'center',
   },
   useLocationLink: {
     alignSelf: 'flex-start',

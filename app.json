@@ -20,6 +20,7 @@
     },
     "android": {
       "package": "com.swiftdrop.app",
+      "softwareKeyboardLayoutMode": "resize",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
@@ -42,7 +43,8 @@
     "extra": {
       "eas": {
         "projectId": "28838eaa-a410-455a-9969-59929242e7e5"
-      }
+      },
+      "googleMapsApiKey": "AIzaSyCT28_D6Bc-cGPnpuHs85gWSvAu-XelE7Y"
     },
     "owner": "swiftdrop26"
   }
