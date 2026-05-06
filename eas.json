@@ -11,7 +11,11 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "APP_VARIANT": "preview"
       }
     },
     "production": {
