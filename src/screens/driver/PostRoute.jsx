@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Platform,
   Keyboard,
   StatusBar,
+  Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -72,8 +74,6 @@ const PostRoute = ({ navigation }) => {
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [successMessage, setSuccessMessage] = useState(null);
-  const navigateTimerRef = useRef(null);
 
   const [tripType, setTripType] = useState('local');
   const [deliveryRadius, setDeliveryRadius] = useState(10);
@@ -86,12 +86,6 @@ const PostRoute = ({ navigation }) => {
   const [meetingPlacesLoading, setMeetingPlacesLoading] = useState(false);
   const [meetingPlacesError, setMeetingPlacesError] = useState(null);
   const debouncedMeeting = useDebounced(meetingPointAddress, 350);
-
-  useEffect(() => {
-    return () => {
-      if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -279,7 +273,6 @@ const PostRoute = ({ navigation }) => {
 
   const handlePostRoute = async () => {
     setErrorMessage(null);
-    setSuccessMessage(null);
     const v = validate();
     if (v) {
       setErrorMessage(v);
@@ -314,10 +307,12 @@ const PostRoute = ({ navigation }) => {
 
       await postJson('/api/driver-routes', body, { token: auth.token });
 
-      setSuccessMessage('Route posted! We will notify you when parcels match your route.');
-      navigateTimerRef.current = setTimeout(() => {
-        navigation.navigate('DriverHome');
-      }, 2000);
+      Alert.alert(
+        'Trip posted',
+        'Your route is saved and appears under “Your posted trips” on your dashboard until departure. You’ll see an ACTIVE TRIP banner once customers book parcels.',
+        [{ text: 'View dashboard', onPress: () => navigation.navigate('DriverHome') }],
+        { cancelable: true }
+      );
     } catch (e) {
       setErrorMessage(e.message || 'Could not post route. Try again.');
     } finally {
@@ -336,11 +331,16 @@ const PostRoute = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={styles.scrollContent}
       >
         {/* Header */}
@@ -365,12 +365,6 @@ const PostRoute = ({ navigation }) => {
         {errorMessage ? (
           <View style={styles.errorBanner}>
             <Text style={styles.errorBannerText}>{errorMessage}</Text>
-          </View>
-        ) : null}
-
-        {successMessage ? (
-          <View style={styles.successBanner}>
-            <Text style={styles.successBannerText}>{successMessage}</Text>
           </View>
         ) : null}
 
@@ -698,7 +692,7 @@ const PostRoute = ({ navigation }) => {
         <TouchableOpacity
           style={[styles.postButton, submitting && { opacity: 0.6 }]}
           onPress={handlePostRoute}
-          disabled={submitting || Boolean(successMessage)}
+          disabled={submitting}
         >
           {submitting ? (
             <ActivityIndicator color="#FFFFFF" />
@@ -707,6 +701,7 @@ const PostRoute = ({ navigation }) => {
           )}
         </TouchableOpacity>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -716,7 +711,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  keyboardFlex: {
+    flex: 1,
+  },
   scrollContent: {
+    flexGrow: 1,
     paddingBottom: 120,
   },
   header: {
@@ -758,20 +757,6 @@ const styles = StyleSheet.create({
   },
   errorBannerText: {
     color: '#DC2626',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  successBanner: {
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-  },
-  successBannerText: {
-    color: '#15803D',
     fontSize: 14,
     lineHeight: 20,
   },

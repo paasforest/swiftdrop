@@ -155,7 +155,7 @@ const Home = ({ navigation }) => {
           activeOpacity={0.8}
         >
           <View style={styles.searchDot} />
-          <Text style={styles.searchText}>Where to deliver?</Text>
+          <Text style={styles.searchText}>Where do you want to deliver?</Text>
           <View style={styles.searchArrow}>
             <Text style={styles.searchArrowText}>→</Text>
           </View>

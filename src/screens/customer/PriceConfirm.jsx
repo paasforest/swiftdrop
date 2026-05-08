@@ -8,6 +8,8 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
@@ -63,6 +65,11 @@ export default function PriceConfirm({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
@@ -169,6 +176,7 @@ export default function PriceConfirm({ navigation, route }) {
           </TouchableOpacity>
         </View>
       ) : null}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -177,6 +185,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  keyboardFlex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',

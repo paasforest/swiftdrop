@@ -59,52 +59,55 @@ const Onboarding = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Skip */}
-      <View style={styles.header}>
-        {!isLast && (
-          <TouchableOpacity onPress={handleSkip} hitSlop={12}>
-            <Text style={styles.skipText}>Skip</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Slide content */}
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {/* Logo */}
-        <View style={styles.logoSection}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoText}>S</Text>
+      <View style={styles.mainColumn}>
+        <View style={styles.upperArea}>
+          {/* Skip */}
+          <View style={styles.header}>
+            {!isLast && (
+              <TouchableOpacity onPress={handleSkip} hitSlop={12}>
+                <Text style={styles.skipText}>Skip</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <Text style={styles.brandName}>SwiftDrop</Text>
-          <Text style={styles.brandTagline}>Deliver with people going your way</Text>
+
+          {/* Slide content */}
+          <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
+            {/* Logo */}
+            <View style={styles.logoSection}>
+              <View style={styles.logoCircle}>
+                <Text style={styles.logoText}>S</Text>
+              </View>
+              <Text style={styles.brandName}>SwiftDrop</Text>
+              <Text style={styles.brandTagline}>Deliver with people going your way</Text>
+            </View>
+
+            {/* Illustration placeholder */}
+            <View style={styles.iconCircle}>
+              <Text style={styles.iconEmoji}>{slide.icon}</Text>
+            </View>
+
+            {/* Text */}
+            <Text style={styles.title}>{slide.title}</Text>
+            <Text style={styles.subtitle}>{slide.subtitle}</Text>
+          </Animated.View>
+
+          {/* Dots */}
+          <View style={styles.dotsRow}>
+            {SLIDES.map((_, i) => (
+              <TouchableOpacity key={i} onPress={() => goToSlide(i)} hitSlop={8}>
+                <View
+                  style={[
+                    styles.dot,
+                    i === currentSlide ? styles.dotActive : styles.dotInactive,
+                  ]}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
-        {/* Illustration placeholder */}
-        <View style={styles.iconCircle}>
-          <Text style={styles.iconEmoji}>{slide.icon}</Text>
-        </View>
-
-        {/* Text */}
-        <Text style={styles.title}>{slide.title}</Text>
-        <Text style={styles.subtitle}>{slide.subtitle}</Text>
-      </Animated.View>
-
-      {/* Dots */}
-      <View style={styles.dotsRow}>
-        {SLIDES.map((_, i) => (
-          <TouchableOpacity key={i} onPress={() => goToSlide(i)} hitSlop={8}>
-            <View
-              style={[
-                styles.dot,
-                i === currentSlide ? styles.dotActive : styles.dotInactive,
-              ]}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Bottom button */}
-      <View style={styles.bottomContainer}>
+        {/* Bottom button — flows at bottom with safe inset padding */}
+        <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.continueButton} onPress={handleNext} activeOpacity={0.85}>
           <Text style={styles.continueButtonText}>
             {isLast ? 'Get started' : 'Next'}
@@ -120,6 +123,7 @@ const Onboarding = ({ navigation }) => {
           </TouchableOpacity>
         )}
       </View>
+      </View>
     </SafeAreaView>
   );
 };
@@ -128,6 +132,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  mainColumn: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  upperArea: {
+    flex: 1,
   },
   header: {
     height: 52,
@@ -220,10 +231,10 @@ const styles = StyleSheet.create({
     width: 8,
     backgroundColor: '#E0E0E0',
   },
-  bottomContainer: {
+  buttonContainer: {
     paddingHorizontal: 24,
-    paddingBottom: 18,
-    marginBottom: 4,
+    paddingBottom: 48,
+    paddingTop: 16,
   },
   continueButton: {
     backgroundColor: '#000000',

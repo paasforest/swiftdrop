@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -49,6 +49,22 @@ function firstNameOf(fullName) {
   return fullName.trim().split(/\s+/)[0] || 'Driver';
 }
 
+function formatRouteDeparture(iso) {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-ZA', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
 const STATUS_ERR = 'Could not update status. Check connection.';
 
 const DriverHome = ({ navigation }) => {
@@ -58,6 +74,8 @@ const DriverHome = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [statusBusy, setStatusBusy] = useState(false);
   const [activeTrips, setActiveTrips] = useState([]);
+  /** Full list from GET /api/driver-routes/my — used for "posted, awaiting bookings". */
+  const [myRoutes, setMyRoutes] = useState([]);
 
   const locationIntervalRef = useRef(null);
 
@@ -138,13 +156,17 @@ const DriverHome = ({ navigation }) => {
         getJson('/api/driver-routes/my', { token: auth.token }).catch(() => ({ routes: [] })),
       ]);
       setDashboard(data);
-      const intercityWithParcels = (routesData.routes || []).filter(
+      const routes = routesData.routes || [];
+      setMyRoutes(routes);
+      const intercityWithParcels = routes.filter(
         (r) => r.trip_type === 'intercity' && Number(r.parcel_count) > 0
       );
       setActiveTrips(intercityWithParcels);
     } catch (e) {
       setError(e.message || 'Could not load dashboard');
       setDashboard(null);
+      setMyRoutes([]);
+      setActiveTrips([]);
     } finally {
       setLoading(false);
     }
@@ -177,6 +199,18 @@ const DriverHome = ({ navigation }) => {
   const todayDeliveries = dashboard?.today?.deliveries ?? 0;
   const totalDone = dashboard?.total_deliveries_completed ?? 0;
   const recent = Array.isArray(dashboard?.recent_orders) ? dashboard.recent_orders : [];
+
+  const postedAwaitingTrips = useMemo(() => {
+    const now = Date.now();
+    return (myRoutes || [])
+      .filter((r) => {
+        if (String(r.status) !== 'active') return false;
+        if (Number(r.parcel_count) > 0) return false;
+        const dep = new Date(r.departure_time);
+        return !Number.isNaN(dep.getTime()) && dep.getTime() > now;
+      })
+      .sort((a, b) => new Date(a.departure_time) - new Date(b.departure_time));
+  }, [myRoutes]);
 
   const handleToggleOnline = async () => {
     if (statusBusy) return;
@@ -306,8 +340,43 @@ const DriverHome = ({ navigation }) => {
           </TouchableOpacity>
         ))}
 
+        {postedAwaitingTrips.length > 0 ? (
+          <View style={styles.postedSection}>
+            <Text style={styles.postedSectionTitle}>Your posted trips</Text>
+            <Text style={styles.postedSectionHint}>
+              Live on SwiftDrop — waiting for customers to book. Tap to view trip details.
+            </Text>
+            {postedAwaitingTrips.map((trip) => (
+              <TouchableOpacity
+                key={`posted-${trip.id}`}
+                style={styles.postedTripCard}
+                onPress={() => navigation.navigate('TripDeliveryManager', { routeId: trip.id })}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.postedTripBadge}>
+                  {trip.trip_type === 'intercity' ? 'Intercity' : 'Local'} ·{' '}
+                  {trip.max_parcels ?? '—'} slot{Number(trip.max_parcels) === 1 ? '' : 's'}
+                </Text>
+                <Text style={styles.postedTripRoute} numberOfLines={2}>
+                  {trip.from_address} → {trip.to_address}
+                </Text>
+                <Text style={styles.postedTripMeta}>
+                  Departs {formatRouteDeparture(trip.departure_time)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
         {/* Action buttons */}
         <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={styles.postedRoutesNavButton}
+            onPress={() => navigation.navigate('DriverPostedRoutes')}
+          >
+            <Text style={styles.postedRoutesNavButtonText}>Posted routes</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.postRouteButton}
             onPress={() => navigation.navigate('PostRoute')}
@@ -540,10 +609,66 @@ const styles = StyleSheet.create({
   tripBannerArrow: {
     fontSize: 20, color: '#00C853', fontWeight: '700',
   },
+  postedSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  postedSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  postedSectionHint: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  postedTripCard: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  postedTripBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#616161',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  postedTripRoute: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  postedTripMeta: {
+    fontSize: 12,
+    color: '#757575',
+  },
   actionButtons: {
     paddingHorizontal: 20,
     marginBottom: 24,
     gap: 12,
+  },
+  postedRoutesNavButton: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1.5,
+    borderColor: '#00C853',
+    paddingVertical: 16,
+    borderRadius: radius.md,
+    alignItems: 'center',
+  },
+  postedRoutesNavButtonText: {
+    color: '#1B5E20',
+    fontSize: 16,
+    fontWeight: '700',
   },
   postRouteButton: {
     backgroundColor: 'transparent',

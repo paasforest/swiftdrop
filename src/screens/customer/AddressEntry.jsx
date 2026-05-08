@@ -423,6 +423,11 @@ const AddressEntry = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Clean white header */}
@@ -434,11 +439,6 @@ const AddressEntry = ({ navigation }) => {
         <View style={{ width: 40 }} />
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.keyboardFlex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
-      >
         <View style={styles.bodyColumn}>
           {/* Map */}
           <View style={styles.mapWrap}>
@@ -487,21 +487,24 @@ const AddressEntry = ({ navigation }) => {
             style={styles.bottomScroll}
             contentContainerStyle={[
               styles.bottomScrollInner,
-              { paddingBottom: Math.max(insets.bottom, 12) },
+              {
+                flexGrow: 1,
+                paddingBottom: Math.max(120, insets.bottom, 12),
+              },
             ]}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
             {/* Uber-style address card with connected dots */}
             <View style={styles.addressCard}>
               <View style={styles.addressBlock}>
-                <Text style={styles.fieldLabel}>Pickup location</Text>
+                <Text style={styles.inputLabel}>Pickup address</Text>
                 <View style={styles.addressRow}>
                   <View style={styles.dotGreen} />
                   <TextInput
                     style={styles.addressInput}
-                    placeholder="Search street, suburb, or place name"
+                    placeholder="e.g. 123 Main St, Sandton"
                     placeholderTextColor="#9E9E9E"
                     value={pickupAddress}
                     onChangeText={(t) => {
@@ -520,12 +523,12 @@ const AddressEntry = ({ navigation }) => {
               <View style={styles.addressConnector} />
 
               <View style={styles.addressBlock}>
-                <Text style={styles.fieldLabel}>Deliver parcel to</Text>
+                <Text style={styles.inputLabel}>Dropoff address</Text>
                 <View style={styles.addressRow}>
                   <View style={styles.dotBlack} />
                   <TextInput
                     style={styles.addressInput}
-                    placeholder="Where should we drop off your parcel?"
+                    placeholder="e.g. 45 West St, Rosebank"
                     placeholderTextColor="#9E9E9E"
                     value={deliveryAddress}
                     onChangeText={(t) => {
@@ -766,13 +769,13 @@ const styles = StyleSheet.create({
   addressBlock: {
     marginBottom: 2,
   },
-  fieldLabel: {
-    fontSize: 11,
+  inputLabel: {
+    fontSize: 12,
     fontWeight: '700',
     color: '#9E9E9E',
-    letterSpacing: 0.9,
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    letterSpacing: 1,
+    marginBottom: 6,
+    marginTop: 16,
     marginLeft: 26,
   },
   addressRow: {

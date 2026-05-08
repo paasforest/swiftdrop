@@ -42,6 +42,7 @@ import DeliveryConfirm from './src/screens/driver/DeliveryConfirm';
 import Earnings from './src/screens/driver/Earnings';
 import EarningsScreen from './src/screens/driver/EarningsScreen';
 import TripDeliveryManager from './src/screens/driver/TripDeliveryManager';
+import DriverPostedRoutes from './src/screens/driver/DriverPostedRoutes';
 import DriverOTPScreen from './src/screens/driver/DriverOTPScreen';
 import DriverProfile from './src/screens/driver/DriverProfile';
 
@@ -143,6 +144,7 @@ export default function App() {
         <Stack.Screen name="Earnings" component={Earnings} />
         <Stack.Screen name="EarningsScreen" component={EarningsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TripDeliveryManager" component={TripDeliveryManager} options={{ headerShown: false }} />
+        <Stack.Screen name="DriverPostedRoutes" component={DriverPostedRoutes} options={{ headerShown: false }} />
         <Stack.Screen name="DriverProfile" component={DriverProfile} options={{ headerShown: false }} />
 
         {/* Admin Flow */}

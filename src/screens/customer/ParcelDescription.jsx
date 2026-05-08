@@ -8,6 +8,8 @@ import {
   ScrollView,
   StatusBar,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 function parseEstimatedValueToNumber(range) {
@@ -122,6 +124,11 @@ const ParcelDescription = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardFlex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -135,9 +142,10 @@ const ParcelDescription = ({ navigation, route }) => {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={styles.scrollContent}
       >
 
         {/* Progress */}
@@ -254,6 +262,8 @@ const ParcelDescription = ({ navigation, route }) => {
         </TouchableOpacity>
       </View>
 
+      </KeyboardAvoidingView>
+
       {/* Prohibited Items Modal */}
       {showProhibitedModal && (
         <View style={styles.modalOverlay}>
@@ -298,6 +308,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  keyboardFlex: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 120,
   },
   header: {
     flexDirection: 'row',
