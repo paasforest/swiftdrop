@@ -307,13 +307,23 @@ const DriverHome = ({ navigation }) => {
               )}
             </View>
           </TouchableOpacity>
-          <Text style={styles.motivationalText}>
-            {statusBusy
-              ? 'Updating your status…'
-              : isOnline
-                ? 'You are live — waiting for jobs'
-                : 'Go online to start earning'}
-          </Text>
+          {statusBusy ? (
+            <Text style={styles.motivationalText}>Updating your status…</Text>
+          ) : !isOnline ? (
+            <View style={styles.onlineExplainer}>
+              <Text style={styles.onlineExplainerTitle}>Go online for local deliveries</Text>
+              <Text style={styles.onlineExplainerText}>
+                When online your GPS location is shared and nearby delivery orders will be sent to you
+                automatically.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.onlineLiveInfo}>
+              <Text style={styles.onlineLiveText}>
+                📍 You are live — orders near you will appear automatically
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Today's earnings */}
@@ -564,6 +574,37 @@ const styles = StyleSheet.create({
     color: '#000000',
     paddingHorizontal: spacing.md,
     lineHeight: 24,
+  },
+  onlineExplainer: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 8,
+  },
+  onlineExplainerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  onlineExplainerText: {
+    fontSize: 12,
+    color: '#757575',
+    lineHeight: 18,
+  },
+  onlineLiveInfo: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  onlineLiveText: {
+    fontSize: 13,
+    color: '#00C853',
+    fontWeight: '600',
   },
   earningsCard: {
     backgroundColor: '#FFFFFF',

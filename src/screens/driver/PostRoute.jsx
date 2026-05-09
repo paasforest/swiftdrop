@@ -75,7 +75,7 @@ const PostRoute = ({ navigation }) => {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const [tripType, setTripType] = useState('local');
+  const [tripType] = useState('intercity');
   const [deliveryRadius, setDeliveryRadius] = useState(10);
   const [pickupMethod, setPickupMethod] = useState('driver_collects');
 
@@ -302,7 +302,7 @@ const PostRoute = ({ navigation }) => {
         meeting_point_address: pickupMethod === 'sender_drops_off' ? meetingPointAddress : null,
         meeting_point_lat:     pickupMethod === 'sender_drops_off' ? meetingPointLat     : null,
         meeting_point_lng:     pickupMethod === 'sender_drops_off' ? meetingPointLng     : null,
-        delivery_radius_km: tripType === 'intercity' ? deliveryRadius : null,
+        delivery_radius_km: deliveryRadius,
       };
 
       await postJson('/api/driver-routes', body, { token: auth.token });
@@ -343,7 +343,6 @@ const PostRoute = ({ navigation }) => {
               });
               setBootSpace('medium');
               setMaxParcels(2);
-              setTripType('local');
               setPickupMethod('driver_collects');
             },
           },
@@ -407,38 +406,15 @@ const PostRoute = ({ navigation }) => {
 
         <View style={styles.formContainer}>
 
-          {/* Trip type selector */}
+          {/* Trip type — intercity only */}
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Trip type</Text>
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              {[
-                { key: 'local',     label: 'Local delivery' },
-                { key: 'intercity', label: 'Intercity trip'  },
-              ].map((opt) => (
-                <TouchableOpacity
-                  key={opt.key}
-                  onPress={() => setTripType(opt.key)}
-                  style={[
-                    styles.tripTypePill,
-                    tripType === opt.key && styles.tripTypePillSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tripTypePillText,
-                      tripType === opt.key && styles.tripTypePillTextSelected,
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.intercityOnlyBadge}>
+              <Text style={styles.intercityOnlyText}>🚗 Intercity trip</Text>
             </View>
-            {tripType === 'intercity' && (
-              <Text style={styles.intercityHint}>
-                Post your route so clients can book parcels on your trip
-              </Text>
-            )}
+            <Text style={styles.intercityHint}>
+              Post your route so clients can book parcels on your trip
+            </Text>
           </View>
 
           {/* From */}
@@ -600,36 +576,34 @@ const PostRoute = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Delivery radius — intercity only */}
-          {tripType === 'intercity' && (
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>Delivery radius at destination</Text>
-              <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 12 }}>
-                How far will you travel to deliver from your destination?
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {[5, 10, 20, 30].map((km) => (
-                  <TouchableOpacity
-                    key={km}
-                    onPress={() => setDeliveryRadius(km)}
-                    style={{
-                      flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
-                      backgroundColor: deliveryRadius === km ? '#000000' : '#F5F5F5',
-                      borderWidth: 1.5,
-                      borderColor: deliveryRadius === km ? '#000000' : '#E0E0E0',
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 14, fontWeight: '700',
-                      color: deliveryRadius === km ? '#FFFFFF' : '#757575',
-                    }}>
-                      {km}km
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+          {/* Delivery radius at destination */}
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>Delivery radius at destination</Text>
+            <Text style={{ fontSize: 12, color: '#9E9E9E', marginBottom: 12 }}>
+              How far will you travel to deliver from your destination?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {[5, 10, 20, 30].map((km) => (
+                <TouchableOpacity
+                  key={km}
+                  onPress={() => setDeliveryRadius(km)}
+                  style={{
+                    flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center',
+                    backgroundColor: deliveryRadius === km ? '#000000' : '#F5F5F5',
+                    borderWidth: 1.5,
+                    borderColor: deliveryRadius === km ? '#000000' : '#E0E0E0',
+                  }}
+                >
+                  <Text style={{
+                    fontSize: 14, fontWeight: '700',
+                    color: deliveryRadius === km ? '#FFFFFF' : '#757575',
+                  }}>
+                    {km}km
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
+          </View>
 
           {/* Pickup method */}
           <View style={styles.inputSection}>
@@ -810,32 +784,23 @@ const styles = StyleSheet.create({
     color: '#000000',
     marginBottom: 8,
   },
-  tripTypePill: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 24,
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#E0E0E0',
-  },
-  tripTypePillSelected: {
+  intercityOnlyBadge: {
     backgroundColor: '#000000',
-    borderColor: '#000000',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
   },
-  tripTypePillText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#757575',
-  },
-  tripTypePillTextSelected: {
+  intercityOnlyText: {
     color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   intercityHint: {
     fontSize: 12,
     color: '#9E9E9E',
-    marginTop: 8,
-    lineHeight: 16,
+    lineHeight: 18,
   },
   inputContainer: {
     flexDirection: 'row',

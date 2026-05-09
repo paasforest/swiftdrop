@@ -1,6 +1,7 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const { generateOTP } = require('../utils/otpHelper');
+const { detectProvince } = require('../services/provinceService');
 const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
 const { releaseEscrow } = require('../services/paymentService');
 const { sendPushNotification } = require('../services/notificationService');
@@ -163,6 +164,9 @@ async function createOrder(req, res) {
       parseFloat(dropoff_lat), parseFloat(dropoff_lng)
     );
 
+    const pickupProvince = detectProvince(Number(pickup_lat), Number(pickup_lng));
+    const province = pickupProvince || null;
+
     let basePrice;
     let insuranceFee;
     let commission;
@@ -216,15 +220,17 @@ async function createOrder(req, res) {
       const orderRes = await client.query(
         `INSERT INTO orders (
           order_number, customer_id, pickup_address, pickup_lat, pickup_lng,
-          dropoff_address, dropoff_lat, dropoff_lng, parcel_type, parcel_size, parcel_value,
+          dropoff_address, dropoff_lat, dropoff_lng, province,
+          parcel_type, parcel_size, parcel_value,
           special_handling, delivery_tier, status, base_price, insurance_fee, total_price,
           commission_amount, driver_earnings, pickup_otp, delivery_otp,
           assigned_driver_route_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'matching',$14,$15,$16,$17,$18,$19,$20,$21)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'matching',$15,$16,$17,$18,$19,$20,$21,$22)
         RETURNING *`,
         [
           orderNumber, customerId, pickup_address, pickup_lat, pickup_lng,
-          dropoff_address, dropoff_lat, dropoff_lng, parcel_type || null, parcel_size || null,
+          dropoff_address, dropoff_lat, dropoff_lng, province,
+          parcel_type || null, parcel_size || null,
           parcel_value || null, special_handling || null, deliveryTierForDb,
           basePrice, insuranceFee, totalPrice, commission, driverEarnings, pickupOtp, deliveryOtp,
           assigned_driver_route_id || null,
