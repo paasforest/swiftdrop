@@ -10,6 +10,8 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getAuth } from '../../authStore';
@@ -162,47 +164,74 @@ export default function TripBrowser({ navigation }) {
       <View style={styles.searchCard}>
         <View style={styles.cityRow}>
           <View style={styles.dotGreen} />
-          <TextInput
-            style={styles.cityInput}
-            placeholder="From city (e.g. Johannesburg)"
-            value={fromCity}
-            onChangeText={(text) => {
-              setFromCity(text);
-              setError(null);
-            }}
-            autoCapitalize="words"
-            returnKeyType="next"
-          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>FROM</Text>
+            <TextInput
+              style={styles.cityInput}
+              placeholder="City or town"
+              placeholderTextColor="#BDBDBD"
+              value={fromCity}
+              onChangeText={(text) => {
+                setFromCity(text);
+                setError(null);
+              }}
+              autoCapitalize="words"
+              returnKeyType="next"
+            />
+          </View>
         </View>
 
-        <View style={styles.dividerLine} />
+        <View style={styles.swapRow}>
+          <View style={styles.swapLine} />
+          <TouchableOpacity
+            style={styles.swapButton}
+            onPress={() => {
+              const temp = fromCity;
+              setFromCity(toCity);
+              setToCity(temp);
+            }}
+          >
+            <Text style={styles.swapIcon}>⇅</Text>
+          </TouchableOpacity>
+          <View style={styles.swapLine} />
+        </View>
 
         <View style={styles.cityRow}>
           <View style={styles.dotBlack} />
-          <TextInput
-            style={styles.cityInput}
-            placeholder="To city (e.g. Polokwane)"
-            value={toCity}
-            onChangeText={(text) => {
-              setToCity(text);
-              setError(null);
-            }}
-            autoCapitalize="words"
-            returnKeyType="search"
-            onSubmitEditing={searchTrips}
-          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>TO</Text>
+            <TextInput
+              style={styles.cityInput}
+              placeholder="City or town"
+              placeholderTextColor="#BDBDBD"
+              value={toCity}
+              onChangeText={(text) => {
+                setToCity(text);
+                setError(null);
+              }}
+              autoCapitalize="words"
+              returnKeyType="search"
+              onSubmitEditing={searchTrips}
+            />
+          </View>
         </View>
 
         <TouchableOpacity
           style={styles.dateRow}
           onPress={() => setShowDatePicker(true)}
         >
-          <Text style={styles.dateLabel}>
-            {'📅 '}
-            {selectedDate
-              ? selectedDate.toDateString()
-              : 'Any date — tap to filter'}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>DEPARTURE DATE</Text>
+            <Text style={styles.dateValue}>
+              {selectedDate
+                ? selectedDate.toLocaleDateString('en-ZA', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                  })
+                : 'Any date — tap to filter'}
+            </Text>
+          </View>
           {selectedDate && (
             <TouchableOpacity
               onPress={() => setSelectedDate(null)}
@@ -242,15 +271,65 @@ export default function TripBrowser({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {!searched && (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            paddingBottom: 40,
+          }}
+        >
+          <Text style={styles.sectionLabel}>POPULAR ROUTES</Text>
+          {[
+            { from: 'Johannesburg', to: 'Polokwane' },
+            { from: 'Johannesburg', to: 'Durban' },
+            { from: 'Cape Town', to: 'George' },
+            { from: 'Johannesburg', to: 'Bloemfontein' },
+            { from: 'Pretoria', to: 'Nelspruit' },
+            { from: 'Cape Town', to: 'Worcester' },
+            { from: 'Johannesburg', to: 'East London' },
+            { from: 'Johannesburg', to: 'Kimberley' },
+          ].map((route, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.popularRoute}
+              onPress={() => {
+                setFromCity(route.from);
+                setToCity(route.to);
+              }}
+            >
+              <Text style={styles.popularRouteIcon}>🚗</Text>
+              <Text style={styles.popularRouteText}>
+                {route.from} → {route.to}
+              </Text>
+              <Text style={styles.popularRouteArrow}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
       {/* Empty state */}
       {searched && trips.length === 0 && (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🚗</Text>
+          <Text style={styles.emptyEmoji}>🔍</Text>
           <Text style={styles.emptyTitle}>No trips found</Text>
           <Text style={styles.emptySubtext}>
             No drivers heading that way yet.{'\n'}
-            Check back soon or try different dates.
+            Try different dates or check back soon.
           </Text>
+          <TouchableOpacity
+            style={styles.notifyButton}
+            onPress={() =>
+              Alert.alert(
+                'Coming soon',
+                'We will notify you when a driver posts this route.',
+                [{ text: 'OK' }]
+              )
+            }
+          >
+            <Text style={styles.notifyButtonText}>Notify me when available</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -302,6 +381,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
+  fieldLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
   dotGreen: {
     width: 12, height: 12, borderRadius: 6,
     backgroundColor: '#00C853', marginRight: 12,
@@ -311,7 +397,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#000', marginRight: 12,
   },
   cityInput:    { flex: 1, fontSize: 15, color: '#000' },
-  dividerLine:  { height: 1, backgroundColor: '#F0F0F0', marginLeft: 24 },
+  swapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  swapLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#F0F0F0',
+  },
+  swapButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  swapIcon: {
+    fontSize: 16,
+    color: '#000000',
+    fontWeight: '700',
+  },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -321,7 +432,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
   },
-  dateLabel:  { fontSize: 13, color: '#757575' },
+  dateValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+  },
   clearDate:  { fontSize: 14, color: '#9E9E9E', padding: 4 },
   errorText:  { fontSize: 13, color: '#D32F2F', marginTop: 8, marginBottom: 4 },
   searchButton: {
@@ -339,6 +454,52 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14, color: '#9E9E9E',
     textAlign: 'center', lineHeight: 20,
+  },
+  notifyButton: {
+    borderWidth: 1.5,
+    borderColor: '#000000',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  notifyButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 12,
+    marginTop: 8,
+  },
+  popularRoute: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#FAFAFA',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  popularRouteIcon: {
+    fontSize: 16,
+    marginRight: 12,
+  },
+  popularRouteText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#000000',
+  },
+  popularRouteArrow: {
+    fontSize: 18,
+    color: '#9E9E9E',
   },
   tripCard: {
     backgroundColor: '#FFF',
