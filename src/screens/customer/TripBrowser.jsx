@@ -211,17 +211,21 @@ export default function TripBrowser({ navigation }) {
           />
         </View>
 
-        <TouchableOpacity
-          style={styles.swapBtn}
-          onPress={() => {
-            const temp = fromCity;
-            setFromCity(toCity);
-            setToCity(temp);
-          }}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.swapBtnIcon}>⇅</Text>
-        </TouchableOpacity>
+        <View style={styles.swapRow}>
+          <View style={styles.swapLine} />
+          <TouchableOpacity
+            style={styles.swapBtn}
+            onPress={() => {
+              const temp = fromCity;
+              setFromCity(toCity);
+              setToCity(temp);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.swapBtnIcon}>⇅</Text>
+          </TouchableOpacity>
+          <View style={styles.swapLine} />
+        </View>
 
         <View style={styles.fieldContainer}>
           <Text style={styles.fieldLabel}>TO</Text>
@@ -405,11 +409,10 @@ const styles = StyleSheet.create({
     elevation: 6,
     borderWidth: 1,
     borderColor: '#F0F0F0',
-    position: 'relative',
   },
   fieldContainer: {
     paddingVertical: 8,
-    paddingRight: 52,
+    paddingRight: 0,
   },
   fieldLabel: {
     fontSize: 10,
@@ -424,10 +427,17 @@ const styles = StyleSheet.create({
     color: '#000000',
     paddingVertical: 4,
   },
+  swapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  swapLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#F0F0F0',
+  },
   swapBtn: {
-    position: 'absolute',
-    right: 20,
-    top: 64,
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -436,7 +446,7 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 10,
+    marginHorizontal: 12,
   },
   swapBtnIcon: {
     fontSize: 18,
