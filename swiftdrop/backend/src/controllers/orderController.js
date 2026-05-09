@@ -260,6 +260,51 @@ async function createOrder(req, res) {
 
       runMatching(order.id);
 
+      if (assigned_driver_route_id) {
+        try {
+          const { rows: routeDetailRows } = await db.query(
+            `SELECT pickup_method, meeting_point_address, departure_time
+             FROM driver_routes WHERE id = $1`,
+            [assigned_driver_route_id]
+          );
+          const driverRoute = routeDetailRows[0];
+          if (
+            driverRoute?.pickup_method === 'sender_drops_off'
+            && driverRoute?.meeting_point_address
+          ) {
+            const { rows: custRows } = await db.query(
+              `SELECT phone FROM users WHERE id = $1`,
+              [order.customer_id]
+            );
+            const customerPhone = custRows[0]?.phone;
+            if (customerPhone) {
+              const departureTime = new Date(driverRoute.departure_time);
+              const dropoffDeadline = new Date(departureTime.getTime() - 30 * 60 * 1000);
+              const deadlineStr = dropoffDeadline.toLocaleTimeString('en-ZA', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const departureDateStr = departureTime.toLocaleDateString('en-ZA', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+              });
+              await smsService.sendSMS(
+                customerPhone,
+                'SwiftDrop: Your intercity booking is confirmed!\n\n'
+                  + 'Drop off your parcel at:\n'
+                  + `${driverRoute.meeting_point_address}\n\n`
+                  + `Deadline: ${deadlineStr} on ${departureDateStr}\n`
+                  + '(30 min before driver departs)\n\n'
+                  + 'The driver will verify with a code and photo.'
+              );
+            }
+          }
+        } catch (smsErr) {
+          console.error('createOrder meeting-point SMS:', smsErr?.message || smsErr);
+        }
+      }
+
       const out = {
         ...order,
         price_breakdown: {

@@ -144,9 +144,35 @@ export default function TripBookingConfirm({ navigation, route }) {
           <Text style={styles.arrow}>↓</Text>
           <Text style={styles.route}>{trip.to_address}</Text>
           <Text style={styles.meta}>Departs {depStr}</Text>
-          <Text style={styles.meta}>
-            {trip.pickup_method === 'driver_collects' ? 'Driver collects from you' : 'You drop off to driver'}
-          </Text>
+
+          {trip.pickup_method === 'sender_drops_off' && trip.meeting_point_address ? (
+            <View style={styles.meetingCard}>
+              <View style={styles.meetingHeader}>
+                <Text style={styles.meetingIcon}>📍</Text>
+                <Text style={styles.meetingTitle}>Drop off point</Text>
+              </View>
+              <Text style={styles.meetingAddress}>{trip.meeting_point_address}</Text>
+              <Text style={styles.meetingDeadline}>
+                ⏰ Must arrive before{' '}
+                {new Date(new Date(trip.departure_time).getTime() - 30 * 60 * 1000).toLocaleTimeString('en-ZA', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                (30 min before departure)
+              </Text>
+              <Text style={styles.meetingNote}>
+                Bring your parcel to this address. The driver will verify with OTP and take a photo before departing.
+              </Text>
+            </View>
+          ) : trip.pickup_method === 'driver_collects' ? (
+            <View style={styles.collectCard}>
+              <Text style={styles.collectIcon}>🚗</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.collectTitle}>Driver will collect</Text>
+                <Text style={styles.collectSub}>Driver comes to your pickup address before departure</Text>
+              </View>
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.sectionLabel}>Parcel</Text>
@@ -262,6 +288,65 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
   },
   driverName: { fontSize: 17, fontWeight: '700', color: '#000' },
+  meetingCard: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    marginTop: 8,
+    borderWidth: 1.5,
+    borderColor: '#FFB800',
+  },
+  meetingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  meetingIcon: { fontSize: 18, marginRight: 8 },
+  meetingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  meetingAddress: {
+    fontSize: 14,
+    color: '#000000',
+    fontWeight: '500',
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  meetingDeadline: {
+    fontSize: 13,
+    color: '#E65100',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  meetingNote: {
+    fontSize: 12,
+    color: '#757575',
+    lineHeight: 18,
+  },
+  collectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    marginTop: 8,
+    gap: 12,
+  },
+  collectIcon: { fontSize: 24 },
+  collectTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  collectSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
   route: { fontSize: 14, color: '#333', lineHeight: 20 },
   arrow: { textAlign: 'center', color: '#9E9E9E', marginVertical: 4 },
   meta: { fontSize: 13, color: '#757575', marginTop: 6 },

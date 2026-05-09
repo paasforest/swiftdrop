@@ -43,6 +43,7 @@ function TripCard({ trip, onBook }) {
             <Text style={styles.rating}>
               {Number(trip.driver_rating || 0).toFixed(1)}
             </Text>
+            <Text style={styles.verifiedBadge}>· ✓ Verified</Text>
           </View>
         </View>
         <View style={[styles.slotsBadge, isAlmostFull && styles.slotsBadgeWarning]}>
@@ -516,16 +517,29 @@ const styles = StyleSheet.create({
   },
   driverRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   driverAvatar: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#000000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
   },
-  driverInitial:  { fontSize: 18, fontWeight: '700', color: '#000' },
-  driverName:     { fontSize: 15, fontWeight: '600', color: '#000' },
-  ratingRow:      { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  star:           { fontSize: 12, color: '#FFB800' },
-  rating:         { fontSize: 12, color: '#757575', marginLeft: 3 },
+  driverInitial: { fontSize: 22, fontWeight: '800', color: '#FFFFFF' },
+  driverName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  star: { fontSize: 12, color: '#FFB800' },
+  rating: { fontSize: 12, color: '#757575', marginLeft: 3 },
+  verifiedBadge: {
+    fontSize: 11,
+    color: '#00C853',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
   slotsBadge: {
     backgroundColor: '#E8F5E9',
     borderRadius: 20,
