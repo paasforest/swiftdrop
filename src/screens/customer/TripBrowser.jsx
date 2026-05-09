@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -106,7 +106,23 @@ function TripCard({ trip, onBook }) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
+const POPULAR_ROUTES = [
+  { from: 'Johannesburg', to: 'Cape Town' },
+  { from: 'Cape Town', to: 'Johannesburg' },
+  { from: 'Johannesburg', to: 'Polokwane' },
+  { from: 'Polokwane', to: 'Johannesburg' },
+  { from: 'Johannesburg', to: 'Durban' },
+  { from: 'Durban', to: 'Johannesburg' },
+  { from: 'Cape Town', to: 'George' },
+  { from: 'Cape Town', to: 'Port Elizabeth' },
+  { from: 'Johannesburg', to: 'Bloemfontein' },
+  { from: 'Johannesburg', to: 'Nelspruit' },
+  { from: 'Pretoria', to: 'Polokwane' },
+  { from: 'Johannesburg', to: 'East London' },
+];
+
 export default function TripBrowser({ navigation }) {
+  const toInputRef = useRef(null);
   const [fromCity,       setFromCity]       = useState('');
   const [toCity,         setToCity]         = useState('');
   const [selectedDate,   setSelectedDate]   = useState(null);
@@ -118,18 +134,22 @@ export default function TripBrowser({ navigation }) {
 
   const auth = getAuth();
 
-  async function searchTrips() {
-    if (!fromCity.trim() || !toCity.trim()) {
+  async function searchTripsWithCities(from, to) {
+    const fromTrim = String(from || '').trim();
+    const toTrim = String(to || '').trim();
+    if (!fromTrim || !toTrim) {
       setError('Please enter both cities');
       return;
     }
+    setFromCity(fromTrim);
+    setToCity(toTrim);
     setLoading(true);
     setError(null);
     setSearched(false);
     try {
       const params = new URLSearchParams({
-        from_city: fromCity.trim(),
-        to_city:   toCity.trim(),
+        from_city: fromTrim,
+        to_city: toTrim,
         ...(selectedDate && {
           date: selectedDate.toISOString().split('T')[0],
         }),
@@ -141,10 +161,14 @@ export default function TripBrowser({ navigation }) {
       setTrips(data.trips || []);
       setSearched(true);
     } catch {
-      setError('Could not load trips. Try again.');
+      setError('Could not load trips.');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function searchTrips() {
+    await searchTripsWithCities(fromCity, toCity);
   }
 
   function handleBookTrip(trip) {
@@ -169,85 +193,89 @@ export default function TripBrowser({ navigation }) {
 
       {/* Search card */}
       <View style={styles.searchCard}>
-        <View style={styles.cityRow}>
-          <View style={styles.dotGreen} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>FROM</Text>
-            <TextInput
-              style={styles.cityInput}
-              placeholder="City or town"
-              placeholderTextColor="#BDBDBD"
-              value={fromCity}
-              onChangeText={(text) => {
-                setFromCity(text);
-                setError(null);
-              }}
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-          </View>
-        </View>
-
-        <View style={styles.swapRow}>
-          <View style={styles.swapLine} />
-          <TouchableOpacity
-            style={styles.swapButton}
-            onPress={() => {
-              const temp = fromCity;
-              setFromCity(toCity);
-              setToCity(temp);
+        <View style={styles.fieldContainer}>
+          <Text style={styles.fieldLabel}>FROM</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="City or town"
+            placeholderTextColor="#BDBDBD"
+            value={fromCity}
+            onChangeText={(text) => {
+              setFromCity(text);
+              setError(null);
+              setSearched(false);
             }}
-          >
-            <Text style={styles.swapIcon}>⇅</Text>
-          </TouchableOpacity>
-          <View style={styles.swapLine} />
-        </View>
-
-        <View style={styles.cityRow}>
-          <View style={styles.dotBlack} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>TO</Text>
-            <TextInput
-              style={styles.cityInput}
-              placeholder="City or town"
-              placeholderTextColor="#BDBDBD"
-              value={toCity}
-              onChangeText={(text) => {
-                setToCity(text);
-                setError(null);
-              }}
-              autoCapitalize="words"
-              returnKeyType="search"
-              onSubmitEditing={searchTrips}
-            />
-          </View>
+            autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => toInputRef.current?.focus()}
+          />
         </View>
 
         <TouchableOpacity
-          style={styles.dateRow}
-          onPress={() => setShowDatePicker(true)}
+          style={styles.swapBtn}
+          onPress={() => {
+            const temp = fromCity;
+            setFromCity(toCity);
+            setToCity(temp);
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>DEPARTURE DATE</Text>
-            <Text style={styles.dateValue}>
-              {selectedDate
-                ? selectedDate.toLocaleDateString('en-ZA', {
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long',
-                  })
-                : 'Any date — tap to filter'}
-            </Text>
-          </View>
-          {selectedDate && (
+          <Text style={styles.swapBtnIcon}>⇅</Text>
+        </TouchableOpacity>
+
+        <View style={styles.fieldContainer}>
+          <Text style={styles.fieldLabel}>TO</Text>
+          <TextInput
+            ref={toInputRef}
+            style={styles.fieldInput}
+            placeholder="City or town"
+            placeholderTextColor="#BDBDBD"
+            value={toCity}
+            onChangeText={(text) => {
+              setToCity(text);
+              setError(null);
+              setSearched(false);
+            }}
+            autoCapitalize="words"
+            returnKeyType="search"
+            onSubmitEditing={searchTrips}
+          />
+        </View>
+
+        <View style={styles.fieldDivider} />
+
+        <View style={styles.datePickerRow}>
+          <TouchableOpacity
+            style={styles.datePickerTouchable}
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.datePickerIcon}>📅</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>TRAVEL DATE</Text>
+              <Text style={styles.datePickerValue}>
+                {selectedDate
+                  ? selectedDate.toLocaleDateString('en-ZA', {
+                      weekday: 'short',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })
+                  : 'Any date'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          {selectedDate ? (
             <TouchableOpacity
               onPress={() => setSelectedDate(null)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.clearDate}>✕</Text>
+              <Text style={styles.clearDateBtn}>✕</Text>
             </TouchableOpacity>
+          ) : (
+            <Text style={styles.dateArrowIcon}>›</Text>
           )}
-        </TouchableOpacity>
+        </View>
 
         {showDatePicker && (
           <DateTimePicker
@@ -261,25 +289,26 @@ export default function TripBrowser({ navigation }) {
           />
         )}
 
-        {error ? (
-          <Text style={styles.errorText}>{error}</Text>
-        ) : null}
+        {error ? <Text style={styles.searchError}>{error}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.searchButton, loading && { opacity: 0.6 }]}
+          style={[styles.searchBtn, loading && { opacity: 0.6 }]}
           onPress={searchTrips}
           disabled={loading}
+          activeOpacity={0.8}
         >
           {loading ? (
             <ActivityIndicator color="#FFF" size="small" />
           ) : (
-            <Text style={styles.searchButtonText}>Search trips</Text>
+            <Text style={styles.searchBtnText}>🔍 Search trips</Text>
           )}
         </TouchableOpacity>
       </View>
 
       {!searched && (
         <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: 16,
@@ -288,23 +317,11 @@ export default function TripBrowser({ navigation }) {
           }}
         >
           <Text style={styles.sectionLabel}>POPULAR ROUTES</Text>
-          {[
-            { from: 'Johannesburg', to: 'Polokwane' },
-            { from: 'Johannesburg', to: 'Durban' },
-            { from: 'Cape Town', to: 'George' },
-            { from: 'Johannesburg', to: 'Bloemfontein' },
-            { from: 'Pretoria', to: 'Nelspruit' },
-            { from: 'Cape Town', to: 'Worcester' },
-            { from: 'Johannesburg', to: 'East London' },
-            { from: 'Johannesburg', to: 'Kimberley' },
-          ].map((route, i) => (
+          {POPULAR_ROUTES.map((route, i) => (
             <TouchableOpacity
-              key={i}
+              key={`${route.from}-${route.to}-${i}`}
               style={styles.popularRoute}
-              onPress={() => {
-                setFromCity(route.from);
-                setToCity(route.to);
-              }}
+              onPress={() => searchTripsWithCities(route.from, route.to)}
             >
               <Text style={styles.popularRouteIcon}>🚗</Text>
               <Text style={styles.popularRouteText}>
@@ -345,6 +362,8 @@ export default function TripBrowser({ navigation }) {
         <FlatList
           data={trips}
           keyExtractor={(item) => item.id.toString()}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           renderItem={({ item }) => (
             <TripCard trip={item} onBook={() => handleBookTrip(item)} />
           )}
@@ -373,88 +392,109 @@ const styles = StyleSheet.create({
   backArrow:    { fontSize: 22, color: '#000' },
   headerTitle:  { fontSize: 17, fontWeight: '700', color: '#000' },
   searchCard: {
-    margin: 16,
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    position: 'relative',
   },
-  cityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
+  fieldContainer: {
+    paddingVertical: 8,
+    paddingRight: 52,
   },
   fieldLabel: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#9E9E9E',
-    letterSpacing: 1.2,
-    marginBottom: 2,
+    letterSpacing: 1.5,
+    marginBottom: 4,
   },
-  dotGreen: {
-    width: 12, height: 12, borderRadius: 6,
-    backgroundColor: '#00C853', marginRight: 12,
+  fieldInput: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    paddingVertical: 4,
   },
-  dotBlack: {
-    width: 12, height: 12, borderRadius: 3,
-    backgroundColor: '#000', marginRight: 12,
-  },
-  cityInput:    { flex: 1, fontSize: 15, color: '#000' },
-  swapRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 4,
-  },
-  swapLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#F0F0F0',
-  },
-  swapButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  swapBtn: {
+    position: 'absolute',
+    right: 20,
+    top: 64,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 8,
     borderWidth: 1,
     borderColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
   },
-  swapIcon: {
-    fontSize: 16,
+  swapBtnIcon: {
+    fontSize: 18,
     color: '#000000',
     fontWeight: '700',
   },
-  dateRow: {
+  fieldDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginVertical: 8,
+  },
+  datePickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    paddingVertical: 8,
+    gap: 12,
   },
-  dateValue: {
+  datePickerTouchable: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  datePickerIcon: { fontSize: 20 },
+  datePickerValue: {
     fontSize: 15,
     fontWeight: '600',
     color: '#000000',
   },
-  clearDate:  { fontSize: 14, color: '#9E9E9E', padding: 4 },
-  errorText:  { fontSize: 13, color: '#D32F2F', marginTop: 8, marginBottom: 4 },
-  searchButton: {
-    backgroundColor: '#000',
+  clearDateBtn: {
+    fontSize: 16,
+    color: '#9E9E9E',
+    padding: 4,
+  },
+  dateArrowIcon: {
+    fontSize: 22,
+    color: '#9E9E9E',
+  },
+  searchError: {
+    fontSize: 13,
+    color: '#FF3B30',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  searchBtn: {
+    backgroundColor: '#000000',
     borderRadius: 14,
-    height: 52,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
   },
-  searchButtonText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  searchBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   emptyState: { alignItems: 'center', padding: 48 },
   emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#000', marginBottom: 8 },
