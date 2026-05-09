@@ -41,6 +41,44 @@ function formatDepartureDisplay(d) {
   });
 }
 
+function extractCity(address) {
+  if (!address) return '';
+  const addr = String(address);
+  const parts = addr.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
+
+  const saCities = [
+    'Johannesburg', 'Cape Town',
+    'Durban', 'Pretoria', 'Polokwane',
+    'Bloemfontein', 'Port Elizabeth',
+    'Gqeberha', 'East London',
+    'Nelspruit', 'Mbombela',
+    'Rustenburg', 'Kimberley',
+    'Welkom', 'Bethlehem',
+    'Pietermaritzburg', 'Richards Bay',
+    'Mahikeng', 'Mafikeng',
+    'George', 'Worcester', 'Paarl',
+    'Stellenbosch', 'Knysna',
+    'Midrand', 'Sandton', 'Soweto',
+    'Randburg', 'Roodepoort',
+    'Centurion', 'Tshwane',
+    'Ekurhuleni', 'Germiston',
+    'Witbank', 'eMalahleni',
+    'Secunda', 'Ermelo',
+  ];
+
+  const lower = addr.toLowerCase();
+  for (const city of saCities) {
+    if (lower.includes(city.toLowerCase())) {
+      return city;
+    }
+  }
+
+  if (parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+  return parts[0] || '';
+}
+
 const PostRoute = ({ navigation }) => {
   const [fromAddress, setFromAddress] = useState('');
   const [fromLat, setFromLat] = useState(null);
@@ -49,6 +87,9 @@ const PostRoute = ({ navigation }) => {
   const [toAddress, setToAddress] = useState('');
   const [toLat, setToLat] = useState(null);
   const [toLng, setToLng] = useState(null);
+
+  const [fromCityName, setFromCityName] = useState('');
+  const [toCityName, setToCityName] = useState('');
 
   const [fromPredictions, setFromPredictions] = useState([]);
   const [toPredictions, setToPredictions] = useState([]);
@@ -200,7 +241,9 @@ const PostRoute = ({ navigation }) => {
     setFromPlacesError(null);
     try {
       const details = await fetchPlaceDetails(p.place_id);
-      setFromAddress(details.formatted_address || p.description || '');
+      const formatted = details.formatted_address || p.description || '';
+      setFromAddress(formatted);
+      setFromCityName(extractCity(formatted));
       setFromLat(details.latitude);
       setFromLng(details.longitude);
     } catch (e) {
@@ -214,7 +257,9 @@ const PostRoute = ({ navigation }) => {
     setToPlacesError(null);
     try {
       const details = await fetchPlaceDetails(p.place_id);
-      setToAddress(details.formatted_address || p.description || '');
+      const formatted = details.formatted_address || p.description || '';
+      setToAddress(formatted);
+      setToCityName(extractCity(formatted));
       setToLat(details.latitude);
       setToLng(details.longitude);
     } catch (e) {
@@ -291,9 +336,11 @@ const PostRoute = ({ navigation }) => {
         from_address: fromAddress.trim(),
         from_lat: Number(fromLat),
         from_lng: Number(fromLng),
+        from_city: fromCityName || extractCity(fromAddress),
         to_address: toAddress.trim(),
         to_lat: Number(toLat),
         to_lng: Number(toLng),
+        to_city: toCityName || extractCity(toAddress),
         departure_time: departureAt.toISOString(),
         max_parcels: maxParcels,
         boot_space: bootSpace,
@@ -332,9 +379,11 @@ const PostRoute = ({ navigation }) => {
               setFromAddress('');
               setFromLat(null);
               setFromLng(null);
+              setFromCityName('');
               setToAddress('');
               setToLat(null);
               setToLng(null);
+              setToCityName('');
               setDepartureAt(() => {
                 const t = new Date();
                 t.setDate(t.getDate() + 1);

@@ -61,10 +61,16 @@ function TripCard({ trip, onBook }) {
           <View style={styles.routeDotBlack} />
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.cityName} numberOfLines={1}>
+            {trip.from_city || trip.from_address?.split(',')[0]}
+          </Text>
           <Text style={styles.routeAddress} numberOfLines={1}>
             {trip.from_address}
           </Text>
           <View style={{ height: 12 }} />
+          <Text style={styles.cityName} numberOfLines={1}>
+            {trip.to_city || trip.to_address?.split(',')[0]}
+          </Text>
           <Text style={styles.routeAddress} numberOfLines={1}>
             {trip.to_address}
           </Text>
@@ -551,6 +557,12 @@ const styles = StyleSheet.create({
   slotsTextWarning:  { color: '#E65100' },
   routeRow:   { flexDirection: 'row', marginBottom: 12 },
   routeDots:  { alignItems: 'center', width: 16 },
+  cityName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 2,
+  },
   routeDotGreen: {
     width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853',
   },

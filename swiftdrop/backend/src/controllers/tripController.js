@@ -29,9 +29,11 @@ async function searchTrips(req, res) {
          dr.from_address,
          dr.from_lat,
          dr.from_lng,
+         dr.from_city,
          dr.to_address,
          dr.to_lat,
          dr.to_lng,
+         dr.to_city,
          dr.departure_time,
          dr.max_parcels,
          dr.boot_space,
@@ -49,8 +51,14 @@ async function searchTrips(req, res) {
        WHERE dr.status = 'active'
          AND dr.trip_type = 'intercity'
          AND dr.departure_time > NOW()
-         AND dr.from_address ILIKE $1
-         AND dr.to_address   ILIKE $2
+         AND (
+           dr.from_city ILIKE $1
+           OR dr.from_address ILIKE $1
+         )
+         AND (
+           dr.to_city ILIKE $2
+           OR dr.to_address ILIKE $2
+         )
          ${dateClause}
        ORDER BY dr.departure_time ASC
        LIMIT 50`,

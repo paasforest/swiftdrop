@@ -140,9 +140,19 @@ export default function TripBookingConfirm({ navigation, route }) {
 
         <Text style={styles.sectionLabel}>Trip</Text>
         <View style={styles.card}>
-          <Text style={styles.route}>{trip.from_address}</Text>
+          <Text style={styles.cityLabel}>
+            {trip.from_city || trip.from_address?.split(',')?.pop()?.trim()}
+          </Text>
+          <Text style={styles.routeText} numberOfLines={2}>
+            {trip.from_address}
+          </Text>
           <Text style={styles.arrow}>↓</Text>
-          <Text style={styles.route}>{trip.to_address}</Text>
+          <Text style={styles.cityLabel}>
+            {trip.to_city || trip.to_address?.split(',')?.pop()?.trim()}
+          </Text>
+          <Text style={styles.routeText} numberOfLines={2}>
+            {trip.to_address}
+          </Text>
           <Text style={styles.meta}>Departs {depStr}</Text>
 
           {trip.pickup_method === 'sender_drops_off' && trip.meeting_point_address ? (
@@ -288,6 +298,18 @@ const styles = StyleSheet.create({
     borderColor: '#E0E0E0',
   },
   driverName: { fontSize: 17, fontWeight: '700', color: '#000' },
+  cityLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#000000',
+    marginBottom: 2,
+  },
+  routeText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
   meetingCard: {
     backgroundColor: '#FFF8E1',
     borderRadius: 14,
@@ -347,7 +369,6 @@ const styles = StyleSheet.create({
     color: '#9E9E9E',
     marginTop: 2,
   },
-  route: { fontSize: 14, color: '#333', lineHeight: 20 },
   arrow: { textAlign: 'center', color: '#9E9E9E', marginVertical: 4 },
   meta: { fontSize: 13, color: '#757575', marginTop: 6 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: '#000', marginBottom: 8 },

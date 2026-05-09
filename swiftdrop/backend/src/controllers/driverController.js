@@ -126,6 +126,8 @@ async function createDriverRoute(req, res) {
       to_address,
       to_lat,
       to_lng,
+      from_city,
+      to_city,
       departure_time,
       max_parcels,
       boot_space,
@@ -189,23 +191,33 @@ async function createDriverRoute(req, res) {
       ? Number(delivery_radius_km)
       : 10;
 
+    const fromCityNorm = from_city != null && String(from_city).trim()
+      ? String(from_city).trim().slice(0, 100)
+      : null;
+    const toCityNorm = to_city != null && String(to_city).trim()
+      ? String(to_city).trim().slice(0, 100)
+      : null;
+
     const result = await db.query(
       `INSERT INTO driver_routes (
-        driver_id, from_address, from_lat, from_lng, to_address, to_lat, to_lng,
+        driver_id, from_address, from_lat, from_lng, from_city,
+        to_address, to_lat, to_lng, to_city,
         departure_time, max_parcels, boot_space, status,
         trip_type, pickup_method,
         meeting_point_address, meeting_point_lat, meeting_point_lng,
         delivery_radius_km
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12,$13,$14,$15,$16)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'active',$13,$14,$15,$16,$17,$18)
       RETURNING *`,
       [
         driverId,
         String(from_address).trim(),
         Number(from_lat),
         Number(from_lng),
+        fromCityNorm,
         String(to_address).trim(),
         Number(to_lat),
         Number(to_lng),
+        toCityNorm,
         dep.toISOString(),
         mp,
         boot,
