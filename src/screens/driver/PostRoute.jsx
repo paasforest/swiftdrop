@@ -11,6 +11,7 @@ import {
   Platform,
   Keyboard,
   StatusBar,
+  Alert,
   KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -306,10 +307,49 @@ const PostRoute = ({ navigation }) => {
 
       await postJson('/api/driver-routes', body, { token: auth.token });
 
-      navigation.reset({
-        index: 1,
-        routes: [{ name: 'DriverHome' }, { name: 'DriverPostedRoutes', params: { justPosted: true } }],
-      });
+      Alert.alert(
+        '✓ Route Posted!',
+        'Your route has been saved successfully. ' +
+          'You can view and manage it under My Routes.',
+        [
+          {
+            text: 'View My Routes',
+            onPress: () =>
+              navigation.reset({
+                index: 1,
+                routes: [
+                  { name: 'DriverHome' },
+                  {
+                    name: 'DriverPostedRoutes',
+                    params: { justPosted: true },
+                  },
+                ],
+              }),
+          },
+          {
+            text: 'Post Another',
+            onPress: () => {
+              setFromAddress('');
+              setFromLat(null);
+              setFromLng(null);
+              setToAddress('');
+              setToLat(null);
+              setToLng(null);
+              setDepartureAt(() => {
+                const t = new Date();
+                t.setDate(t.getDate() + 1);
+                t.setHours(7, 0, 0, 0);
+                return t;
+              });
+              setBootSpace('medium');
+              setMaxParcels(2);
+              setTripType('local');
+              setPickupMethod('driver_collects');
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     } catch (e) {
       setErrorMessage(e.message || 'Could not post route. Try again.');
     } finally {
