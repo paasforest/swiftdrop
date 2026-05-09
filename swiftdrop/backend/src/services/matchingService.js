@@ -50,15 +50,16 @@ async function pollUntilMatchedOrTimeout(orderId, timeoutMs) {
 }
 
 /**
- * Nearest online drivers to order pickup (same province, within MAX_MATCH_DISTANCE_KM).
- * @param {object} order — needs pickup_lat, pickup_lng, province, declined_driver_ids (optional)
+ * Nearest online drivers to order pickup (within MAX_MATCH_DISTANCE_KM).
+ * When order.province is set, only drivers whose GPS falls in that province are candidates.
+ * When order.province is null, any online driver within radius may match (province filter skipped).
+ * @param {object} order — needs pickup_lat, pickup_lng, province (optional), declined_driver_ids (optional)
  */
 async function findNearestDrivers(order, extraExcludedDriverIds = []) {
   const pickupLat = parseFloat(order.pickup_lat);
   const pickupLng = parseFloat(order.pickup_lng);
   if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) return [];
-  const province = order.province;
-  if (!province) return [];
+  const province = order.province ? String(order.province) : null;
 
   const excludedIds = [
     ...(Array.isArray(order.declined_driver_ids) ? order.declined_driver_ids : []),
@@ -109,7 +110,10 @@ async function findNearestDrivers(order, extraExcludedDriverIds = []) {
     const lat = parseFloat(d.lat);
     const lng = parseFloat(d.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    if (detectProvince(lat, lng) !== province) continue;
+    if (province) {
+      const driverProvince = detectProvince(lat, lng);
+      if (driverProvince !== province) continue;
+    }
     const distanceKm = haversineKm(pickupLat, pickupLng, lat, lng);
     if (distanceKm > MAX_MATCH_DISTANCE_KM) continue;
     withDist.push({
