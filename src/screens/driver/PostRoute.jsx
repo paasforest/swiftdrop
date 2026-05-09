@@ -11,7 +11,6 @@ import {
   Platform,
   Keyboard,
   StatusBar,
-  Alert,
   KeyboardAvoidingView,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -61,15 +60,15 @@ const PostRoute = ({ navigation }) => {
   const debouncedTo = useDebounced(toAddress, 350);
 
   const [departureAt, setDepartureAt] = useState(() => {
-    const d = new Date();
-    d.setMinutes(0, 0, 0);
-    d.setHours(d.getHours() + 1);
-    return d;
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(7, 0, 0, 0);
+    return t;
   });
   const [showDeparturePicker, setShowDeparturePicker] = useState(false);
   const [androidPickerMode, setAndroidPickerMode] = useState(null);
 
-  const [bootSpace, setBootSpace] = useState(null);
+  const [bootSpace, setBootSpace] = useState('medium');
   const [maxParcels, setMaxParcels] = useState(2);
 
   const [submitting, setSubmitting] = useState(false);
@@ -307,12 +306,10 @@ const PostRoute = ({ navigation }) => {
 
       await postJson('/api/driver-routes', body, { token: auth.token });
 
-      Alert.alert(
-        'Trip posted',
-        'Your route is saved and appears under “Your posted trips” on your dashboard until departure. You’ll see an ACTIVE TRIP banner once customers book parcels.',
-        [{ text: 'View dashboard', onPress: () => navigation.navigate('DriverHome') }],
-        { cancelable: true }
-      );
+      navigation.reset({
+        index: 1,
+        routes: [{ name: 'DriverHome' }, { name: 'DriverPostedRoutes', params: { justPosted: true } }],
+      });
     } catch (e) {
       setErrorMessage(e.message || 'Could not post route. Try again.');
     } finally {

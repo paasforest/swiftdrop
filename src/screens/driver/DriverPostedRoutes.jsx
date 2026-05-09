@@ -13,25 +13,10 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { spacing, radius } from '../../theme/theme';
 
-function formatDeparture(iso) {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('en-ZA', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
+export default function DriverPostedRoutes({ navigation, route }) {
+  const justPosted = route.params?.justPosted === true;
 
-export default function DriverPostedRoutes({ navigation }) {
   const [routes, setRoutes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,13 +59,104 @@ export default function DriverPostedRoutes({ navigation }) {
     load();
   }
 
-  function badgeFor(r) {
-    const n = Number(r.parcel_count) || 0;
-    if (n > 0) {
-      return `${n} booking${n === 1 ? '' : 's'} · Active`;
-    }
-    return 'Awaiting bookings';
-  }
+  const body = loading ? (
+    <ActivityIndicator style={{ marginTop: 32 }} color="#00C853" size="large" />
+  ) : error ? (
+    <Text style={styles.errorText}>{error}</Text>
+  ) : routes.length === 0 ? (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyIcon}>🗺️</Text>
+      <Text style={styles.emptyTitle}>No routes yet</Text>
+      <Text style={styles.emptySubtext}>
+        Post your first route to start receiving parcel bookings
+      </Text>
+      <TouchableOpacity style={styles.postButton} onPress={() => navigation.navigate('PostRoute')}>
+        <Text style={styles.postButtonText}>Post a route</Text>
+      </TouchableOpacity>
+    </View>
+  ) : (
+    <ScrollView
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00C853" />}
+      showsVerticalScrollIndicator={false}
+    >
+      {routes.map((trip) => {
+        const slotsFull =
+          Number(trip.parcel_count || 0) >= Number(trip.max_parcels || 0);
+        const isIntercity = trip.trip_type === 'intercity';
+
+        return (
+          <TouchableOpacity
+            key={trip.id}
+            style={styles.routeCard}
+            onPress={() => {
+              if (isIntercity) {
+                navigation.navigate('TripDeliveryManager', { routeId: trip.id });
+              }
+            }}
+            activeOpacity={isIntercity ? 0.7 : 1}
+          >
+            <View style={styles.cardTop}>
+              <View
+                style={[
+                  styles.typeBadge,
+                  isIntercity ? { backgroundColor: '#E8F5E9' } : { backgroundColor: '#F5F5F5' },
+                ]}
+              >
+                <Text style={styles.typeBadgeText}>
+                  {isIntercity ? '🚗 Intercity' : '📍 Local'}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.slotsBadge,
+                  slotsFull ? { backgroundColor: '#FFF5F5' } : { backgroundColor: '#F5F5F5' },
+                ]}
+              >
+                <Text style={styles.slotsText}>
+                  {trip.parcel_count || 0}/{trip.max_parcels} parcels
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.routeBlock}>
+              <View style={styles.routeRow}>
+                <View style={styles.dotGreen} />
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {trip.from_address}
+                </Text>
+              </View>
+              <View style={styles.connector} />
+              <View style={styles.routeRow}>
+                <View style={styles.dotBlack} />
+                <Text style={styles.routeText} numberOfLines={1}>
+                  {trip.to_address}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.departureText}>
+              🕐 Departs{' '}
+              {new Date(trip.departure_time).toLocaleDateString('en-ZA', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+
+            {isIntercity && (
+              <View style={styles.manageBtn}>
+                <Text style={styles.manageBtnText}>Manage parcels →</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -90,60 +166,19 @@ export default function DriverPostedRoutes({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Posted routes</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>My Routes</Text>
+        <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('PostRoute')}>
+          <Text style={styles.addButtonText}>+ Add</Text>
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.subtitle}>
-        Upcoming trips you have posted. Tap a route to open parcel details.
-      </Text>
-
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 32 }} color="#00C853" size="large" />
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : routes.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No upcoming posted routes</Text>
-          <Text style={styles.emptySub}>
-            Post a trip from your dashboard — it will show here once departure is still in the future.
-          </Text>
-          <TouchableOpacity
-            style={styles.cta}
-            onPress={() => navigation.navigate('PostRoute')}
-          >
-            <Text style={styles.ctaText}>Post a route</Text>
-          </TouchableOpacity>
+      {justPosted && (
+        <View style={styles.successBanner}>
+          <Text style={styles.successBannerText}>✓ Route posted successfully!</Text>
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: spacing.md, paddingBottom: 48 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00C853" />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {routes.map((trip) => (
-            <TouchableOpacity
-              key={trip.id}
-              style={styles.card}
-              onPress={() => navigation.navigate('TripDeliveryManager', { routeId: trip.id })}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.cardBadge}>
-                {trip.trip_type === 'intercity' ? 'Intercity' : 'Local'} · {badgeFor(trip)}
-              </Text>
-              <Text style={styles.cardRoute} numberOfLines={3}>
-                {trip.from_address} → {trip.to_address}
-              </Text>
-              <Text style={styles.cardMeta}>Departs {formatDeparture(trip.departure_time)}</Text>
-              <Text style={styles.cardSlots}>
-                Up to {trip.max_parcels ?? '—'} parcel slot{Number(trip.max_parcels) === 1 ? '' : 's'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
       )}
+
+      {body}
     </SafeAreaView>
   );
 }
@@ -161,84 +196,157 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF',
   },
   backButton: { padding: 8 },
-  backArrow: { fontSize: 22, color: '#000000' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#000000' },
-  subtitle: {
-    fontSize: 14,
-    color: '#757575',
-    paddingHorizontal: spacing.md,
-    paddingTop: 12,
-    paddingBottom: 8,
-    lineHeight: 20,
-  },
-  errorText: {
-    marginHorizontal: spacing.md,
-    marginTop: 16,
-    color: '#D32F2F',
-    fontSize: 14,
-  },
-  empty: {
-    padding: spacing.lg,
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  emptyTitle: {
+  backArrow: { fontSize: 22, color: '#000' },
+  headerTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#000000',
-    marginBottom: 8,
-    textAlign: 'center',
   },
-  emptySub: {
+  addButton: {
+    padding: 8,
+  },
+  addButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#00C853',
+  },
+  successBanner: {
+    backgroundColor: '#E8F5E9',
+    padding: 12,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#00C853',
+  },
+  successBannerText: {
+    color: '#00C853',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  list: { padding: 16, paddingBottom: 48 },
+  routeCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  typeBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  slotsBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  slotsText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  routeBlock: { marginBottom: 10 },
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  dotGreen: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#00C853',
+    marginRight: 10,
+  },
+  dotBlack: {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    backgroundColor: '#000',
+    marginRight: 10,
+  },
+  connector: {
+    width: 2,
+    height: 12,
+    backgroundColor: '#E0E0E0',
+    marginLeft: 3,
+  },
+  routeText: {
+    fontSize: 13,
+    color: '#000000',
+    fontWeight: '500',
+    flex: 1,
+  },
+  departureText: {
+    fontSize: 12,
+    color: '#757575',
+    marginBottom: 10,
+  },
+  manageBtn: {
+    backgroundColor: '#000000',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  manageBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 32,
+  },
+  emptyIcon: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 8,
+  },
+  emptySubtext: {
     fontSize: 14,
     color: '#9E9E9E',
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  cta: {
+  postButton: {
     backgroundColor: '#000000',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: radius.md,
-  },
-  ctaText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  card: {
-    backgroundColor: '#FAFAFA',
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
   },
-  cardBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#616161',
-    letterSpacing: 0.4,
-    marginBottom: 10,
-    textTransform: 'uppercase',
-  },
-  cardRoute: {
+  postButtonText: {
+    color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
-    color: '#000000',
-    lineHeight: 22,
-    marginBottom: 10,
+    fontWeight: '700',
   },
-  cardMeta: {
-    fontSize: 13,
-    color: '#757575',
-    marginBottom: 4,
-  },
-  cardSlots: {
-    fontSize: 12,
-    color: '#9E9E9E',
+  errorText: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    color: '#D32F2F',
+    fontSize: 14,
   },
 });

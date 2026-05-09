@@ -87,6 +87,11 @@ const DriverProfile = ({ navigation }) => {
   const displayName = profile?.full_name || user?.full_name || 'Driver';
   const displayPhone = profile?.phone || user?.phone || '';
 
+  const vehicleSub =
+    profile?.vehicle_make || profile?.vehicle_model
+      ? [profile.vehicle_make, profile.vehicle_model].filter(Boolean).join(' ')
+      : 'Add your vehicle info';
+
   const menuItems = [
     {
       icon: '💰',
@@ -94,20 +99,27 @@ const DriverProfile = ({ navigation }) => {
       onPress: () => navigation.navigate('EarningsScreen'),
     },
     {
-      icon: '🛣️',
+      icon: '🗺️',
       label: 'My routes',
+      sub: 'View your posted trips',
+      onPress: () => navigation.navigate('DriverPostedRoutes'),
+    },
+    {
+      icon: '➕',
+      label: 'Post a new route',
+      sub: 'Add a new trip',
       onPress: () => navigation.navigate('PostRoute'),
     },
     {
       icon: '🚗',
       label: 'Vehicle details',
-      onPress: () => {
-        Alert.alert('Vehicle', formatVehicle(profile));
-      },
+      sub: vehicleSub,
+      onPress: () => Alert.alert('Vehicle', formatVehicle(profile)),
     },
     {
       icon: '📞',
       label: 'Contact support',
+      sub: 'support@swiftdrop.co.za',
       onPress: () => Linking.openURL('mailto:support@swiftdrop.co.za').catch(() => {}),
     },
   ];
@@ -151,11 +163,16 @@ const DriverProfile = ({ navigation }) => {
               </View>
             </View>
 
-            {menuItems.map((item) => (
-              <TouchableOpacity key={item.label} style={styles.menuItem} onPress={item.onPress}>
-                <Text style={styles.menuIcon}>{item.icon}</Text>
+            {menuItems.map((item, index) => (
+              <TouchableOpacity key={index} style={styles.menuItem} onPress={item.onPress}>
+                <View style={styles.menuIconCircle}>
+                  <Text style={styles.menuIcon}>{item.icon}</Text>
+                </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.menuLabel}>{item.label}</Text>
+                  {item.sub ? (
+                    <Text style={styles.menuSub}>{item.sub}</Text>
+                  ) : null}
                 </View>
                 <Text style={styles.menuArrow}>›</Text>
               </TouchableOpacity>
@@ -274,11 +291,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F5F5F5',
   },
-  menuIcon: { fontSize: 20, marginRight: 14 },
+  menuIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  menuIcon: { fontSize: 18 },
   menuLabel: {
     fontSize: 15,
     fontWeight: '600',
     color: '#000000',
+  },
+  menuSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
   },
   menuArrow: {
     fontSize: 20,
