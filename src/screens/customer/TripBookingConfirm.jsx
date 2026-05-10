@@ -9,8 +9,10 @@ import {
   StatusBar,
   ScrollView,
   ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { postJson } from '../../apiClient';
+import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
 
 const SIZES = [
   { id: 'small', label: 'Small', sub: 'Backpack' },
@@ -50,6 +52,60 @@ export default function TripBookingConfirm({ navigation, route }) {
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [priceError, setPriceError] = useState(null);
 
+  const [dropoffAddress, setDropoffAddress] = useState('');
+  const [dropoffLat, setDropoffLat] = useState(null);
+  const [dropoffLng, setDropoffLng] = useState(null);
+  const [dropoffSuggestions, setDropoffSuggestions] = useState([]);
+  const [dropoffError, setDropoffError] = useState(null);
+
+  async function fetchDropoffSuggestions(text) {
+    if (text.length < 2) {
+      setDropoffSuggestions([]);
+      return;
+    }
+    const key = GOOGLE_MAPS_API_KEY;
+    if (!key) {
+      console.warn('[TripBookingConfirm] GOOGLE_MAPS_API_KEY missing');
+      return;
+    }
+    try {
+      const url =
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?`
+        + `input=${encodeURIComponent(text)}`
+        + `&components=country:za`
+        + `&key=${encodeURIComponent(key)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setDropoffSuggestions(data.predictions || []);
+    } catch (err) {
+      console.error('Places error:', err);
+    }
+  }
+
+  async function selectDropoffPlace(place) {
+    const key = GOOGLE_MAPS_API_KEY;
+    if (!key) return;
+    try {
+      const url =
+        `https://maps.googleapis.com/maps/api/place/details/json?`
+        + `place_id=${encodeURIComponent(place.place_id)}`
+        + `&fields=geometry,formatted_address`
+        + `&key=${encodeURIComponent(key)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const loc = data.result?.geometry?.location;
+      const formatted = data.result?.formatted_address || place.description;
+      setDropoffAddress(formatted);
+      setDropoffLat(loc?.lat ?? null);
+      setDropoffLng(loc?.lng ?? null);
+      setDropoffSuggestions([]);
+      setDropoffError(null);
+      Keyboard.dismiss();
+    } catch (err) {
+      console.error('Place details error:', err);
+    }
+  }
+
   const fetchPrice = useCallback(async () => {
     if (!trip?.from_lat || !trip?.from_lng || !trip?.to_lat || !trip?.to_lng) return;
     const pv = parseParcelValue(parcelValue);
@@ -61,12 +117,14 @@ export default function TripBookingConfirm({ navigation, route }) {
     setValueError(null);
     setLoadingPrice(true);
     setPriceError(null);
+    const dLat = dropoffLat != null ? Number(dropoffLat) : Number(trip.to_lat);
+    const dLng = dropoffLng != null ? Number(dropoffLng) : Number(trip.to_lng);
     try {
       const data = await postJson('/api/orders/price-estimate', {
         pickup_lat: Number(trip.from_lat),
         pickup_lng: Number(trip.from_lng),
-        dropoff_lat: Number(trip.to_lat),
-        dropoff_lng: Number(trip.to_lng),
+        dropoff_lat: dLat,
+        dropoff_lng: dLng,
         parcel_value: pv == null ? null : pv,
         trip_type: 'intercity',
         parcel_size: parcelSize,
@@ -78,27 +136,62 @@ export default function TripBookingConfirm({ navigation, route }) {
     } finally {
       setLoadingPrice(false);
     }
-  }, [trip, parcelSize, parcelValue]);
+  }, [trip, parcelSize, parcelValue, dropoffLat, dropoffLng]);
 
   useEffect(() => {
     if (!trip) return;
     fetchPrice();
-  }, [trip, fetchPrice]);
+  }, [trip, parcelSize, parcelValue, dropoffLat, fetchPrice]);
 
   const handlePay = () => {
     if (!trip || !priceData?.total_price) return;
+
     const pv = parseParcelValue(parcelValue);
     if (parcelValue.trim() && (pv == null || Number.isNaN(pv))) {
       setValueError('Enter a valid declared value or leave blank for minimum cover');
       return;
     }
+
+    if (!dropoffAddress.trim()) {
+      setDropoffError('Please enter your delivery address');
+      return;
+    }
+
+    if (dropoffLat == null || dropoffLng == null) {
+      setDropoffError('Please select an address from the suggestions list');
+      return;
+    }
+
+    const radiusKmLocal = Number(trip.delivery_radius_km) || 20;
+    if (
+      trip?.to_lat != null
+      && trip?.to_lng != null
+      && Number.isFinite(Number(dropoffLat))
+      && Number.isFinite(Number(dropoffLng))
+    ) {
+      const km = haversineKm(
+        Number(dropoffLat),
+        Number(dropoffLng),
+        Number(trip.to_lat),
+        Number(trip.to_lng)
+      );
+      if (Number.isFinite(km) && km > radiusKmLocal) {
+        setDropoffError(
+          `Dropoff is ${Math.round(km)}km from the corridor destination; drivers deliver within ${radiusKmLocal}km.`
+        );
+        return;
+      }
+    }
+
+    setDropoffError(null);
+
     navigation.navigate('Payment', {
       pickup_address: trip.from_address,
       pickup_lat: trip.from_lat,
       pickup_lng: trip.from_lng,
-      dropoff_address: trip.to_address,
-      dropoff_lat: trip.to_lat,
-      dropoff_lng: trip.to_lng,
+      dropoff_address: dropoffAddress,
+      dropoff_lat: dropoffLat,
+      dropoff_lng: dropoffLng,
       driver_route_id: trip.id,
       trip_type: 'intercity',
       pickup_method: trip.pickup_method,
@@ -140,24 +233,29 @@ export default function TripBookingConfirm({ navigation, route }) {
     priceData
     && trip?.to_lat != null
     && trip?.to_lng != null
-    && trip?.customer_dropoff_lat != null
-    && trip?.customer_dropoff_lng != null
+    && dropoffLat != null
+    && dropoffLng != null
   ) {
     dropoffVsDestKm = haversineKm(
-      Number(trip.customer_dropoff_lat),
-      Number(trip.customer_dropoff_lng),
+      Number(dropoffLat),
+      Number(dropoffLng),
       Number(trip.to_lat),
       Number(trip.to_lng)
     );
   }
+
   const radiusConcern =
     priceData
     && trip.delivery_radius_km != null
-    && (
-      dropoffVsDestKm == null
-      || !Number.isFinite(dropoffVsDestKm)
-      || dropoffVsDestKm > radiusKm
-    );
+    && dropoffLat != null
+    && dropoffLng != null
+    && Number.isFinite(dropoffVsDestKm)
+    && dropoffVsDestKm > radiusKm;
+
+  const radiusHint =
+    priceData
+    && trip.delivery_radius_km != null
+    && (dropoffLat == null || dropoffLng == null || !Number.isFinite(dropoffVsDestKm));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -171,7 +269,11 @@ export default function TripBookingConfirm({ navigation, route }) {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.sectionLabel}>Driver</Text>
         <View style={styles.card}>
           <Text style={styles.driverName}>{trip.driver_name || 'Driver'}</Text>
@@ -262,6 +364,62 @@ export default function TripBookingConfirm({ navigation, route }) {
           {valueError ? <Text style={styles.inlineErr}>{valueError}</Text> : null}
         </View>
 
+        <Text style={styles.sectionLabel}>
+          DELIVERY ADDRESS
+        </Text>
+        <Text style={styles.sectionSubLabel}>
+          Where should the driver deliver within {trip.delivery_radius_km || 20}km of {trip.to_city || 'destination'}?
+        </Text>
+
+        <View style={styles.dropoffInputContainer}>
+          <TextInput
+            style={[
+              styles.dropoffInput,
+              dropoffError ? {
+                borderColor: '#FF3B30',
+                borderWidth: 1.5,
+              } : null,
+            ]}
+            placeholder="Enter exact delivery address"
+            placeholderTextColor="#9E9E9E"
+            value={dropoffAddress}
+            onChangeText={(text) => {
+              setDropoffAddress(text);
+              setDropoffLat(null);
+              setDropoffLng(null);
+              setDropoffError(null);
+              fetchDropoffSuggestions(text);
+            }}
+            autoCapitalize="words"
+          />
+          {dropoffLat != null && dropoffLng != null ? (
+            <Text style={styles.dropoffConfirmed}>
+              ✓ Address confirmed
+            </Text>
+          ) : null}
+          {dropoffError ? (
+            <Text style={styles.dropoffErrorText}>
+              {dropoffError}
+            </Text>
+          ) : null}
+        </View>
+
+        {dropoffSuggestions.length > 0 ? (
+          <View style={styles.suggestionsBox}>
+            {dropoffSuggestions.map((place) => (
+              <TouchableOpacity
+                key={place.place_id}
+                style={styles.suggestionItem}
+                onPress={() => selectDropoffPlace(place)}
+              >
+                <Text style={styles.suggestionText} numberOfLines={2}>
+                  {place.description}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
         <Text style={styles.sectionLabel}>Price</Text>
         <View style={styles.card}>
           {loadingPrice ? (
@@ -289,9 +447,14 @@ export default function TripBookingConfirm({ navigation, route }) {
               {radiusConcern ? (
                 <View style={styles.radiusWarning}>
                   <Text style={styles.radiusWarningText}>
-                    {dropoffVsDestKm != null && Number.isFinite(dropoffVsDestKm)
-                      ? `⚠️ Dropoff looks ${Math.round(dropoffVsDestKm)}km from the corridor destination. Drivers typically deliver within ${radiusKm}km.`
-                      : `⚠️ Make sure your dropoff address is within ${trip.delivery_radius_km}km of ${trip.to_city || trip.to_address || 'the destination'}`}
+                    {`⚠️ Dropoff looks ${Math.round(dropoffVsDestKm)}km from the corridor destination. Drivers typically deliver within ${radiusKm}km.`}
+                  </Text>
+                </View>
+              ) : null}
+              {radiusHint && !radiusConcern ? (
+                <View style={styles.radiusWarning}>
+                  <Text style={styles.radiusWarningText}>
+                    {`⚠️ Choose your delivery address from suggestions so we can check it’s within ${radiusKm}km of ${trip.to_city || trip.to_address || 'the destination'}.`}
                   </Text>
                 </View>
               ) : null}
@@ -337,6 +500,46 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
     marginTop: 8,
+  },
+  sectionSubLabel: {
+    fontSize: 12, color: '#757575',
+    marginBottom: 10, lineHeight: 18,
+  },
+  dropoffInputContainer: {
+    marginBottom: 8,
+  },
+  dropoffInput: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15, color: '#000000',
+    marginBottom: 4,
+  },
+  dropoffConfirmed: {
+    fontSize: 12, color: '#00C853',
+    fontWeight: '600', marginBottom: 8,
+  },
+  dropoffErrorText: {
+    fontSize: 12, color: '#FF3B30',
+    marginBottom: 8,
+  },
+  suggestionsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  suggestionItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  suggestionText: {
+    fontSize: 13, color: '#000000',
   },
   card: {
     backgroundColor: '#F5F5F5',
