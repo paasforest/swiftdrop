@@ -1,0 +1,878 @@
+const db = require('../database/connection');
+const { haversineKm } = require('../utils/distanceHelper');
+const smsService = require('../services/smsService');
+
+const LOCAL_PRICING = {
+  small: [
+    { maxKm: 10, price: 150 },
+    { maxKm: 30, price: 200 },
+    { maxKm: 80, price: 260 },
+    { maxKm: Infinity, price: 320 },
+  ],
+  medium: [
+    { maxKm: 10, price: 200 },
+    { maxKm: 30, price: 270 },
+    { maxKm: 80, price: 350 },
+    { maxKm: Infinity, price: 420 },
+  ],
+  large: [
+    { maxKm: 10, price: 270 },
+    { maxKm: 30, price: 360 },
+    { maxKm: 80, price: 460 },
+    { maxKm: Infinity, price: 560 },
+  ],
+};
+
+const INTERCITY_PRICING = {
+  small: [
+    { maxKm: 150, price: 80 },
+    { maxKm: 400, price: 130 },
+    { maxKm: 700, price: 180 },
+    { maxKm: Infinity, price: 250 },
+  ],
+  medium: [
+    { maxKm: 150, price: 120 },
+    { maxKm: 400, price: 200 },
+    { maxKm: 700, price: 270 },
+    { maxKm: Infinity, price: 370 },
+  ],
+  large: [
+    { maxKm: 150, price: 170 },
+    { maxKm: 400, price: 280 },
+    { maxKm: 700, price: 380 },
+    { maxKm: Infinity, price: 500 },
+  ],
+};
+
+function getPrice(size, distKm, type) {
+  const table = type === 'intercity' ? INTERCITY_PRICING : LOCAL_PRICING;
+  const tiers = table[size?.toLowerCase()] || table.small;
+  const tier = tiers.find((t) => distKm <= t.maxKm);
+  return tier?.price || tiers[0].price;
+}
+
+function insuranceFee(value) {
+  const v = Number(value) || 0;
+  if (v <= 0) return 0;
+  if (v <= 200) return 0;
+  if (v <= 500) return 15;
+  if (v <= 1000) return 25;
+  if (v <= 2000) return 40;
+  return 40;
+}
+
+function estimatedMinutes(distKm, type) {
+  const t = type === 'intercity' ? 'intercity' : 'local';
+  if (t === 'intercity') {
+    return Math.round((distKm / 100) * 60 + 30);
+  }
+  return Math.round((distKm / 30) * 60 + 15);
+}
+
+function finiteCoords(lat, lng) {
+  const la = Number(lat);
+  const ln = Number(lng);
+  return Number.isFinite(la) && Number.isFinite(ln);
+}
+
+async function notifyMatchingDrivers(job) {
+  try {
+    const plat = Number(job.pickup_lat);
+    const plng = Number(job.pickup_lng);
+    const dlat = Number(job.dropoff_lat);
+    const dlng = Number(job.dropoff_lng);
+    if (!Number.isFinite(plat) || !Number.isFinite(plng)
+      || !Number.isFinite(dlat) || !Number.isFinite(dlng)) {
+      return;
+    }
+
+    const { rows: drivers } = await db.query(
+      `
+          SELECT DISTINCT
+            u.id,
+            u.phone,
+            u.full_name,
+            dr.id AS route_id
+          FROM driver_routes dr
+          JOIN users u ON u.id = dr.driver_id
+          WHERE dr.status = 'active'
+            AND dr.trip_type = 'intercity'
+            AND dr.departure_time > NOW()
+            AND dr.from_lat IS NOT NULL
+            AND dr.from_lng IS NOT NULL
+            AND dr.to_lat IS NOT NULL
+            AND dr.to_lng IS NOT NULL
+            AND (
+              6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+                cos(radians($1::double precision))
+                * cos(radians(dr.from_lat::double precision))
+                * cos(radians(dr.from_lng::double precision) - radians($2::double precision))
+                + sin(radians($1::double precision))
+                * sin(radians(dr.from_lat::double precision))
+              )))
+            ) <= 50
+            AND (
+              6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+                cos(radians($3::double precision))
+                * cos(radians(dr.to_lat::double precision))
+                * cos(radians(dr.to_lng::double precision) - radians($4::double precision))
+                + sin(radians($3::double precision))
+                * sin(radians(dr.to_lat::double precision))
+              )))
+            ) <= 50
+        `,
+      [plat, plng, dlat, dlng]
+    );
+
+    for (const driver of drivers) {
+      if (driver.phone) {
+        await smsService.sendSMS(
+          driver.phone,
+          `SwiftDrop: A parcel job matches your route!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen the app to apply.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('notifyMatchingDrivers:', err);
+  }
+}
+
+async function notifyNearbyDrivers(job) {
+  try {
+    const plat = Number(job.pickup_lat);
+    const plng = Number(job.pickup_lng);
+    if (!Number.isFinite(plat) || !Number.isFinite(plng)) return;
+
+    const { rows: drivers } = await db.query(
+      `
+          SELECT u.id, u.phone
+          FROM driver_locations dl
+          JOIN users u ON u.id = dl.driver_id
+          JOIN driver_profiles dp ON dp.user_id = dl.driver_id
+          WHERE dp.verification_status = 'approved'
+            AND dl.updated_at > NOW() - INTERVAL '30 minutes'
+            AND dl.lat IS NOT NULL
+            AND dl.lng IS NOT NULL
+            AND (
+              6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+                cos(radians($1::double precision))
+                * cos(radians(dl.lat::double precision))
+                * cos(radians(dl.lng::double precision) - radians($2::double precision))
+                + sin(radians($1::double precision))
+                * sin(radians(dl.lat::double precision))
+              )))
+            ) <= 25
+        `,
+      [plat, plng]
+    );
+
+    for (const driver of drivers) {
+      if (driver.phone) {
+        await smsService.sendSMS(
+          driver.phone,
+          `SwiftDrop: New delivery job near you!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen SwiftDrop to apply.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('notifyNearbyDrivers:', err);
+  }
+}
+
+async function estimateJob(req, res) {
+  try {
+    const {
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
+      parcel_size,
+      parcel_value,
+      delivery_type,
+    } = req.body;
+
+    if (!finiteCoords(pickup_lat, pickup_lng) || !finiteCoords(dropoff_lat, dropoff_lng)) {
+      return res.status(400).json({ error: 'Valid pickup and dropoff coordinates required' });
+    }
+
+    const distKm = haversineKm(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      Number(dropoff_lat),
+      Number(dropoff_lng)
+    );
+
+    const type = delivery_type === 'intercity' ? 'intercity' : 'local';
+    const basePrice = getPrice(parcel_size, distKm, type);
+    const insurance = insuranceFee(parcel_value);
+    const totalPrice = basePrice + insurance;
+    const driverEarnings = Math.round(basePrice * 0.8);
+    const commission = Math.round(basePrice * 0.2);
+    const estMinutes = estimatedMinutes(distKm, type);
+
+    res.json({
+      distance_km: Math.round(distKm),
+      base_price: basePrice,
+      insurance_fee: insurance,
+      total_price: totalPrice,
+      driver_earnings: driverEarnings,
+      estimated_minutes: estMinutes,
+    });
+  } catch (err) {
+    console.error('estimateJob:', err);
+    res.status(500).json({ error: 'Could not estimate' });
+  }
+}
+
+async function createJob(req, res) {
+  const customerId = req.user.id;
+  const {
+    pickup_address,
+    pickup_lat,
+    pickup_lng,
+    dropoff_address,
+    dropoff_lat,
+    dropoff_lng,
+    parcel_size,
+    parcel_type,
+    parcel_value,
+    delivery_type,
+    payment_method,
+  } = req.body;
+
+  if (!pickup_address?.trim() || !dropoff_address?.trim()) {
+    return res.status(400).json({ error: 'pickup_address and dropoff_address are required' });
+  }
+  if (!finiteCoords(pickup_lat, pickup_lng) || !finiteCoords(dropoff_lat, dropoff_lng)) {
+    return res.status(400).json({ error: 'Valid pickup and dropoff coordinates required' });
+  }
+
+  const client = await db.pool.connect();
+  try {
+    const distKm = haversineKm(
+      Number(pickup_lat),
+      Number(pickup_lng),
+      Number(dropoff_lat),
+      Number(dropoff_lng)
+    );
+
+    const type = delivery_type === 'intercity' ? 'intercity' : 'local';
+    const basePrice = getPrice(parcel_size, distKm, type);
+    const insurance = insuranceFee(parcel_value);
+    const totalPrice = basePrice + insurance;
+    const driverEarnings = Math.round(basePrice * 0.8);
+    const commission = Math.round(basePrice * 0.2);
+    const estMinutes = estimatedMinutes(distKm, type);
+
+    const pm = payment_method === 'wallet' ? 'wallet' : String(payment_method || 'wallet');
+    const paymentStatus = pm === 'wallet' ? 'paid' : 'pending';
+
+    await client.query('BEGIN');
+
+    if (pm === 'wallet') {
+      const { rows: walletRows } = await client.query(
+        `SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE`,
+        [customerId]
+      );
+      const balance = Number(walletRows[0]?.wallet_balance || 0);
+      if (balance < totalPrice) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Insufficient wallet balance',
+          required: totalPrice,
+          available: balance,
+        });
+      }
+      await client.query(
+        `UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2`,
+        [totalPrice, customerId]
+      );
+    }
+
+    const pickupOtp = String(Math.floor(1000 + Math.random() * 9000));
+    const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+
+    const { rows } = await client.query(
+      `
+        INSERT INTO delivery_jobs (
+          customer_id,
+          pickup_address, pickup_lat, pickup_lng,
+          dropoff_address, dropoff_lat, dropoff_lng,
+          parcel_size, parcel_type, parcel_value,
+          delivery_type,
+          base_price, insurance_fee, total_price, driver_earnings,
+          commission, distance_km, estimated_minutes,
+          payment_method, payment_status,
+          pickup_otp, delivery_otp,
+          expires_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,
+          $8,$9,$10,$11,
+          $12,$13,$14,$15,$16,$17,$18,
+          $19,$20,$21,$22,
+          NOW() + INTERVAL '4 hours'
+        )
+        RETURNING *
+      `,
+      [
+        customerId,
+        pickup_address.trim(),
+        Number(pickup_lat),
+        Number(pickup_lng),
+        dropoff_address.trim(),
+        Number(dropoff_lat),
+        Number(dropoff_lng),
+        parcel_size || 'small',
+        parcel_type || 'General',
+        Number(parcel_value) || 0,
+        type,
+        basePrice,
+        insurance,
+        totalPrice,
+        driverEarnings,
+        commission,
+        Math.round(distKm),
+        estMinutes,
+        pm,
+        paymentStatus,
+        pickupOtp,
+        deliveryOtp,
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    const job = rows[0];
+
+    if (type === 'intercity') {
+      await notifyMatchingDrivers(job);
+    } else {
+      await notifyNearbyDrivers(job);
+    }
+
+    res.status(201).json({ job });
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
+    console.error('createJob:', err);
+    res.status(500).json({ error: 'Could not create job' });
+  } finally {
+    client.release();
+  }
+}
+
+async function getMyJobs(req, res) {
+  try {
+    const customerId = req.user.id;
+    const { rows } = await db.query(
+      `
+        SELECT
+          j.*,
+          (
+            SELECT COUNT(*)::integer
+            FROM job_applications a
+            WHERE a.job_id = j.id AND a.status = 'pending'
+          ) AS applications_count,
+          u.full_name AS driver_name,
+          u.phone AS driver_phone,
+          dp.vehicle_make,
+          dp.vehicle_model,
+          dp.vehicle_color,
+          dp.vehicle_year,
+          dp.vehicle_plate,
+          COALESCE(dt.current_rating, 0) AS driver_rating,
+          COALESCE(dt.deliveries_completed, 0) AS driver_deliveries
+        FROM delivery_jobs j
+        LEFT JOIN users u ON u.id = j.selected_driver_id
+        LEFT JOIN driver_profiles dp ON dp.user_id = j.selected_driver_id
+        LEFT JOIN driver_tiers dt ON dt.driver_id = j.selected_driver_id
+        WHERE j.customer_id = $1
+          AND j.status NOT IN ('completed', 'cancelled', 'expired')
+        ORDER BY j.created_at DESC
+      `,
+      [customerId]
+    );
+
+    res.json({ jobs: rows });
+  } catch (err) {
+    console.error('getMyJobs:', err);
+    res.status(500).json({ error: 'Could not load jobs' });
+  }
+}
+
+async function getAvailableJobs(req, res) {
+  try {
+    const driverId = req.user.id;
+    const radiusKm = Number(req.query.radius_km) || 25;
+
+    const { rows: locRows } = await db.query(
+      `SELECT lat, lng FROM driver_locations WHERE driver_id = $1`,
+      [driverId]
+    );
+
+    const dLat = req.query.lat != null ? Number(req.query.lat) : Number(locRows[0]?.lat);
+    const dLng = req.query.lng != null ? Number(req.query.lng) : Number(locRows[0]?.lng);
+
+    if (!Number.isFinite(dLat) || !Number.isFinite(dLng)) {
+      return res.json({ jobs: [] });
+    }
+
+    const { rows } = await db.query(
+      `
+        SELECT
+          j.id,
+          j.pickup_address,
+          j.pickup_lat,
+          j.pickup_lng,
+          j.dropoff_address,
+          j.dropoff_lat,
+          j.dropoff_lng,
+          j.parcel_size,
+          j.parcel_type,
+          j.delivery_type,
+          j.distance_km,
+          j.estimated_minutes,
+          j.driver_earnings,
+          j.created_at,
+          j.expires_at,
+          (
+            6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+              cos(radians($1::double precision))
+              * cos(radians(j.pickup_lat::double precision))
+              * cos(radians(j.pickup_lng::double precision) - radians($2::double precision))
+              + sin(radians($1::double precision))
+              * sin(radians(j.pickup_lat::double precision))
+            )))
+          ) AS distance_from_driver_km
+        FROM delivery_jobs j
+        WHERE j.status = 'open'
+          AND j.expires_at > NOW()
+          AND j.payment_status = 'paid'
+          AND j.delivery_type = 'local'
+          AND j.pickup_lat IS NOT NULL
+          AND j.pickup_lng IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM job_applications a
+            WHERE a.job_id = j.id AND a.driver_id = $3
+          )
+          AND (
+            6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+              cos(radians($1::double precision))
+              * cos(radians(j.pickup_lat::double precision))
+              * cos(radians(j.pickup_lng::double precision) - radians($2::double precision))
+              + sin(radians($1::double precision))
+              * sin(radians(j.pickup_lat::double precision))
+            )))
+          ) <= $4
+        ORDER BY distance_from_driver_km ASC
+        LIMIT 50
+      `,
+      [dLat, dLng, driverId, radiusKm]
+    );
+
+    res.json({ jobs: rows });
+  } catch (err) {
+    console.error('getAvailableJobs:', err);
+    res.status(500).json({ error: 'Could not load jobs' });
+  }
+}
+
+async function getMatchingIntercityJobs(req, res) {
+  try {
+    const driverId = req.user.id;
+
+    const { rows: routes } = await db.query(
+      `
+        SELECT id, from_lat, from_lng, to_lat, to_lng, from_city, to_city
+        FROM driver_routes
+        WHERE driver_id = $1
+          AND status = 'active'
+          AND trip_type = 'intercity'
+          AND departure_time > NOW()
+          AND from_lat IS NOT NULL AND from_lng IS NOT NULL
+          AND to_lat IS NOT NULL AND to_lng IS NOT NULL
+      `,
+      [driverId]
+    );
+
+    if (routes.length === 0) {
+      return res.json({ jobs: [] });
+    }
+
+    const allJobs = [];
+
+    for (const route of routes) {
+      const { rows: jobs } = await db.query(
+        `
+            SELECT
+              j.id,
+              j.pickup_address,
+              j.pickup_lat,
+              j.pickup_lng,
+              j.dropoff_address,
+              j.dropoff_lat,
+              j.dropoff_lng,
+              j.parcel_size,
+              j.parcel_type,
+              j.delivery_type,
+              j.distance_km,
+              j.estimated_minutes,
+              j.driver_earnings,
+              j.created_at,
+              j.expires_at,
+              $2::integer AS matched_route_id,
+              $3 AS route_from_city,
+              $4 AS route_to_city
+            FROM delivery_jobs j
+            WHERE j.status = 'open'
+              AND j.expires_at > NOW()
+              AND j.payment_status = 'paid'
+              AND j.delivery_type = 'intercity'
+              AND j.pickup_lat IS NOT NULL AND j.pickup_lng IS NOT NULL
+              AND j.dropoff_lat IS NOT NULL AND j.dropoff_lng IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM job_applications a
+                WHERE a.job_id = j.id AND a.driver_id = $1
+              )
+              AND (
+                6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+                  cos(radians($5::double precision))
+                  * cos(radians(j.pickup_lat::double precision))
+                  * cos(radians(j.pickup_lng::double precision) - radians($6::double precision))
+                  + sin(radians($5::double precision))
+                  * sin(radians(j.pickup_lat::double precision))
+                )))
+              ) <= 50
+              AND (
+                6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+                  cos(radians($7::double precision))
+                  * cos(radians(j.dropoff_lat::double precision))
+                  * cos(radians(j.dropoff_lng::double precision) - radians($8::double precision))
+                  + sin(radians($7::double precision))
+                  * sin(radians(j.dropoff_lat::double precision))
+                )))
+              ) <= 50
+        `,
+        [
+          driverId,
+          route.id,
+          route.from_city,
+          route.to_city,
+          Number(route.from_lat),
+          Number(route.from_lng),
+          Number(route.to_lat),
+          Number(route.to_lng),
+        ]
+      );
+
+      allJobs.push(...jobs);
+    }
+
+    const unique = allJobs.filter(
+      (job, index, self) => index === self.findIndex((j) => j.id === job.id)
+    );
+
+    res.json({ jobs: unique });
+  } catch (err) {
+    console.error('getMatchingIntercityJobs:', err);
+    res.status(500).json({ error: 'Could not load jobs' });
+  }
+}
+
+async function applyForJob(req, res) {
+  try {
+    const driverId = req.user.id;
+    const jobId = Number(req.params.id);
+    const { driver_route_id } = req.body;
+
+    const { rows: profileRows } = await db.query(
+      `SELECT verification_status FROM driver_profiles WHERE user_id = $1`,
+      [driverId]
+    );
+
+    if (profileRows[0]?.verification_status !== 'approved') {
+      return res.status(403).json({
+        error: 'Your account is pending verification. Please wait for admin approval.',
+      });
+    }
+
+    const { rows: jobRows } = await db.query(
+      `
+        SELECT j.*, u.phone AS customer_phone
+        FROM delivery_jobs j
+        JOIN users u ON u.id = j.customer_id
+        WHERE j.id = $1
+          AND j.status = 'open'
+          AND j.expires_at > NOW()
+      `,
+      [jobId]
+    );
+
+    if (!jobRows[0]) {
+      return res.status(404).json({ error: 'Job not available' });
+    }
+
+    await db.query(
+      `
+        INSERT INTO job_applications (job_id, driver_id, driver_route_id, status)
+        VALUES ($1, $2, $3, 'pending')
+        ON CONFLICT (job_id, driver_id) DO NOTHING
+      `,
+      [jobId, driverId, driver_route_id || null]
+    );
+
+    const job = jobRows[0];
+    if (job.customer_phone) {
+      await smsService.sendSMS(
+        job.customer_phone,
+        'SwiftDrop: A driver applied for your delivery!\nOpen the app to view their profile and confirm your driver.'
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Application submitted successfully',
+    });
+  } catch (err) {
+    console.error('applyForJob:', err);
+    res.status(500).json({ error: 'Could not apply' });
+  }
+}
+
+async function getJobApplications(req, res) {
+  try {
+    const customerId = req.user.id;
+    const jobId = Number(req.params.id);
+
+    const { rows: jobRows } = await db.query(
+      `SELECT id FROM delivery_jobs WHERE id = $1 AND customer_id = $2`,
+      [jobId, customerId]
+    );
+
+    if (!jobRows[0]) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const { rows } = await db.query(
+      `
+        SELECT
+          a.id AS application_id,
+          a.driver_id,
+          a.driver_route_id,
+          a.applied_at,
+          a.status,
+          u.full_name AS driver_name,
+          COALESCE(u.profile_photo_url, dp.selfie_url) AS driver_photo,
+          dp.vehicle_make,
+          dp.vehicle_model,
+          dp.vehicle_color,
+          dp.vehicle_year,
+          dp.vehicle_plate,
+          dp.vehicle_photo_url,
+          dp.verification_status,
+          COALESCE(dt.current_rating, 0) AS driver_rating,
+          COALESCE(dt.deliveries_completed, 0) AS driver_deliveries,
+          dr.from_city AS route_from,
+          dr.to_city AS route_to,
+          dr.departure_time
+        FROM job_applications a
+        JOIN users u ON u.id = a.driver_id
+        LEFT JOIN driver_profiles dp ON dp.user_id = a.driver_id
+        LEFT JOIN driver_tiers dt ON dt.driver_id = a.driver_id
+        LEFT JOIN driver_routes dr ON dr.id = a.driver_route_id
+        WHERE a.job_id = $1 AND a.status = 'pending'
+        ORDER BY a.applied_at ASC
+      `,
+      [jobId]
+    );
+
+    res.json({ applications: rows });
+  } catch (err) {
+    console.error('getJobApplications:', err);
+    res.status(500).json({ error: 'Could not load applications' });
+  }
+}
+
+async function selectDriver(req, res) {
+  try {
+    const customerId = req.user.id;
+    const jobId = Number(req.params.id);
+    const { driver_id } = req.body;
+    const driverIdSel = Number(driver_id);
+
+    if (!Number.isFinite(driverIdSel)) {
+      return res.status(400).json({ error: 'driver_id required' });
+    }
+
+    const { rows: jobRows } = await db.query(
+      `
+        SELECT j.*, uc.phone AS customer_phone
+        FROM delivery_jobs j
+        JOIN users uc ON uc.id = j.customer_id
+        WHERE j.id = $1 AND j.customer_id = $2 AND j.status = 'open'
+      `,
+      [jobId, customerId]
+    );
+
+    if (!jobRows[0]) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const job = jobRows[0];
+
+    const { rows: driverRows } = await db.query(
+      `
+        SELECT u.id, u.full_name, u.phone,
+          dp.vehicle_make, dp.vehicle_model, dp.vehicle_color, dp.vehicle_plate
+        FROM users u
+        JOIN driver_profiles dp ON dp.user_id = u.id
+        WHERE u.id = $1
+      `,
+      [driverIdSel]
+    );
+
+    if (!driverRows[0]) {
+      return res.status(404).json({ error: 'Driver not found' });
+    }
+
+    const driver = driverRows[0];
+
+    await db.query(
+      `
+        UPDATE delivery_jobs
+        SET status = 'driver_selected', selected_driver_id = $1, updated_at = NOW()
+        WHERE id = $2
+      `,
+      [driverIdSel, jobId]
+    );
+
+    await db.query(
+      `
+        UPDATE job_applications SET status = 'rejected'
+        WHERE job_id = $1 AND driver_id <> $2
+      `,
+      [jobId, driverIdSel]
+    );
+
+    await db.query(
+      `
+        UPDATE job_applications SET status = 'selected'
+        WHERE job_id = $1 AND driver_id = $2
+      `,
+      [jobId, driverIdSel]
+    );
+
+    const { rows: rejectedPhones } = await db.query(
+      `
+        SELECT u.phone
+        FROM job_applications a
+        JOIN users u ON u.id = a.driver_id
+        WHERE a.job_id = $1 AND a.status = 'rejected'
+      `,
+      [jobId]
+    );
+
+    if (driver.phone) {
+      await smsService.sendSMS(
+        driver.phone,
+        `SwiftDrop: You got the job!\n\nCollect from:\n${job.pickup_address}\n\nDeliver to:\n${job.dropoff_address}\n\nYour earnings: R${job.driver_earnings}\n\nCustomer: ${job.customer_phone}`
+      );
+    }
+
+    for (const row of rejectedPhones) {
+      if (row.phone) {
+        await smsService.sendSMS(
+          row.phone,
+          'SwiftDrop: Thank you for applying. Another driver was selected for this job.'
+        ).catch(() => {});
+      }
+    }
+
+    if (job.customer_phone) {
+      await smsService.sendSMS(
+        job.customer_phone,
+        `SwiftDrop: Driver confirmed!\n\n${driver.full_name}\n${driver.vehicle_color} ${driver.vehicle_make} ${driver.vehicle_model}\nPlate: ${driver.vehicle_plate}\nPhone: ${driver.phone}`
+      );
+    }
+
+    res.json({
+      success: true,
+      driver: {
+        id: driver.id,
+        name: driver.full_name,
+        phone: driver.phone,
+        vehicle: `${driver.vehicle_color} ${driver.vehicle_make} ${driver.vehicle_model}`,
+        plate: driver.vehicle_plate,
+      },
+    });
+  } catch (err) {
+    console.error('selectDriver:', err);
+    res.status(500).json({ error: 'Could not select driver' });
+  }
+}
+
+async function cancelJob(req, res) {
+  try {
+    const customerId = req.user.id;
+    const jobId = Number(req.params.id);
+
+    const { rows: jobRows } = await db.query(
+      `
+        SELECT * FROM delivery_jobs
+        WHERE id = $1
+          AND customer_id = $2
+          AND status IN ('open', 'driver_selected')
+      `,
+      [jobId, customerId]
+    );
+
+    if (!jobRows[0]) {
+      return res.status(404).json({ error: 'Job cannot be cancelled' });
+    }
+
+    const job = jobRows[0];
+
+    if (job.payment_status === 'paid') {
+      await db.query(
+        `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2`,
+        [job.total_price, customerId]
+      );
+
+      await db.query(
+        `
+          INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
+          VALUES ($1, 'credit', $2, $3, 'Refund for cancelled job')
+        `,
+        [customerId, job.total_price, `JOB-CANCEL-${jobId}`]
+      );
+    }
+
+    await db.query(
+      `
+        UPDATE delivery_jobs SET status = 'cancelled', updated_at = NOW()
+        WHERE id = $1
+      `,
+      [jobId]
+    );
+
+    res.json({ success: true, refunded: job.total_price });
+  } catch (err) {
+    console.error('cancelJob:', err);
+    res.status(500).json({ error: 'Could not cancel job' });
+  }
+}
+
+module.exports = {
+  estimateJob,
+  createJob,
+  getMyJobs,
+  getAvailableJobs,
+  getMatchingIntercityJobs,
+  applyForJob,
+  getJobApplications,
+  selectDriver,
+  cancelJob,
+};
