@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getAuth } from '../../authStore';
 import { postJson } from '../../apiClient';
 import { GOOGLE_MAPS_API_KEY } from '../../placesConfig';
-import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
+import { fetchPlacePredictions, fetchCityPredictions, fetchPlaceDetails } from '../../services/googlePlaces';
 
 function useDebounced(value, delay) {
   const [debounced, setDebounced] = useState(value);
@@ -175,7 +175,7 @@ const PostRoute = ({ navigation }) => {
       setToPlacesLoading(true);
       setToPlacesError(null);
       try {
-        const list = await fetchPlacePredictions(debouncedTo);
+        const list = await fetchCityPredictions(debouncedTo);
         if (!cancelled) setToPredictions(list);
       } catch (e) {
         if (!cancelled) {
@@ -504,9 +504,9 @@ const PostRoute = ({ navigation }) => {
             {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
           </View>
 
-          {/* To */}
+          {/* To — city / suburb only */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>To</Text>
+            <Text style={styles.inputLabel}>Destination city or suburb</Text>
             <View style={styles.inputContainer}>
               <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
               <TextInput
@@ -514,9 +514,13 @@ const PostRoute = ({ navigation }) => {
                 value={toAddress}
                 onChangeText={(t) => {
                   setToAddress(t);
-                  if (!t.trim()) { setToLat(null); setToLng(null); }
+                  if (!t.trim()) {
+                    setToLat(null);
+                    setToLng(null);
+                    setToCityName('');
+                  }
                 }}
-                placeholder="Search destination address"
+                placeholder="Search city or suburb e.g. Polokwane, Sandton"
                 placeholderTextColor="#BDBDBD"
               />
             </View>
@@ -540,6 +544,28 @@ const PostRoute = ({ navigation }) => {
               </View>
             )}
             {toPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
+            {toAddress && toLat != null && toLng != null ? (
+              <View style={styles.destinationConfirmed}>
+                <Text style={styles.destinationIcon}>🏁</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.destinationCity}>{toCityName || toAddress}</Text>
+                  <Text style={styles.destinationFull} numberOfLines={1}>
+                    {toAddress}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setToAddress('');
+                    setToLat(null);
+                    setToLng(null);
+                    setToCityName('');
+                  }}
+                  accessibilityLabel="Clear destination"
+                >
+                  <Text style={{ fontSize: 18, color: '#9E9E9E' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </View>
 
           {/* Departure time */}
@@ -1052,6 +1078,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#92400E',
     lineHeight: 20,
+  },
+  destinationConfirmed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#00C853',
+  },
+  destinationIcon: { fontSize: 20 },
+  destinationCity: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  destinationFull: {
+    fontSize: 11,
+    color: '#757575',
+    marginTop: 2,
   },
   bottomContainer: {
     position: 'absolute',

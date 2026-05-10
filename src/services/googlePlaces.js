@@ -19,6 +19,31 @@ export async function fetchPlacePredictions(input) {
   return json.predictions || [];
 }
 
+/** Cities / towns / suburbs — Places Autocomplete `types=(cities)`. */
+export async function fetchCityPredictions(input) {
+  const key = GOOGLE_MAPS_API_KEY;
+  if (!key || !input || input.trim().length < 2) return [];
+  try {
+    const url =
+      `https://maps.googleapis.com/maps/api/place/autocomplete/json?` +
+      `input=${encodeURIComponent(input.trim())}` +
+      `&components=country:za` +
+      `&types=${encodeURIComponent('(cities)')}` +
+      `&key=${encodeURIComponent(key)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'ZERO_RESULTS') return [];
+    if (data.status !== 'OK') {
+      console.error('City places error:', data.error_message || data.status);
+      return [];
+    }
+    return data.predictions || [];
+  } catch (err) {
+    console.error('City places error:', err);
+    return [];
+  }
+}
+
 export async function fetchPlaceDetails(placeId) {
   const key = GOOGLE_MAPS_API_KEY;
   if (!key) throw new Error('Google Maps API key not configured');

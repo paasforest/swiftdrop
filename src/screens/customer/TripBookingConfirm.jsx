@@ -367,9 +367,16 @@ export default function TripBookingConfirm({ navigation, route }) {
         <Text style={styles.sectionLabel}>
           DELIVERY ADDRESS
         </Text>
-        <Text style={styles.sectionSubLabel}>
-          Where should the driver deliver within {trip.delivery_radius_km || 20}km of {trip.to_city || 'destination'}?
-        </Text>
+        <View style={styles.radiusInfo}>
+          <Text style={styles.radiusInfoIcon}>📍</Text>
+          <Text style={styles.radiusInfoText}>
+            Driver delivers within{' '}
+            <Text style={styles.radiusInfoBold}>{trip.delivery_radius_km || 20}km</Text>
+            {' '}of{' '}
+            <Text style={styles.radiusInfoBold}>{trip.to_city || 'destination'}</Text>
+            . Enter your exact address below.
+          </Text>
+        </View>
 
         <View style={styles.dropoffInputContainer}>
           <TextInput
@@ -501,9 +508,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 8,
   },
-  sectionSubLabel: {
-    fontSize: 12, color: '#757575',
-    marginBottom: 10, lineHeight: 18,
+  radiusInfo: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF8E1',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#FFB800',
+  },
+  radiusInfoIcon: { fontSize: 16 },
+  radiusInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#333333',
+    lineHeight: 18,
+  },
+  radiusInfoBold: {
+    fontWeight: '700',
+    color: '#000000',
   },
   dropoffInputContainer: {
     marginBottom: 8,

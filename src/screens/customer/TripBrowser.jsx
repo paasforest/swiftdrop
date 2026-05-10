@@ -77,23 +77,32 @@ function TripCard({ trip, onBook }) {
         </View>
       </View>
 
-      {/* Departure + pickup method */}
+      {/* Departure + pickup method + radius */}
       <View style={styles.tripMeta}>
-        <Text style={styles.metaText}>
-          {'🕐 '}
-          {new Date(trip.departure_time).toLocaleDateString('en-ZA', {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </Text>
-        <Text style={styles.metaText}>
-          {trip.pickup_method === 'driver_collects'
-            ? '🚗 Driver collects'
-            : '📦 Drop off to driver'}
-        </Text>
+        <View style={styles.tripMetaRow}>
+          <Text style={styles.metaText}>
+            {'🕐 '}
+            {new Date(trip.departure_time).toLocaleDateString('en-ZA', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </Text>
+          <Text style={styles.metaText}>
+            {trip.pickup_method === 'driver_collects'
+              ? '🚗 Driver collects'
+              : '📦 Drop off to driver'}
+          </Text>
+        </View>
+        {trip.delivery_radius_km != null && Number(trip.delivery_radius_km) > 0 ? (
+          <View style={styles.radiusBadge}>
+            <Text style={styles.radiusBadgeText}>
+              📍 Delivers within {trip.delivery_radius_km}km of destination
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {/* Book button */}
@@ -624,11 +633,27 @@ const styles = StyleSheet.create({
   },
   routeAddress: { fontSize: 13, color: '#333' },
   tripMeta: {
+    marginBottom: 14,
+    gap: 8,
+  },
+  tripMetaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 14,
     flexWrap: 'wrap',
     gap: 6,
+  },
+  radiusBadge: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  radiusBadgeText: {
+    fontSize: 11,
+    color: '#2E7D32',
+    fontWeight: '600',
   },
   metaText:        { fontSize: 12, color: '#757575' },
   bookButton: {
