@@ -49,6 +49,7 @@ import TripDeliveryManager from './src/screens/driver/TripDeliveryManager';
 import DriverPostedRoutes from './src/screens/driver/DriverPostedRoutes';
 import DriverOTPScreen from './src/screens/driver/DriverOTPScreen';
 import DriverProfile from './src/screens/driver/DriverProfile';
+import BrowseJobs from './src/screens/driver/BrowseJobs';
 
 // Admin Screens
 import AdminOverview from './src/screens/admin/AdminOverview';
@@ -143,6 +144,7 @@ export default function App() {
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
         <Stack.Screen name="DriverOTPScreen" component={DriverOTPScreen} />
         <Stack.Screen name="DriverHome" component={DriverHome} />
+        <Stack.Screen name="BrowseJobs" component={BrowseJobs} options={{ headerShown: false }} />
         <Stack.Screen name="PostRoute" component={PostRoute} />
         <Stack.Screen name="JobOffer" component={JobOffer} />
         <Stack.Screen name="EnRoutePickup" component={EnRoutePickup} />

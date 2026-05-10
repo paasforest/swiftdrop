@@ -326,6 +326,21 @@ const DriverHome = ({ navigation }) => {
           )}
         </View>
 
+        <TouchableOpacity
+          style={styles.browseJobsCard}
+          onPress={() => navigation.navigate('BrowseJobs')}
+          activeOpacity={0.88}
+        >
+          <View style={styles.browseJobsLeft}>
+            <Text style={styles.browseJobsIcon}>📋</Text>
+            <View>
+              <Text style={styles.browseJobsTitle}>Browse delivery jobs</Text>
+              <Text style={styles.browseJobsSub}>Local jobs near you + intercity matches</Text>
+            </View>
+          </View>
+          <Text style={styles.browseJobsArrow}>→</Text>
+        </TouchableOpacity>
+
         {/* Today's earnings */}
         <View style={styles.earningsCard}>
           <Text style={styles.earningsLabel}>Today (completed)</Text>
@@ -609,6 +624,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#00C853',
     fontWeight: '600',
+  },
+  browseJobsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    padding: 18,
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
+  browseJobsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+  },
+  browseJobsIcon: { fontSize: 28 },
+  browseJobsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  browseJobsSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
+  browseJobsArrow: {
+    fontSize: 22,
+    color: '#00C853',
+    fontWeight: '700',
   },
   earningsCard: {
     backgroundColor: '#FFFFFF',
