@@ -162,22 +162,26 @@ export default function TripBookingConfirm({ navigation, route }) {
       return;
     }
 
-    const radiusKmLocal = Number(trip.delivery_radius_km) || 20;
+    const destLat = Number(trip.to_lat);
+    const destLng = Number(trip.to_lng);
+
     if (
-      trip?.to_lat != null
-      && trip?.to_lng != null
+      Number.isFinite(destLat)
+      && Number.isFinite(destLng)
       && Number.isFinite(Number(dropoffLat))
       && Number.isFinite(Number(dropoffLng))
     ) {
       const km = haversineKm(
         Number(dropoffLat),
         Number(dropoffLng),
-        Number(trip.to_lat),
-        Number(trip.to_lng)
+        destLat,
+        destLng
       );
+      const radiusKmLocal = Number(trip.delivery_radius_km) || 20;
       if (Number.isFinite(km) && km > radiusKmLocal) {
         setDropoffError(
-          `Dropoff is ${Math.round(km)}km from the corridor destination; drivers deliver within ${radiusKmLocal}km.`
+          `Your address is ${Math.round(km)}km from ${trip.to_city || 'the driver destination'}.`
+            + ` Driver delivers within ${radiusKmLocal}km.`
         );
         return;
       }
@@ -365,16 +369,16 @@ export default function TripBookingConfirm({ navigation, route }) {
         </View>
 
         <Text style={styles.sectionLabel}>
-          DELIVERY ADDRESS
+          EXACT DELIVERY ADDRESS
         </Text>
         <View style={styles.radiusInfo}>
           <Text style={styles.radiusInfoIcon}>📍</Text>
           <Text style={styles.radiusInfoText}>
-            Driver delivers within{' '}
+            Enter full street address with area code. Driver delivers within{' '}
             <Text style={styles.radiusInfoBold}>{trip.delivery_radius_km || 20}km</Text>
             {' '}of{' '}
             <Text style={styles.radiusInfoBold}>{trip.to_city || 'destination'}</Text>
-            . Enter your exact address below.
+            .
           </Text>
         </View>
 
@@ -387,7 +391,7 @@ export default function TripBookingConfirm({ navigation, route }) {
                 borderWidth: 1.5,
               } : null,
             ]}
-            placeholder="Enter exact delivery address"
+            placeholder="e.g. 120 Main Road, Newlands, 2093"
             placeholderTextColor="#9E9E9E"
             value={dropoffAddress}
             onChangeText={(text) => {
@@ -454,14 +458,14 @@ export default function TripBookingConfirm({ navigation, route }) {
               {radiusConcern ? (
                 <View style={styles.radiusWarning}>
                   <Text style={styles.radiusWarningText}>
-                    {`⚠️ Dropoff looks ${Math.round(dropoffVsDestKm)}km from the corridor destination. Drivers typically deliver within ${radiusKm}km.`}
+                    {`⚠️ Dropoff looks ${Math.round(dropoffVsDestKm)}km from ${trip.to_city || 'the driver destination'}. This driver delivers within ${radiusKm}km.`}
                   </Text>
                 </View>
               ) : null}
               {radiusHint && !radiusConcern ? (
                 <View style={styles.radiusWarning}>
                   <Text style={styles.radiusWarningText}>
-                    {`⚠️ Choose your delivery address from suggestions so we can check it’s within ${radiusKm}km of ${trip.to_city || trip.to_address || 'the destination'}.`}
+                    {`⚠️ Choose your delivery address from suggestions so we can verify it’s within ${radiusKm}km of ${trip.to_city || trip.to_address || 'the destination'}.`}
                   </Text>
                 </View>
               ) : null}

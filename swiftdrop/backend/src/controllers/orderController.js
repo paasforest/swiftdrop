@@ -146,7 +146,7 @@ async function createOrder(req, res) {
     // Intercity slot reservation: only when the customer is booking onto a posted trip.
     if (assigned_driver_route_id) {
       const { rows: routeRows } = await db.query(
-        `SELECT max_parcels, driver_id, to_lat, to_lng, delivery_radius_km, trip_type
+        `SELECT id, max_parcels, driver_id, to_lat, to_lng, to_city, delivery_radius_km, trip_type
          FROM driver_routes WHERE id = $1 AND status = 'active'`,
         [assigned_driver_route_id]
       );
@@ -159,21 +159,30 @@ async function createOrder(req, res) {
       }
 
       if (isIntercity) {
-        const distToDestKm = haversineKm(
-          Number(dropoff_lat),
-          Number(dropoff_lng),
-          Number(routeRow.to_lat),
-          Number(routeRow.to_lng)
-        );
+        const destLat = Number(routeRow.to_lat);
+        const destLng = Number(routeRow.to_lng);
         const radiusKm = Number(routeRow.delivery_radius_km) || 20;
-        if (Number.isFinite(distToDestKm) && distToDestKm > radiusKm) {
-          return res.status(400).json({
-            error:
-              `Dropoff address is ${Math.round(distToDestKm)}km from driver destination. `
-              + `Driver delivers within ${radiusKm}km.`,
-            distance_km: Math.round(distToDestKm),
-            max_radius_km: radiusKm,
-          });
+
+        if (!Number.isFinite(destLat) || !Number.isFinite(destLng)) {
+          console.warn('No destination coords for route', routeRow.id);
+        } else {
+          const distKm = haversineKm(
+            Number(dropoff_lat),
+            Number(dropoff_lng),
+            destLat,
+            destLng
+          );
+
+          if (Number.isFinite(distKm) && distKm > radiusKm) {
+            return res.status(400).json({
+              error:
+                `Your delivery address is ${Math.round(distKm)}km from ${
+                  routeRow.to_city || 'the driver destination'
+                }. This driver delivers within ${radiusKm}km of their destination.`,
+              distance_km: Math.round(distKm),
+              max_radius_km: radiusKm,
+            });
+          }
         }
       }
 

@@ -41,38 +41,13 @@ function formatDepartureDisplay(d) {
   });
 }
 
+/** Display label from formatted address only — no hardcoded city list (coords come from Places). */
 function extractCity(address) {
   if (!address) return '';
-  const addr = String(address);
-  const parts = addr.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
-
-  const saCities = [
-    'Johannesburg', 'Cape Town',
-    'Durban', 'Pretoria', 'Polokwane',
-    'Bloemfontein', 'Port Elizabeth',
-    'Gqeberha', 'East London',
-    'Nelspruit', 'Mbombela',
-    'Rustenburg', 'Kimberley',
-    'Welkom', 'Bethlehem',
-    'Pietermaritzburg', 'Richards Bay',
-    'Mahikeng', 'Mafikeng',
-    'George', 'Worcester', 'Paarl',
-    'Stellenbosch', 'Knysna',
-    'Midrand', 'Sandton', 'Soweto',
-    'Randburg', 'Roodepoort',
-    'Centurion', 'Tshwane',
-    'Ekurhuleni', 'Germiston',
-    'Witbank', 'eMalahleni',
-    'Secunda', 'Ermelo',
-  ];
-
-  const lower = addr.toLowerCase();
-  for (const city of saCities) {
-    if (lower.includes(city.toLowerCase())) {
-      return city;
-    }
-  }
-
+  const parts = String(address)
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
   if (parts.length >= 2) {
     return parts[parts.length - 2];
   }
