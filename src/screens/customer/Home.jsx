@@ -262,29 +262,114 @@ const Home = ({ navigation }) => {
                     {job.parcel_size} parcel · Posted {timeAgo(job.created_at)}
                   </Text>
 
-                  {Number(job.applications_count) > 0 ? (
-                    <View style={styles.applicantsBadge}>
-                      <Text style={styles.applicantsBadgeText}>
-                        {job.applications_count}{' '}
-                        {Number(job.applications_count) === 1 ? 'driver' : 'drivers'} applied
+                  {job.status !== 'open' && (
+                    <View
+                      style={[
+                        styles.applicantsBadge,
+                        job.status === 'driver_selected' && { backgroundColor: '#E8F5E9' },
+                        ['collecting', 'collected', 'delivering'].includes(job.status) && {
+                          backgroundColor: '#FFF8E1',
+                        },
+                        job.status === 'delivered' && { backgroundColor: '#E8F5E9' },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.applicantsBadgeText,
+                          job.status === 'driver_selected' && { color: '#00C853' },
+                          ['collecting', 'collected', 'delivering'].includes(job.status) && {
+                            color: '#F59E0B',
+                          },
+                          job.status === 'delivered' && { color: '#00C853' },
+                        ]}
+                      >
+                        {job.status === 'driver_selected' && '✓ Driver confirmed'}
+                        {job.status === 'collecting' && '🚗 Driver collecting'}
+                        {job.status === 'collected' && '📦 Parcel collected'}
+                        {job.status === 'delivering' && '🚚 Out for delivery'}
+                        {job.status === 'delivered' && '✓ Delivered'}
                       </Text>
                     </View>
-                  ) : (
+                  )}
+
+                  {job.status === 'open' && Number(job.applications_count) > 0 && (
+                    <View style={styles.applicantsBadge}>
+                      <Text style={styles.applicantsBadgeText}>
+                        {job.applications_count}
+                        {Number(job.applications_count) === 1 ? ' driver' : ' drivers'} applied
+                      </Text>
+                    </View>
+                  )}
+
+                  {job.status === 'open' && Number(job.applications_count) === 0 && (
                     <Text style={styles.waitingText}>No drivers yet</Text>
                   )}
                 </View>
 
                 <View style={styles.jobCardRight}>
-                  {Number(job.applications_count) > 0 ? (
+                  {job.status === 'open' && Number(job.applications_count) > 0 ? (
                     <>
                       <Text style={styles.tapToChoose}>Tap to</Text>
                       <Text style={styles.tapToChoose}>choose →</Text>
                     </>
-                  ) : (
-                    <TouchableOpacity onPress={() => handleCancelJob(job.id)}>
+                  ) : job.status === 'open' && Number(job.applications_count) === 0 ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        handleCancelJob(job.id);
+                      }}
+                    >
                       <Text style={styles.cancelJobText}>Cancel</Text>
                     </TouchableOpacity>
-                  )}
+                  ) : job.status === 'driver_selected' ? (
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: '#00C853',
+                          fontWeight: '700',
+                        }}
+                      >
+                        Confirmed ✓
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          color: '#9E9E9E',
+                          marginTop: 2,
+                        }}
+                      >
+                        {job.driver_name || 'Driver'}
+                      </Text>
+                    </View>
+                  ) : ['collecting', 'collected', 'delivering'].includes(job.status) ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        navigation.navigate('JobTracking', { job });
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: '#000000',
+                          fontWeight: '700',
+                        }}
+                      >
+                        Track →
+                      </Text>
+                    </TouchableOpacity>
+                  ) : job.status === 'delivered' ? (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        color: '#00C853',
+                        fontWeight: '700',
+                      }}
+                    >
+                      Delivered ✓
+                    </Text>
+                  ) : null}
                 </View>
               </TouchableOpacity>
             ))}
