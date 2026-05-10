@@ -134,13 +134,12 @@ const POPULAR_ROUTES = [
 
 export default function TripBrowser({ navigation }) {
   const toInputRef = useRef(null);
-  const fromSuggestSeq = useRef(0);
-  const toSuggestSeq = useRef(0);
 
   const [fromCity, setFromCity] = useState('');
   const [toCity, setToCity] = useState('');
   const [fromSuggestions, setFromSuggestions] = useState([]);
   const [toSuggestions, setToSuggestions] = useState([]);
+  const [activeSuggestionsField, setActiveSuggestionsField] = useState('from');
   const [fromLat, setFromLat] = useState(null);
   const [fromLng, setFromLng] = useState(null);
   const [toLat, setToLat] = useState(null);
@@ -156,33 +155,29 @@ export default function TripBrowser({ navigation }) {
   const auth = getAuth();
 
   async function fetchFromSuggestions(text) {
-    if (text.length < 2) {
+    if (!text || text.length < 2) {
       setFromSuggestions([]);
       return;
     }
-    const seq = ++fromSuggestSeq.current;
     try {
       const results = await fetchPlacePredictions(text);
-      if (seq !== fromSuggestSeq.current) return;
-      setFromSuggestions(results);
-    } catch {
-      if (seq !== fromSuggestSeq.current) return;
+      setFromSuggestions(results || []);
+    } catch (err) {
+      console.error('FROM suggestions error:', err);
       setFromSuggestions([]);
     }
   }
 
   async function fetchToSuggestions(text) {
-    if (text.length < 2) {
+    if (!text || text.length < 2) {
       setToSuggestions([]);
       return;
     }
-    const seq = ++toSuggestSeq.current;
     try {
       const results = await fetchPlacePredictions(text);
-      if (seq !== toSuggestSeq.current) return;
-      setToSuggestions(results);
-    } catch {
-      if (seq !== toSuggestSeq.current) return;
+      setToSuggestions(results || []);
+    } catch (err) {
+      console.error('TO suggestions error:', err);
       setToSuggestions([]);
     }
   }
@@ -287,45 +282,169 @@ export default function TripBrowser({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Find a trip</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <View style={styles.flexFill}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            <Text style={styles.backArrow}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Find a trip</Text>
+          <View style={{ width: 40 }} />
+        </View>
 
-      {/* Search card */}
-      <View style={styles.searchCard}>
-        <View style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>YOUR AREA</Text>
-          <TextInput
-            style={styles.fieldInput}
-            placeholder="e.g. Turfloop, Soweto, Sandton"
-            placeholderTextColor="#BDBDBD"
-            value={fromCity}
-            onChangeText={(text) => {
-              setFromCity(text);
-              setFromLat(null);
-              setFromLng(null);
-              setError(null);
-              setSearched(false);
-              fetchFromSuggestions(text);
-            }}
-            autoCapitalize="words"
-            returnKeyType="next"
-            onSubmitEditing={() => toInputRef.current?.focus()}
-          />
-          {fromSuggestions.length > 0 ? (
-            <View style={styles.suggestionsList}>
+        {/* Search card — inputs only; suggestions render as overlays below */}
+        <View style={styles.searchCard}>
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>YOUR AREA</Text>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="e.g. Turfloop, Soweto, Sandton"
+              placeholderTextColor="#BDBDBD"
+              value={fromCity}
+              onChangeText={(text) => {
+                setActiveSuggestionsField('from');
+                setFromCity(text);
+                setFromLat(null);
+                setFromLng(null);
+                setError(null);
+                setSearched(false);
+                fetchFromSuggestions(text);
+              }}
+              onFocus={() => setActiveSuggestionsField('from')}
+              autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => toInputRef.current?.focus()}
+            />
+          </View>
+
+          <View style={styles.swapRow}>
+            <View style={styles.swapLine} />
+            <TouchableOpacity
+              style={styles.swapBtn}
+              onPress={() => {
+                const temp = fromCity;
+                setFromCity(toCity);
+                setToCity(temp);
+                const tLatSwap = fromLat;
+                const tLngSwap = fromLng;
+                setFromLat(toLat);
+                setFromLng(toLng);
+                setToLat(tLatSwap);
+                setToLng(tLngSwap);
+                const fs = fromSuggestions;
+                setFromSuggestions(toSuggestions);
+                setToSuggestions(fs);
+                setActiveSuggestionsField((f) => (f === 'from' ? 'to' : 'from'));
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.swapBtnIcon}>⇅</Text>
+            </TouchableOpacity>
+            <View style={styles.swapLine} />
+          </View>
+
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>DESTINATION AREA</Text>
+            <TextInput
+              ref={toInputRef}
+              style={styles.fieldInput}
+              placeholder="e.g. Polokwane, Durban, Cape Town"
+              placeholderTextColor="#BDBDBD"
+              value={toCity}
+              onChangeText={(text) => {
+                setActiveSuggestionsField('to');
+                setToCity(text);
+                setToLat(null);
+                setToLng(null);
+                setError(null);
+                setSearched(false);
+                fetchToSuggestions(text);
+              }}
+              onFocus={() => setActiveSuggestionsField('to')}
+              autoCapitalize="words"
+              returnKeyType="search"
+              onSubmitEditing={searchTrips}
+            />
+          </View>
+
+          <View style={styles.fieldDivider} />
+
+          <View style={styles.datePickerRow}>
+            <TouchableOpacity
+              style={styles.datePickerTouchable}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.datePickerIcon}>📅</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>TRAVEL DATE</Text>
+                <Text style={styles.datePickerValue}>
+                  {selectedDate
+                    ? selectedDate.toLocaleDateString('en-ZA', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric',
+                      })
+                    : 'Any date'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {selectedDate ? (
+              <TouchableOpacity
+                onPress={() => setSelectedDate(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.clearDateBtn}>✕</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.dateArrowIcon}>›</Text>
+            )}
+          </View>
+
+          {showDatePicker ? (
+            <DateTimePicker
+              value={selectedDate || new Date()}
+              mode="date"
+              minimumDate={new Date()}
+              onChange={(event, date) => {
+                setShowDatePicker(Platform.OS === 'ios');
+                if (date) setSelectedDate(date);
+              }}
+            />
+          ) : null}
+
+          {error ? <Text style={styles.searchError}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.searchBtn, loading && { opacity: 0.6 }]}
+            onPress={searchTrips}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Text style={styles.searchBtnText}>🔍 Search trips</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {fromSuggestions.length > 0 && activeSuggestionsField === 'from' ? (
+          <View style={[styles.suggestionsOverlay, styles.suggestionsOverlayFrom]}>
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              nestedScrollEnabled
+              style={{ maxHeight: 200 }}
+              showsVerticalScrollIndicator={false}
+            >
               {fromSuggestions.map((place) => (
                 <TouchableOpacity
                   key={place.place_id}
-                  style={styles.suggestionItem}
+                  style={styles.suggestionRow}
                   onPress={() => selectFromPlace(place)}
                   activeOpacity={0.7}
                 >
@@ -337,61 +456,22 @@ export default function TripBrowser({ navigation }) {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
-          ) : null}
-        </View>
+            </ScrollView>
+          </View>
+        ) : null}
 
-        <View style={styles.swapRow}>
-          <View style={styles.swapLine} />
-          <TouchableOpacity
-            style={styles.swapBtn}
-            onPress={() => {
-              const temp = fromCity;
-              setFromCity(toCity);
-              setToCity(temp);
-              const tLatSwap = fromLat;
-              const tLngSwap = fromLng;
-              setFromLat(toLat);
-              setFromLng(toLng);
-              setToLat(tLatSwap);
-              setToLng(tLngSwap);
-              const fs = fromSuggestions;
-              setFromSuggestions(toSuggestions);
-              setToSuggestions(fs);
-            }}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.swapBtnIcon}>⇅</Text>
-          </TouchableOpacity>
-          <View style={styles.swapLine} />
-        </View>
-
-        <View style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>DESTINATION AREA</Text>
-          <TextInput
-            ref={toInputRef}
-            style={styles.fieldInput}
-            placeholder="e.g. Polokwane, Durban, Cape Town"
-            placeholderTextColor="#BDBDBD"
-            value={toCity}
-            onChangeText={(text) => {
-              setToCity(text);
-              setToLat(null);
-              setToLng(null);
-              setError(null);
-              setSearched(false);
-              fetchToSuggestions(text);
-            }}
-            autoCapitalize="words"
-            returnKeyType="search"
-            onSubmitEditing={searchTrips}
-          />
-          {toSuggestions.length > 0 ? (
-            <View style={styles.suggestionsList}>
+        {toSuggestions.length > 0 && activeSuggestionsField === 'to' ? (
+          <View style={[styles.suggestionsOverlay, styles.suggestionsOverlayTo]}>
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              nestedScrollEnabled
+              style={{ maxHeight: 200 }}
+              showsVerticalScrollIndicator={false}
+            >
               {toSuggestions.map((place) => (
                 <TouchableOpacity
                   key={place.place_id}
-                  style={styles.suggestionItem}
+                  style={styles.suggestionRow}
                   onPress={() => selectToPlace(place)}
                   activeOpacity={0.7}
                 >
@@ -403,147 +483,89 @@ export default function TripBrowser({ navigation }) {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.fieldDivider} />
-
-        <View style={styles.datePickerRow}>
-          <TouchableOpacity
-            style={styles.datePickerTouchable}
-            onPress={() => setShowDatePicker(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.datePickerIcon}>📅</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>TRAVEL DATE</Text>
-              <Text style={styles.datePickerValue}>
-                {selectedDate
-                  ? selectedDate.toLocaleDateString('en-ZA', {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric',
-                    })
-                  : 'Any date'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          {selectedDate ? (
-            <TouchableOpacity
-              onPress={() => setSelectedDate(null)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.clearDateBtn}>✕</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.dateArrowIcon}>›</Text>
-          )}
-        </View>
-
-        {showDatePicker ? (
-          <DateTimePicker
-            value={selectedDate || new Date()}
-            mode="date"
-            minimumDate={new Date()}
-            onChange={(event, date) => {
-              setShowDatePicker(Platform.OS === 'ios');
-              if (date) setSelectedDate(date);
-            }}
-          />
+            </ScrollView>
+          </View>
         ) : null}
 
-        {error ? <Text style={styles.searchError}>{error}</Text> : null}
-
-        <TouchableOpacity
-          style={[styles.searchBtn, loading && { opacity: 0.6 }]}
-          onPress={searchTrips}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" size="small" />
-          ) : (
-            <Text style={styles.searchBtnText}>🔍 Search trips</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {!searched ? (
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 8,
-            paddingBottom: 40,
-          }}
-        >
-          <Text style={styles.sectionLabel}>POPULAR ROUTES</Text>
-          {POPULAR_ROUTES.map((route, i) => (
-            <TouchableOpacity
-              key={`${route.from}-${route.to}-${i}`}
-              style={styles.popularRoute}
-              onPress={() => {
-                setFromLat(null);
-                setFromLng(null);
-                setToLat(null);
-                setToLng(null);
-                setFromSuggestions([]);
-                setToSuggestions([]);
-                searchTripsWithCities(route.from, route.to);
-              }}
-            >
-              <Text style={styles.popularRouteIcon}>🚗</Text>
-              <Text style={styles.popularRouteText}>
-                {route.from} → {route.to}
-              </Text>
-              <Text style={styles.popularRouteArrow}>›</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      ) : null}
-
-      {/* Empty state */}
-      {searched && trips.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>🔍</Text>
-          <Text style={styles.emptyTitle}>No trips found</Text>
-          <Text style={styles.emptySubtext}>
-            No drivers heading that way yet.{'\n'}
-            Try different dates or check back soon.
-          </Text>
-          <TouchableOpacity
-            style={styles.notifyButton}
-            onPress={() =>
-              Alert.alert(
-                'Coming soon',
-                'We will notify you when a driver posts this route.',
-                [{ text: 'OK' }]
-              )
-            }
+        {!searched ? (
+          <ScrollView
+            style={styles.flexFill}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingTop: 8,
+              paddingBottom: 40,
+            }}
           >
-            <Text style={styles.notifyButtonText}>Notify me when available</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+            <Text style={styles.sectionLabel}>POPULAR ROUTES</Text>
+            {POPULAR_ROUTES.map((route, i) => (
+              <TouchableOpacity
+                key={`${route.from}-${route.to}-${i}`}
+                style={styles.popularRoute}
+                onPress={() => {
+                  setFromLat(null);
+                  setFromLng(null);
+                  setToLat(null);
+                  setToLng(null);
+                  setFromSuggestions([]);
+                  setToSuggestions([]);
+                  searchTripsWithCities(route.from, route.to);
+                }}
+              >
+                <Text style={styles.popularRouteIcon}>🚗</Text>
+                <Text style={styles.popularRouteText}>
+                  {route.from} → {route.to}
+                </Text>
+                <Text style={styles.popularRouteArrow}>›</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
 
-      {/* Results */}
-      {trips.length > 0 ? (
-        <FlatList
-          data={trips}
-          keyExtractor={(item) => item.id.toString()}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          renderItem={({ item }) => (
-            <TripCard trip={item} onBook={() => handleBookTrip(item)} />
-          )}
-          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-        />
-      ) : null}
+        {/* Empty state */}
+        {searched && trips.length === 0 ? (
+          <View style={[styles.flexFill, styles.emptyStateWrap]}>
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🔍</Text>
+              <Text style={styles.emptyTitle}>No trips found</Text>
+              <Text style={styles.emptySubtext}>
+                No drivers heading that way yet.{'\n'}
+                Try different dates or check back soon.
+              </Text>
+              <TouchableOpacity
+                style={styles.notifyButton}
+                onPress={() =>
+                  Alert.alert(
+                    'Coming soon',
+                    'We will notify you when a driver posts this route.',
+                    [{ text: 'OK' }]
+                  )
+                }
+              >
+                <Text style={styles.notifyButtonText}>Notify me when available</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Results */}
+        {trips.length > 0 ? (
+          <FlatList
+            style={styles.flexFill}
+            data={trips}
+            keyExtractor={(item) => item.id.toString()}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            renderItem={({ item }) => (
+              <TripCard trip={item} onBook={() => handleBookTrip(item)} />
+            )}
+            contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+            showsVerticalScrollIndicator={false}
+          />
+        ) : null}
+      </View>
     </SafeAreaView>
   );
 }
@@ -552,6 +574,8 @@ export default function TripBrowser({ navigation }) {
 
 const styles = StyleSheet.create({
   container:        { flex: 1, backgroundColor: '#FFF' },
+  flexFill:         { flex: 1 },
+  emptyStateWrap:   { justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -582,7 +606,6 @@ const styles = StyleSheet.create({
   fieldContainer: {
     paddingVertical: 8,
     paddingRight: 0,
-    zIndex: 2,
   },
   fieldLabel: {
     fontSize: 10,
@@ -597,20 +620,31 @@ const styles = StyleSheet.create({
     color: '#000000',
     paddingVertical: 4,
   },
-  suggestionsList: {
+  suggestionsOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    marginTop: 4,
-    marginBottom: 8,
+    zIndex: 9999,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     overflow: 'hidden',
-    zIndex: 100,
-    elevation: Platform.OS === 'android' ? 4 : 0,
   },
-  suggestionItem: {
+  suggestionsOverlayFrom: {
+    top: 160,
+  },
+  suggestionsOverlayTo: {
+    top: 278,
+  },
+  suggestionRow: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#F5F5F5',
   },
@@ -628,7 +662,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 4,
-    zIndex: 1,
   },
   swapLine: {
     flex: 1,

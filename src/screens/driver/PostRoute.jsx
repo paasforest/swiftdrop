@@ -41,19 +41,6 @@ function formatDepartureDisplay(d) {
   });
 }
 
-/** Display label from formatted address only — no hardcoded city list (coords come from Places). */
-function extractCity(address) {
-  if (!address) return '';
-  const parts = String(address)
-    .split(',')
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  if (parts.length >= 2) {
-    return parts[parts.length - 2];
-  }
-  return parts[0] || '';
-}
-
 const PostRoute = ({ navigation }) => {
   const [fromAddress, setFromAddress] = useState('');
   const [fromLat, setFromLat] = useState(null);
@@ -216,9 +203,13 @@ const PostRoute = ({ navigation }) => {
     setFromPlacesError(null);
     try {
       const details = await fetchPlaceDetails(p.place_id);
-      const formatted = details.formatted_address || p.description || '';
-      setFromAddress(formatted);
-      setFromCityName(extractCity(formatted));
+      const displayName =
+        p.structured_formatting?.main_text
+        || p.description?.split(',')[0]?.trim()
+        || details.formatted_address?.split(',')[0]?.trim()
+        || '';
+      setFromAddress(displayName);
+      setFromCityName(displayName);
       setFromLat(details.latitude);
       setFromLng(details.longitude);
     } catch (e) {
@@ -232,9 +223,13 @@ const PostRoute = ({ navigation }) => {
     setToPlacesError(null);
     try {
       const details = await fetchPlaceDetails(p.place_id);
-      const formatted = details.formatted_address || p.description || '';
-      setToAddress(formatted);
-      setToCityName(extractCity(formatted));
+      const displayName =
+        p.structured_formatting?.main_text
+        || p.description?.split(',')[0]?.trim()
+        || details.formatted_address?.split(',')[0]?.trim()
+        || '';
+      setToAddress(displayName);
+      setToCityName(displayName);
       setToLat(details.latitude);
       setToLng(details.longitude);
     } catch (e) {
@@ -311,11 +306,11 @@ const PostRoute = ({ navigation }) => {
         from_address: fromAddress.trim(),
         from_lat: Number(fromLat),
         from_lng: Number(fromLng),
-        from_city: fromCityName || extractCity(fromAddress),
+        from_city: fromCityName || (fromAddress.split(',')[0] || '').trim(),
         to_address: toAddress.trim(),
         to_lat: Number(toLat),
         to_lng: Number(toLng),
-        to_city: toCityName || extractCity(toAddress),
+        to_city: toCityName || (toAddress.split(',')[0] || '').trim(),
         departure_time: departureAt.toISOString(),
         max_parcels: maxParcels,
         boot_space: bootSpace,
