@@ -52,6 +52,41 @@ const INTERCITY_MAP_STATUSES = [
   },
 ];
 
+const LOCAL_TIMELINE_STEPS = [
+  {
+    key: 'finding',
+    label: 'Finding driver',
+    sub: 'Looking for nearby driver',
+    statuses: ['pending', 'matching'],
+  },
+  {
+    key: 'collecting',
+    label: 'Driver collecting',
+    sub: 'Driver heading to pickup',
+    statuses: ['accepted', 'pickup_en_route', 'pickup_arrived'],
+  },
+  {
+    key: 'delivering',
+    label: 'On the way',
+    sub: 'Driver heading to you',
+    statuses: ['collected', 'delivery_en_route', 'delivery_arrived'],
+  },
+  {
+    key: 'delivered',
+    label: 'Delivered',
+    sub: 'Parcel received',
+    statuses: ['delivered', 'completed'],
+  },
+];
+
+function localTimelineIndex(status) {
+  const s = String(status || '');
+  if (['delivered', 'completed'].includes(s)) return 3;
+  if (['collected', 'delivery_en_route', 'delivery_arrived'].includes(s)) return 2;
+  if (['accepted', 'pickup_en_route', 'pickup_arrived'].includes(s)) return 1;
+  return 0;
+}
+
 function intercityMapTimelineIndex(status) {
   const s = String(status || '');
   if (['delivered', 'completed'].includes(s)) return 4;
@@ -638,7 +673,56 @@ const TrackingWithMap = ({ navigation, route }) => {
               );
             })}
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.localTimeline}>
+            {LOCAL_TIMELINE_STEPS.map((step, index) => {
+              const currentIdx = localTimelineIndex(order?.status);
+              const isCompleted = index < currentIdx;
+              const isCurrent = index === currentIdx;
+              const isFuture = index > currentIdx;
+
+              return (
+                <View key={step.key} style={styles.localTimelineRow}>
+                  <View style={styles.localTimelineLeft}>
+                    <View
+                      style={[
+                        styles.localDot,
+                        isCompleted && styles.localDotDone,
+                        isCurrent && styles.localDotCurrent,
+                        isFuture && styles.localDotFuture,
+                      ]}
+                    >
+                      {isCompleted && <Text style={styles.localDotCheck}>✓</Text>}
+                      {isCurrent && <View style={styles.localDotInner} />}
+                    </View>
+                    {index < LOCAL_TIMELINE_STEPS.length - 1 && (
+                      <View
+                        style={[
+                          styles.localConnector,
+                          isCompleted ? styles.localConnectorDone : styles.localConnectorFuture,
+                        ]}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.localTimelineContent}>
+                    <Text
+                      style={[
+                        styles.localStepTitle,
+                        isCompleted && styles.localStepTitleDone,
+                        isCurrent && styles.localStepTitleCurrent,
+                        isFuture && styles.localStepTitleFuture,
+                      ]}
+                    >
+                      {step.label}
+                    </Text>
+                    {isCurrent ? <Text style={styles.localStepSub}>{step.sub}</Text> : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Driver Info */}
         {order.driver_name ? (
@@ -964,6 +1048,84 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     lineHeight: 16,
+  },
+  localTimeline: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  localTimelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  localTimelineLeft: {
+    alignItems: 'center',
+    marginRight: 14,
+    width: 24,
+  },
+  localDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  localDotDone: {
+    backgroundColor: '#00C853',
+  },
+  localDotCurrent: {
+    backgroundColor: '#000000',
+  },
+  localDotFuture: {
+    backgroundColor: '#E0E0E0',
+  },
+  localDotCheck: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  localDotInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+  },
+  localConnector: {
+    width: 2,
+    height: 28,
+    marginTop: 2,
+  },
+  localConnectorDone: {
+    backgroundColor: '#00C853',
+  },
+  localConnectorFuture: {
+    backgroundColor: '#E0E0E0',
+  },
+  localTimelineContent: {
+    flex: 1,
+    paddingBottom: 20,
+  },
+  localStepTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#9E9E9E',
+  },
+  localStepTitleDone: {
+    color: '#00C853',
+    fontWeight: '600',
+  },
+  localStepTitleCurrent: {
+    color: '#000000',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  localStepTitleFuture: {
+    color: '#BDBDBD',
+  },
+  localStepSub: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 3,
   },
   statusLeft: {
     flex: 1,
