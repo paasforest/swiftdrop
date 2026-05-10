@@ -204,19 +204,6 @@ const Home = ({ navigation }) => {
           </View>
         )}
 
-        {/* Search bar */}
-        <TouchableOpacity
-          style={styles.searchBar}
-          onPress={() => navigation.navigate('AddressEntry')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.searchDot} />
-          <Text style={styles.searchText}>Where do you want to deliver?</Text>
-          <View style={styles.searchArrow}>
-            <Text style={styles.searchArrowText}>→</Text>
-          </View>
-        </TouchableOpacity>
-
         <Text style={styles.sectionLabel}>SEND A PARCEL</Text>
 
         <View style={styles.cardsRow}>
@@ -319,9 +306,9 @@ const Home = ({ navigation }) => {
             <Text style={styles.emptySubtext}>Send your first parcel today</Text>
             <TouchableOpacity
               style={styles.emptyButton}
-              onPress={() => navigation.navigate('AddressEntry')}
+              onPress={() => navigation.navigate('PostJob')}
             >
-              <Text style={styles.emptyButtonText}>Send a parcel</Text>
+              <Text style={styles.emptyButtonText}>Post a delivery job</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -430,41 +417,6 @@ const styles = StyleSheet.create({
     color: '#00C853',
     fontSize: 13,
     fontWeight: '600',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 16,
-    marginHorizontal: 20,
-    marginBottom: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  searchDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#00C853',
-    marginRight: 12,
-  },
-  searchText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#9E9E9E',
-  },
-  searchArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#000000',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchArrowText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
   },
   sectionLabel: {
     fontSize: 11,

@@ -94,7 +94,7 @@ const Payment = ({ navigation, route }) => {
     payHandledRef.current = false;
   };
 
-  const navigateToDriverMatching = useCallback(
+  const navigateToOrderConfirmation = useCallback(
     (orderId, totalPrice) => {
       navigation.replace('OrderConfirmation', {
         orderId,
@@ -123,7 +123,7 @@ const Payment = ({ navigation, route }) => {
     setPayfastModalVisible(false);
     const orderId = pendingOrderId;
     setPendingOrderId(null);
-    if (orderId) navigateToDriverMatching(orderId, total);
+    if (orderId) navigateToOrderConfirmation(orderId, total);
   };
 
   const handlePayfastNavStateChange = (navState) => {
@@ -264,11 +264,11 @@ const Payment = ({ navigation, route }) => {
 
       if (selectedPaymentMethod === 'wallet') {
         await fetchWalletBalance();
-        navigateToDriverMatching(orderId, res?.total_price ?? total);
+        navigateToOrderConfirmation(orderId, res?.total_price ?? total);
         return;
       }
 
-      navigateToDriverMatching(orderId, res?.total_price ?? total);
+      navigateToOrderConfirmation(orderId, res?.total_price ?? total);
     } catch (e) {
       console.error('Pay error:', e.message);
       alert(e.message || 'Payment failed');

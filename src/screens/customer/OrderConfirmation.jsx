@@ -31,15 +31,6 @@ const OrderConfirmation = ({ navigation, route }) => {
     }).start();
   }, [scaleAnim]);
 
-  useEffect(() => {
-    if (trip_type !== 'intercity') {
-      const timer = setTimeout(() => {
-        navigation.replace('DriverMatching', { orderId });
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [navigation, trip_type, orderId]);
-
   const isIntercity = trip_type === 'intercity';
 
   return (
@@ -52,7 +43,7 @@ const OrderConfirmation = ({ navigation, route }) => {
         </Animated.View>
         <Text style={styles.successTitle}>Order placed!</Text>
         <Text style={styles.successSubtitle}>
-          {isIntercity ? 'Your intercity booking is confirmed' : 'We are finding you a driver'}
+          {isIntercity ? 'Your intercity booking is confirmed' : 'Your order is confirmed'}
         </Text>
       </View>
 
@@ -143,9 +134,9 @@ const OrderConfirmation = ({ navigation, route }) => {
       ) : (
         <TouchableOpacity
           style={styles.trackButton}
-          onPress={() => navigation.replace('DriverMatching', { orderId })}
+          onPress={() => navigation.replace('Home')}
         >
-          <Text style={styles.trackButtonText}>Track my order</Text>
+          <Text style={styles.trackButtonText}>Back to home</Text>
         </TouchableOpacity>
       )}
 

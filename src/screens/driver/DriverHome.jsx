@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,12 @@ import {
   SafeAreaView,
   ScrollView,
   ActivityIndicator,
-  Alert,
   StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
-import { getJson, patchJson } from '../../apiClient';
-import { resetToLogin } from '../../navigationHelpers';
+import { getJson } from '../../apiClient';
 import { registerForPushNotificationsAsync } from '../../services/pushNotificationService';
 import { spacing, radius, shadows } from '../../theme/theme';
 import { BottomTabBar } from '../../components/ui';
@@ -65,81 +62,13 @@ function formatRouteDeparture(iso) {
   }
 }
 
-const STATUS_ERR = 'Could not update status. Check connection.';
-
 const DriverHome = ({ navigation }) => {
-  const [isOnline, setIsOnline] = useState(false);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [statusBusy, setStatusBusy] = useState(false);
   const [activeTrips, setActiveTrips] = useState([]);
   /** Full list from GET /api/driver-routes/my — used for "posted, awaiting bookings". */
   const [myRoutes, setMyRoutes] = useState([]);
-
-  const locationIntervalRef = useRef(null);
-
-  const stopLocationUpdates = useCallback(() => {
-    if (locationIntervalRef.current != null) {
-      clearInterval(locationIntervalRef.current);
-      locationIntervalRef.current = null;
-    }
-  }, []);
-
-  const sendLocationOnce = useCallback(async () => {
-    const auth = getAuth();
-    if (!auth?.token) return;
-    const perm = await Location.getForegroundPermissionsAsync();
-    if (perm.status !== 'granted') return;
-    const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-    await patchJson(
-      '/api/drivers/location',
-      { lat: pos.coords.latitude, lng: pos.coords.longitude },
-      { token: auth.token }
-    );
-  }, []);
-
-  const startLocationUpdates = useCallback(async () => {
-    stopLocationUpdates();
-    try {
-      await sendLocationOnce();
-    } catch {
-      /* network errors — interval will retry */
-    }
-    locationIntervalRef.current = setInterval(() => {
-      sendLocationOnce().catch(() => {});
-    }, 10000);
-  }, [sendLocationOnce, stopLocationUpdates]);
-
-  const syncOnlineStatusFromServer = useCallback(async () => {
-    const auth = getAuth();
-    if (!auth?.token) return;
-    try {
-      const data = await getJson('/api/drivers/status', { token: auth.token });
-      const online = Boolean(data.is_online);
-      setIsOnline(online);
-      if (online) {
-        const perm = await Location.getForegroundPermissionsAsync();
-        if (perm.status === 'granted') {
-          await startLocationUpdates();
-        } else {
-          try {
-            await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
-          } catch {
-            /* best-effort */
-          }
-          setIsOnline(false);
-          stopLocationUpdates();
-        }
-      } else {
-        stopLocationUpdates();
-      }
-    } catch {
-      /* keep local toggle; dashboard error handles API down */
-    }
-  }, [startLocationUpdates, stopLocationUpdates]);
 
   const loadDashboard = useCallback(async () => {
     const auth = getAuth();
@@ -175,19 +104,12 @@ const DriverHome = ({ navigation }) => {
   useFocusEffect(
     useCallback(() => {
       loadDashboard();
-      syncOnlineStatusFromServer();
       const auth = getAuth();
       if (auth?.token) {
         registerForPushNotificationsAsync().catch(() => {});
       }
-    }, [loadDashboard, syncOnlineStatusFromServer])
+    }, [loadDashboard])
   );
-
-  useEffect(() => {
-    return () => {
-      stopLocationUpdates();
-    };
-  }, [stopLocationUpdates]);
 
   const userName = dashboard?.user?.full_name || getAuth()?.user?.full_name || 'Driver';
   const firstName = firstNameOf(userName);
@@ -212,49 +134,6 @@ const DriverHome = ({ navigation }) => {
       .sort((a, b) => new Date(a.departure_time) - new Date(b.departure_time));
   }, [myRoutes]);
 
-  const handleToggleOnline = async () => {
-    if (statusBusy) return;
-    const auth = getAuth();
-    if (!auth?.token) {
-      Alert.alert('Sign in required', 'Please log in again.');
-      return;
-    }
-
-    if (isOnline) {
-      setStatusBusy(true);
-      try {
-        await patchJson('/api/drivers/status', { is_online: false }, { token: auth.token });
-        stopLocationUpdates();
-        setIsOnline(false);
-      } catch {
-        Alert.alert('', STATUS_ERR);
-      } finally {
-        setStatusBusy(false);
-      }
-      return;
-    }
-
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (perm.status !== 'granted') {
-      Alert.alert(
-        'Location permission required',
-        'Location permission required to go online and receive deliveries'
-      );
-      return;
-    }
-
-    setStatusBusy(true);
-    try {
-      await patchJson('/api/drivers/status', { is_online: true }, { token: auth.token });
-      setIsOnline(true);
-      await startLocationUpdates();
-    } catch {
-      Alert.alert('', STATUS_ERR);
-    } finally {
-      setStatusBusy(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -278,53 +157,6 @@ const DriverHome = ({ navigation }) => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-
-        {/* Online / Offline toggle */}
-        <View style={styles.toggleSection}>
-          <TouchableOpacity
-            activeOpacity={0.88}
-            onPress={handleToggleOnline}
-            disabled={statusBusy}
-            style={styles.toggleContainer}
-          >
-            <View
-              style={[
-                styles.toggleCircle,
-                isOnline ? styles.toggleCircleOnline : styles.toggleCircleOffline,
-                isOnline ? styles.toggleGlowOnline : null,
-                statusBusy ? styles.toggleCircleBusy : null,
-              ]}
-            >
-              {statusBusy ? (
-                <ActivityIndicator color={isOnline ? '#FFFFFF' : '#9E9E9E'} />
-              ) : (
-                <View
-                  style={[
-                    styles.toggleIndicator,
-                    isOnline ? styles.toggleIndicatorOnline : styles.toggleIndicatorOffline,
-                  ]}
-                />
-              )}
-            </View>
-          </TouchableOpacity>
-          {statusBusy ? (
-            <Text style={styles.motivationalText}>Updating your status…</Text>
-          ) : !isOnline ? (
-            <View style={styles.onlineExplainer}>
-              <Text style={styles.onlineExplainerTitle}>Go online for local deliveries</Text>
-              <Text style={styles.onlineExplainerText}>
-                When online your GPS location is shared and nearby delivery orders will be sent to you
-                automatically.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.onlineLiveInfo}>
-              <Text style={styles.onlineLiveText}>
-                📍 You are live — orders near you will appear automatically
-              </Text>
-            </View>
-          )}
-        </View>
 
         <TouchableOpacity
           style={styles.browseJobsCard}
@@ -534,97 +366,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  toggleSection: {
-    paddingHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 28,
-    alignItems: 'center',
-  },
-  toggleContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  toggleCircle: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  toggleCircleOffline: {
-    backgroundColor: '#E0E0E0',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  toggleCircleOnline: {
-    backgroundColor: '#000000',
-  },
-  toggleGlowOnline: {
-    shadowColor: '#00C853',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.95,
-    shadowRadius: 32,
-    elevation: 24,
-  },
-  toggleCircleBusy: {
-    opacity: 0.88,
-  },
-  toggleIndicator: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleIndicatorOffline: {
-    backgroundColor: '#9E9E9E',
-  },
-  toggleIndicatorOnline: {
-    backgroundColor: '#00C853',
-  },
-  motivationalText: {
-    marginTop: 20,
-    fontSize: 17,
-    fontWeight: '700',
-    textAlign: 'center',
-    color: '#000000',
-    paddingHorizontal: spacing.md,
-    lineHeight: 24,
-  },
-  onlineExplainer: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 14,
-    marginHorizontal: 16,
-    marginTop: 8,
-  },
-  onlineExplainerTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 4,
-  },
-  onlineExplainerText: {
-    fontSize: 12,
-    color: '#757575',
-    lineHeight: 18,
-  },
-  onlineLiveInfo: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    alignItems: 'center',
-  },
-  onlineLiveText: {
-    fontSize: 13,
-    color: '#00C853',
-    fontWeight: '600',
-  },
   browseJobsCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -633,6 +374,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 18,
     marginHorizontal: 16,
+    marginTop: 8,
     marginBottom: 16,
   },
   browseJobsLeft: {
