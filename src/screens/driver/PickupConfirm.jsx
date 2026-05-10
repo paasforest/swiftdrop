@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -15,20 +15,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { API_BASE_URL } from '../../apiConfig';
 import { getAuth } from '../../authStore';
-import { getJson, postJson } from '../../apiClient';
+import { postJson } from '../../apiClient';
 import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
 const PickupConfirm = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
-
-  const [arrivalMarked, setArrivalMarked] = useState(false);
-  const [markingArrival, setMarkingArrival] = useState(true);
-  const [arrivalError, setArrivalError] = useState(null);
-  const [arrivalRetryKey, setArrivalRetryKey] = useState(0);
-  const [order, setOrder] = useState(null);
-  const [orderLoaded, setOrderLoaded] = useState(false);
 
   const [otp, setOtp] = useState(['', '', '', '']);
   const [otpConfirmed, setOtpConfirmed] = useState(false);
@@ -65,94 +58,6 @@ const PickupConfirm = ({ navigation, route }) => {
       inputRefs.current[index - 1]?.focus();
     }
   };
-
-  const markArrivedAtPickup = async () => {
-    if (!orderId) throw new Error('Missing orderId');
-    const auth = getAuth();
-    if (!auth?.token) throw new Error('Not signed in');
-
-    setMarkingArrival(true);
-    setArrivalError(null);
-
-    const url = `${API_BASE_URL}/api/orders/${orderId}/status`;
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${auth.token}`,
-      },
-      body: JSON.stringify({ status: 'pickup_arrived' }),
-    });
-
-    const text = await res.text();
-    let json = null;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      json = null;
-    }
-
-    if (!res.ok) {
-      throw new Error(json?.error || json?.message || `Request failed with HTTP ${res.status}`);
-    }
-
-    setArrivalMarked(true);
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadOrder() {
-      if (!orderId) return;
-      const auth = getAuth();
-      if (!auth?.token) {
-        setOrderLoaded(true);
-        return;
-      }
-      try {
-        const data = await getJson(`/api/orders/${orderId}`, { token: auth.token });
-        if (cancelled) return;
-        setOrder(data);
-        if (data?.status === 'pickup_arrived') {
-          setArrivalMarked(true);
-          setArrivalError(null);
-          setMarkingArrival(false);
-        }
-      } catch {
-        // Best-effort; if it fails we still allow marking arrival normally.
-      } finally {
-        if (!cancelled) setOrderLoaded(true);
-      }
-    }
-
-    loadOrder();
-    return () => {
-      cancelled = true;
-    };
-  }, [orderId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!orderId) return;
-      if (arrivalMarked) return;
-      if (!orderLoaded) return;
-      try {
-        await markArrivedAtPickup();
-        if (cancelled) return;
-      } catch (e) {
-        if (cancelled) return;
-        setArrivalError(e.message || 'Failed to mark arrival');
-      } finally {
-        if (!cancelled) setMarkingArrival(false);
-      }
-    }
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId, arrivalRetryKey, arrivalMarked, orderLoaded]);
 
   const handleConfirmOtp = async () => {
     if (!orderId) return;
@@ -400,27 +305,7 @@ const PickupConfirm = ({ navigation, route }) => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {!arrivalMarked ? (
-          <View style={styles.stepContainer}>
-            {markingArrival ? (
-              <>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.hintText}>Marking you as arrived at pickup...</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.errorText}>{arrivalError || 'Could not start pickup confirmation'}</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={() => setArrivalRetryKey((k) => k + 1)}>
-                  <Text style={styles.retryButtonText}>Try Again</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        ) : !otpConfirmed ? (
-          renderOtpStep()
-        ) : (
-          renderPhotoStep()
-        )}
+        {!otpConfirmed ? renderOtpStep() : renderPhotoStep()}
       </ScrollView>
     </SafeAreaView>
   );

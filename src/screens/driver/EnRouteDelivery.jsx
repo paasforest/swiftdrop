@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DriverLocationService from './DriverLocationService';
 import { getAuth } from '../../authStore';
-import { getJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -13,6 +13,20 @@ const EnRouteDelivery = ({ route, navigation }) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+  const [arriving, setArriving] = useState(false);
+
+  async function handleArrivedAtDelivery() {
+    if (!orderId || arriving) return;
+    setArriving(true);
+    try {
+      await postJson(`/api/orders/${orderId}/delivery-arrived`, {}, { token: getAuth()?.token });
+    } catch (err) {
+      console.log('Delivery arrived:', err.message);
+    } finally {
+      setArriving(false);
+      navigation.navigate('DeliveryConfirm', { orderId });
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -95,20 +109,30 @@ const EnRouteDelivery = ({ route, navigation }) => {
           <Text style={styles.statusText}>{statusText}</Text>
         </View>
 
-        {/* Delivery Address */}
         <View style={styles.addressSection}>
-          <Text style={styles.sectionTitle}>Delivery Address</Text>
+          <Text style={styles.addressLabel}>DELIVERY ADDRESS</Text>
           <Text style={styles.addressText}>
             {loading ? 'Loading…' : error ? '—' : order?.dropoff_address || '—'}
           </Text>
         </View>
 
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            📱 When you arrive, tap the button below. The recipient will receive an OTP code to give you.
+          </Text>
+        </View>
+
         {canConfirmDelivery && (
           <TouchableOpacity
-            style={styles.arrivedButton}
-            onPress={() => navigation.navigate('DeliveryConfirm', { orderId })}
+            style={[styles.arrivedButton, arriving && { opacity: 0.7 }]}
+            onPress={handleArrivedAtDelivery}
+            disabled={arriving}
           >
-            <Text style={styles.arrivedButtonText}>I have arrived at delivery</Text>
+            {arriving ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Text style={styles.arrivedButtonText}>I have arrived at delivery</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -300,12 +324,34 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   addressSection: {
-    marginBottom: 24,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+  },
+  addressLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   addressText: {
-    fontSize: 16,
-    color: colors.textPrimary,
-    marginBottom: 12,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+    lineHeight: 22,
+  },
+  infoCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#2E7D32',
+    lineHeight: 20,
   },
   etaContainer: {
     backgroundColor: colors.primaryLight,

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DriverLocationService from './DriverLocationService';
 import { getAuth } from '../../authStore';
-import { getJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -13,6 +13,20 @@ const EnRoutePickup = ({ route, navigation }) => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(Boolean(orderId));
   const [error, setError] = useState(null);
+  const [arriving, setArriving] = useState(false);
+
+  async function handleArrivedAtPickup() {
+    if (!orderId || arriving) return;
+    setArriving(true);
+    try {
+      await postJson(`/api/orders/${orderId}/pickup-arrived`, {}, { token: getAuth()?.token });
+    } catch (err) {
+      console.log('Pickup arrived:', err.message);
+    } finally {
+      setArriving(false);
+      navigation.navigate('PickupConfirm', { orderId });
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -95,28 +109,37 @@ const EnRoutePickup = ({ route, navigation }) => {
           <Text style={styles.statusText}>{statusText}</Text>
         </View>
 
-        {/* Pickup Address */}
         <View style={styles.addressSection}>
-          <Text style={styles.sectionTitle}>Pickup Address</Text>
+          <Text style={styles.addressLabel}>PICKUP ADDRESS</Text>
           <Text style={styles.addressText}>
             {loading ? 'Loading…' : error ? '—' : order?.pickup_address || '—'}
           </Text>
         </View>
 
-        {/* Dropoff Address (for context) */}
-        <View style={styles.addressSection}>
-          <Text style={styles.sectionTitle}>Dropoff Address</Text>
+        <View style={styles.deliverySection}>
+          <Text style={styles.addressLabel}>DELIVERING TO</Text>
           <Text style={styles.addressText}>
             {loading ? 'Loading…' : error ? '—' : order?.dropoff_address || '—'}
           </Text>
         </View>
 
+        <View style={styles.infoCard}>
+          <Text style={styles.infoText}>
+            📱 When you arrive, tap the button below. The sender will receive an OTP code to give you.
+          </Text>
+        </View>
+
         {canConfirmPickup && (
           <TouchableOpacity
-            style={styles.arrivedButton}
-            onPress={() => navigation.navigate('PickupConfirm', { orderId })}
+            style={[styles.arrivedButton, arriving && { opacity: 0.7 }]}
+            onPress={handleArrivedAtPickup}
+            disabled={arriving}
           >
-            <Text style={styles.arrivedButtonText}>I have arrived at pickup</Text>
+            {arriving ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Text style={styles.arrivedButtonText}>I have arrived at pickup</Text>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -308,12 +331,40 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   addressSection: {
-    marginBottom: 24,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+  },
+  deliverySection: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+  },
+  addressLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 6,
   },
   addressText: {
-    fontSize: 16,
-    color: colors.textPrimary,
-    marginBottom: 12,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000000',
+    lineHeight: 22,
+  },
+  infoCard: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#2E7D32',
+    lineHeight: 20,
   },
   etaContainer: {
     backgroundColor: colors.primaryLight,
