@@ -24,6 +24,8 @@ router.delete('/:id', auth, order.cancelOrder);
 router.post('/:id/retry-matching', auth, order.retryMatching);
 router.post('/:id/accept', auth, order.acceptOrder);
 router.post('/:id/decline', auth, order.declineOrder);
+router.post('/:id/pickup-arrived', auth, order.pickupArrived);
+router.post('/:id/delivery-arrived', auth, order.deliveryArrived);
 router.patch('/:id/status', auth, order.updateOrderStatus);
 router.post('/:id/pickup-otp', auth, order.confirmPickupOTP);
 router.post('/:id/delivery-otp', auth, order.confirmDeliveryOTP);

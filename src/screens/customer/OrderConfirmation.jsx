@@ -32,13 +32,15 @@ const OrderConfirmation = ({ navigation, route }) => {
   }, [scaleAnim]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (trip_type === 'intercity' && orderId) {
-        navigation.replace('Tracking', { orderId });
-      }
-    }, 3000);
-    return () => clearTimeout(timer);
+    if (trip_type !== 'intercity') {
+      const timer = setTimeout(() => {
+        navigation.replace('DriverMatching', { orderId });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
   }, [navigation, trip_type, orderId]);
+
+  const isIntercity = trip_type === 'intercity';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -49,7 +51,9 @@ const OrderConfirmation = ({ navigation, route }) => {
           <Text style={styles.successIcon}>✓</Text>
         </Animated.View>
         <Text style={styles.successTitle}>Order placed!</Text>
-        <Text style={styles.successSubtitle}>We are finding you a driver</Text>
+        <Text style={styles.successSubtitle}>
+          {isIntercity ? 'Your intercity booking is confirmed' : 'We are finding you a driver'}
+        </Text>
       </View>
 
       <View style={styles.summaryCard}>
@@ -65,7 +69,7 @@ const OrderConfirmation = ({ navigation, route }) => {
           <Text style={styles.routeText} numberOfLines={1}>{dropoff_address || 'Dropoff'}</Text>
         </View>
 
-        {trip_type === 'intercity' && departure_time ? (
+        {isIntercity && departure_time ? (
           <View style={styles.departureChip}>
             <Text style={styles.departureText}>
               🕐 Driver departs{' '}
@@ -89,17 +93,61 @@ const OrderConfirmation = ({ navigation, route }) => {
         <View style={styles.metaRow}>
           <Text style={styles.metaLabel}>Delivery type</Text>
           <Text style={styles.metaValue}>
-            {trip_type === 'intercity' ? 'Intercity' : (delivery_tier || 'Standard')}
+            {isIntercity ? 'Intercity' : (delivery_tier || 'Standard')}
           </Text>
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.trackButton}
-        onPress={() => navigation.replace('DriverMatching', { orderId })}
-      >
-        <Text style={styles.trackButtonText}>Track my order</Text>
-      </TouchableOpacity>
+      {isIntercity ? (
+        <View style={styles.intercityInfo}>
+          <View style={styles.departureCard}>
+            <Text style={styles.departureLabel}>
+              DEPARTURE
+            </Text>
+            <Text style={styles.departureTime}>
+              {departure_time
+                ? new Date(departure_time).toLocaleDateString('en-ZA', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+                : 'As scheduled'}
+            </Text>
+          </View>
+
+          <View style={styles.infoSteps}>
+            {[
+              '✓ Slot reserved',
+              '⏳ Driver will collect your parcel',
+              '⏳ Delivered at destination',
+            ].map((step, i) => (
+              <View key={i} style={styles.infoStep}>
+                <Text style={styles.infoStepText}>
+                  {step}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.trackButton, styles.trackButtonFullBleed]}
+            onPress={() => navigation.replace('Tracking', { orderId })}
+          >
+            <Text style={styles.trackButtonText}>
+              Track my booking
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.trackButton}
+          onPress={() => navigation.replace('DriverMatching', { orderId })}
+        >
+          <Text style={styles.trackButtonText}>Track my order</Text>
+        </TouchableOpacity>
+      )}
 
     </SafeAreaView>
   );
@@ -156,10 +204,45 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   metaLabel: { fontSize: 13, color: '#9E9E9E' },
   metaValue: { fontSize: 13, fontWeight: '600', color: '#000000' },
+  intercityInfo: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+  },
+  departureCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  departureLabel: {
+    fontSize: 10, fontWeight: '700',
+    color: '#9E9E9E', letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  departureTime: {
+    fontSize: 16, fontWeight: '700',
+    color: '#000000', textAlign: 'center',
+  },
+  infoSteps: {
+    marginBottom: 24,
+  },
+  infoStep: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  infoStepText: {
+    fontSize: 14, color: '#333333',
+  },
   trackButton: {
     backgroundColor: '#000000', borderRadius: 14, height: 56,
     marginHorizontal: 20, marginTop: 24,
     alignItems: 'center', justifyContent: 'center',
+  },
+  trackButtonFullBleed: {
+    marginHorizontal: 0,
+    marginTop: 8,
   },
   trackButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
 });

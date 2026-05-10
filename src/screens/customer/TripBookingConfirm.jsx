@@ -25,6 +25,21 @@ function parseParcelValue(raw) {
   return Number.isFinite(n) && n > 0 ? n : NaN;
 }
 
+/** Distance between two WGS84 points in km (great-circle). */
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δφ = toRad(lat2 - lat1);
+  const Δλ = toRad(lon2 - lon1);
+  const a =
+    Math.sin(Δφ / 2) ** 2
+    + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function TripBookingConfirm({ navigation, route }) {
   const trip = route.params?.trip;
   const [parcelSize, setParcelSize] = useState('small');
@@ -118,6 +133,31 @@ export default function TripBookingConfirm({ navigation, route }) {
   const depStr = dep && !Number.isNaN(dep.getTime())
     ? dep.toLocaleString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
     : '—';
+
+  const radiusKm = Number(trip.delivery_radius_km) || 20;
+  let dropoffVsDestKm = null;
+  if (
+    priceData
+    && trip?.to_lat != null
+    && trip?.to_lng != null
+    && trip?.customer_dropoff_lat != null
+    && trip?.customer_dropoff_lng != null
+  ) {
+    dropoffVsDestKm = haversineKm(
+      Number(trip.customer_dropoff_lat),
+      Number(trip.customer_dropoff_lng),
+      Number(trip.to_lat),
+      Number(trip.to_lng)
+    );
+  }
+  const radiusConcern =
+    priceData
+    && trip.delivery_radius_km != null
+    && (
+      dropoffVsDestKm == null
+      || !Number.isFinite(dropoffVsDestKm)
+      || dropoffVsDestKm > radiusKm
+    );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -246,6 +286,15 @@ export default function TripBookingConfirm({ navigation, route }) {
                 <Text style={styles.totalLabel}>Total</Text>
                 <Text style={styles.totalVal}>R{Number(priceData.total_price || 0).toFixed(2)}</Text>
               </View>
+              {radiusConcern ? (
+                <View style={styles.radiusWarning}>
+                  <Text style={styles.radiusWarningText}>
+                    {dropoffVsDestKm != null && Number.isFinite(dropoffVsDestKm)
+                      ? `⚠️ Dropoff looks ${Math.round(dropoffVsDestKm)}km from the corridor destination. Drivers typically deliver within ${radiusKm}km.`
+                      : `⚠️ Make sure your dropoff address is within ${trip.delivery_radius_km}km of ${trip.to_city || trip.to_address || 'the destination'}`}
+                  </Text>
+                </View>
+              ) : null}
             </>
           ) : (
             <Text style={styles.meta}>—</Text>
@@ -404,6 +453,19 @@ const styles = StyleSheet.create({
   totalRow: { marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E0E0E0' },
   totalLabel: { fontSize: 16, fontWeight: '700', color: '#000' },
   totalVal: { fontSize: 16, fontWeight: '800', color: '#00C853' },
+  radiusWarning: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#FFB800',
+  },
+  radiusWarningText: {
+    fontSize: 13,
+    color: '#5D4037',
+    lineHeight: 18,
+  },
   footer: {
     position: 'absolute',
     left: 0,

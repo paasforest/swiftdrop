@@ -16,10 +16,43 @@ import { getJson } from '../../apiClient';
 import SwiftDropLogoMark from '../../components/SwiftDropLogoMark';
 import AvatarPlaceholder from '../../components/AvatarPlaceholder';
 import ReportProblemModal, { ReportProblemButton, shouldShowReportProblem } from '../../components/customer/ReportProblem';
+import { getStatusLabel } from '../../utils/orderStatusLabels';
 
-function humanStatus(status) {
-  if (!status) return '';
-  return String(status).replace(/_/g, ' ');
+const INTERCITY_STATUSES = [
+  {
+    key: 'pending',
+    label: 'Booking confirmed',
+    sub: 'Your slot is reserved',
+  },
+  {
+    key: 'collected',
+    label: 'Parcel collected',
+    sub: 'Driver has your parcel',
+  },
+  {
+    key: 'delivery_en_route',
+    label: 'In transit',
+    sub: 'Driver heading to destination',
+  },
+  {
+    key: 'delivery_arrived',
+    label: 'Out for delivery',
+    sub: 'Driver at destination',
+  },
+  {
+    key: 'delivered',
+    label: 'Delivered',
+    sub: 'Parcel received',
+  },
+];
+
+function intercityTimelineActiveIndex(status) {
+  const s = String(status || '');
+  if (['delivered', 'completed'].includes(s)) return 4;
+  if (s === 'delivery_arrived') return 3;
+  if (s === 'delivery_en_route') return 2;
+  if (s === 'collected') return 1;
+  return 0;
 }
 
 function formatMoney(n) {
@@ -142,8 +175,25 @@ const Tracking = ({ navigation, route }) => {
   const vehicleBits = [order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ');
   const plate = order.vehicle_plate || '';
   const parcelBits = [order.parcel_type, order.parcel_size].filter(Boolean).join(' — ');
+  const isIntercity = order.trip_type === 'intercity';
   const currentStep = stepIndexFromStatus(order.status);
+  const intercityActiveIdx = intercityTimelineActiveIndex(order.status);
+  const intercityTerminal = ['delivered', 'completed'].includes(String(order.status || ''));
   const sColor = statusColor(order.status);
+
+  const statusBannerText = isIntercity ? getStatusLabel(order.status) : String(order.status || '').replace(/_/g, ' ');
+
+  const departsLabel = order.trip_departure_time
+    ? new Date(order.trip_departure_time).toLocaleString('en-ZA', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : null;
+  const routeCities = [order.trip_from_city, order.trip_to_city].filter(Boolean).join(' → ')
+    || [order.trip_route_from_address, order.trip_route_to_address].filter(Boolean).join(' → ');
 
   return (
     <SafeAreaView style={[styles.container, styles.flexFill]}>
@@ -172,49 +222,92 @@ const Tracking = ({ navigation, route }) => {
         <View style={styles.statusBanner}>
           <View style={[styles.statusDot, { backgroundColor: sColor }]} />
           <Text style={[styles.statusText, { color: sColor }]}>
-            {humanStatus(order.status)}
+            {statusBannerText}
           </Text>
           <Text style={styles.orderNumber}>#{order.order_number}</Text>
         </View>
 
         {/* Progress steps */}
         <View style={styles.progressSection}>
-          {PROGRESS_STEPS.map((step, index) => {
-            const isCompleted = index < currentStep;
-            const isCurrent = index === currentStep;
-            const isFuture = index > currentStep;
-            return (
-              <View key={step.key} style={styles.progressStep}>
-                <View style={styles.progressLeft}>
-                  <View
-                    style={[
-                      styles.stepDot,
-                      isCompleted && styles.stepDotCompleted,
-                      isCurrent && styles.stepDotCurrent,
-                      isFuture && styles.stepDotFuture,
-                    ]}
-                  />
-                  {index < PROGRESS_STEPS.length - 1 && (
+          {isIntercity
+            ? INTERCITY_STATUSES.map((step, index) => {
+              const isCompleted = intercityTerminal || index < intercityActiveIdx;
+              const isCurrent = !intercityTerminal && index === intercityActiveIdx;
+              const isFuture = !intercityTerminal && index > intercityActiveIdx;
+              return (
+                <View key={step.key} style={styles.progressStep}>
+                  <View style={styles.progressLeft}>
                     <View
                       style={[
-                        styles.stepConnector,
-                        isCompleted ? styles.stepConnectorCompleted : styles.stepConnectorFuture,
+                        styles.stepDot,
+                        isCompleted && styles.stepDotCompleted,
+                        isCurrent && styles.stepDotCurrent,
+                        isFuture && styles.stepDotFuture,
                       ]}
                     />
-                  )}
+                    {index < INTERCITY_STATUSES.length - 1 && (
+                      <View
+                        style={[
+                          styles.stepConnector,
+                          isCompleted ? styles.stepConnectorCompleted : styles.stepConnectorFuture,
+                        ]}
+                      />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.stepLabel,
+                        (isCompleted || isCurrent) && styles.stepLabelActive,
+                        isFuture && styles.stepLabelFuture,
+                        { marginBottom: 4 },
+                      ]}
+                    >
+                      {step.label}
+                    </Text>
+                    <Text style={[styles.stepSub, isFuture && styles.stepLabelFuture]}>
+                      {step.sub}
+                    </Text>
+                  </View>
                 </View>
-                <Text
-                  style={[
-                    styles.stepLabel,
-                    (isCompleted || isCurrent) && styles.stepLabelActive,
-                    isFuture && styles.stepLabelFuture,
-                  ]}
-                >
-                  {step.label}
-                </Text>
-              </View>
-            );
-          })}
+              );
+            })
+            : PROGRESS_STEPS.map((step, index) => {
+              const isCompleted = index < currentStep;
+              const isCurrent = index === currentStep;
+              const isFuture = index > currentStep;
+              return (
+                <View key={step.key} style={styles.progressStep}>
+                  <View style={styles.progressLeft}>
+                    <View
+                      style={[
+                        styles.stepDot,
+                        isCompleted && styles.stepDotCompleted,
+                        isCurrent && styles.stepDotCurrent,
+                        isFuture && styles.stepDotFuture,
+                      ]}
+                    />
+                    {index < PROGRESS_STEPS.length - 1 && (
+                      <View
+                        style={[
+                          styles.stepConnector,
+                          isCompleted ? styles.stepConnectorCompleted : styles.stepConnectorFuture,
+                        ]}
+                      />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.stepLabel,
+                      (isCompleted || isCurrent) && styles.stepLabelActive,
+                      isFuture && styles.stepLabelFuture,
+                    ]}
+                  >
+                    {step.label}
+                  </Text>
+                </View>
+              );
+            })}
         </View>
 
         {/* Driver card */}
@@ -235,6 +328,23 @@ const Tracking = ({ navigation, route }) => {
                 <Text style={styles.driverVehicle} numberOfLines={2}>
                   {[vehicleBits, plate].filter(Boolean).join(' • ') || 'Vehicle details pending'}
                 </Text>
+                {isIntercity ? (
+                  <View style={styles.intercityDriverMeta}>
+                    {departsLabel ? (
+                      <Text style={styles.intercityMetaLine}>
+                        Departure: {departsLabel}
+                      </Text>
+                    ) : null}
+                    {routeCities ? (
+                      <Text style={styles.intercityMetaLine}>
+                        Route: {routeCities}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.intercityMetaLine}>
+                      Status: {getStatusLabel(order.status)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               {order.driver_phone ? (
                 <TouchableOpacity style={styles.callButton} onPress={handleCall}>
@@ -243,7 +353,9 @@ const Tracking = ({ navigation, route }) => {
               ) : null}
             </View>
           ) : (
-            <Text style={styles.noDriver}>Matching a driver…</Text>
+            <Text style={styles.noDriver}>
+              {isIntercity ? 'Driver details will appear here.' : 'Matching a driver…'}
+            </Text>
           )}
         </View>
 
@@ -461,6 +573,21 @@ const styles = StyleSheet.create({
   },
   stepLabelFuture: {
     color: '#9E9E9E',
+  },
+  stepSub: {
+    fontSize: 12,
+    color: '#757575',
+    lineHeight: 16,
+    marginBottom: 28,
+  },
+  intercityDriverMeta: {
+    marginTop: 8,
+    gap: 4,
+  },
+  intercityMetaLine: {
+    fontSize: 12,
+    color: '#757575',
+    lineHeight: 17,
   },
   driverCard: {
     backgroundColor: '#FFFFFF',

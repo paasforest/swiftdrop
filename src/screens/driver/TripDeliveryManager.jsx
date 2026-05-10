@@ -73,6 +73,40 @@ const TripDeliveryManager = ({ navigation, route }) => {
     setError(null);
   }
 
+  async function handleArrivedAtPickup() {
+    setProcessing(true);
+    const auth = getAuth();
+    try {
+      await postJson(
+        `/api/orders/${activeParcel.id}/pickup-arrived`,
+        {},
+        { token: auth?.token }
+      );
+      setPhase('collection_otp');
+    } catch (err) {
+      setError(err.message || 'Could not update status. Try again.');
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function handleArrivedAtDelivery() {
+    setProcessing(true);
+    const auth = getAuth();
+    try {
+      await postJson(
+        `/api/orders/${activeParcel.id}/delivery-arrived`,
+        {},
+        { token: auth?.token }
+      );
+      setPhase('delivery_otp');
+    } catch (err) {
+      setError(err.message || 'Could not update status.');
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   async function handleConfirmCollectionOtp() {
     setProcessing(true);
     setError(null);
@@ -248,9 +282,9 @@ const TripDeliveryManager = ({ navigation, route }) => {
                   style={styles.parcelAction}
                   onPress={() => {
                     setActiveParcel(parcel);
-                    if (pPhase === 'needs_collection') setPhase('collection_otp');
+                    if (pPhase === 'needs_collection') setPhase('collection_arrived');
                     else if (pPhase === 'needs_pickup_photo') setPhase('collection_photo');
-                    else if (pPhase === 'ready_to_deliver') setPhase('delivery_otp');
+                    else if (pPhase === 'ready_to_deliver') setPhase('delivery_arrived');
                   }}
                 >
                   <Text style={styles.parcelActionText}>
@@ -272,8 +306,10 @@ const TripDeliveryManager = ({ navigation, route }) => {
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>
+              {phase === 'collection_arrived' && 'At pickup'}
               {phase === 'collection_otp' && 'Collection OTP'}
               {phase === 'collection_photo' && 'Collection photo'}
+              {phase === 'delivery_arrived' && 'At delivery'}
               {phase === 'delivery_otp' && 'Delivery OTP'}
               {phase === 'delivery_photo' && 'Delivery photo'}
             </Text>
@@ -281,6 +317,78 @@ const TripDeliveryManager = ({ navigation, route }) => {
           </View>
 
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 24 }}>
+
+            {phase === 'collection_arrived' && (
+              <View style={{ padding: 24 }}>
+                <Text style={styles.modalInstruction}>
+                  Go to the pickup address
+                </Text>
+                <Text style={styles.modalSub}>
+                  {activeParcel?.pickup_address}
+                </Text>
+
+                <View style={styles.addressCard}>
+                  <Text style={styles.addressCardIcon}>
+                    📍
+                  </Text>
+                  <Text style={styles.addressCardText}>
+                    {activeParcel?.pickup_address}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrivalNote}>
+                  Once you are physically at the pickup address, tap the button below. An OTP will be sent to the sender.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.arrivedButton}
+                  onPress={handleArrivedAtPickup}
+                  disabled={processing}
+                >
+                  {processing
+                    ? <ActivityIndicator color="#FFF" size="small" />
+                    : <Text style={styles.arrivedButtonText}>
+                      ✓ I have arrived at pickup
+                    </Text>}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {phase === 'delivery_arrived' && (
+              <View style={{ padding: 24 }}>
+                <Text style={styles.modalInstruction}>
+                  Go to the delivery address
+                </Text>
+                <Text style={styles.modalSub}>
+                  {activeParcel?.dropoff_address}
+                </Text>
+
+                <View style={styles.addressCard}>
+                  <Text style={styles.addressCardIcon}>
+                    🏁
+                  </Text>
+                  <Text style={styles.addressCardText}>
+                    {activeParcel?.dropoff_address}
+                  </Text>
+                </View>
+
+                <Text style={styles.arrivalNote}>
+                  Once you are at the delivery address, tap below. An OTP will be sent to the recipient.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.arrivedButton}
+                  onPress={handleArrivedAtDelivery}
+                  disabled={processing}
+                >
+                  {processing
+                    ? <ActivityIndicator color="#FFF" size="small" />
+                    : <Text style={styles.arrivedButtonText}>
+                      ✓ I have arrived at delivery
+                    </Text>}
+                </TouchableOpacity>
+              </View>
+            )}
 
             {(phase === 'collection_otp' || phase === 'delivery_otp') && (
               <View>
@@ -436,6 +544,34 @@ const styles = StyleSheet.create({
   modalSub: {
     fontSize: 13, color: '#9E9E9E', textAlign: 'center',
     marginBottom: 32, lineHeight: 18,
+  },
+  addressCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+    gap: 10,
+  },
+  addressCardIcon: { fontSize: 20 },
+  addressCardText: {
+    flex: 1, fontSize: 14,
+    color: '#000000', lineHeight: 20,
+  },
+  arrivalNote: {
+    fontSize: 13, color: '#757575',
+    lineHeight: 18, marginBottom: 24,
+    textAlign: 'center',
+  },
+  arrivedButton: {
+    backgroundColor: '#00C853',
+    borderRadius: 14, height: 56,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  arrivedButtonText: {
+    color: '#FFFFFF', fontSize: 16,
+    fontWeight: '700',
   },
   otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 32 },
   otpBox: {

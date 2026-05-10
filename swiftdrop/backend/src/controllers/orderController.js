@@ -102,6 +102,15 @@ function generateOrderNumber() {
   return 'SD' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
+/** Driver assigned on order or owning the assigned trip route (legacy / trip parcels). */
+function driverMatchesOrderRow(order, driverId) {
+  const uid = Number(driverId);
+  if (!Number.isFinite(uid)) return false;
+  if (Number(order.driver_id) === uid) return true;
+  const routeDriver = order.route_driver_id != null ? Number(order.route_driver_id) : null;
+  return Number.isFinite(routeDriver) && routeDriver === uid;
+}
+
 async function createOrder(req, res) {
   try {
     if (req.user.user_type !== 'customer') {
@@ -137,18 +146,40 @@ async function createOrder(req, res) {
     // Intercity slot reservation: only when the customer is booking onto a posted trip.
     if (assigned_driver_route_id) {
       const { rows: routeRows } = await db.query(
-        `SELECT max_parcels FROM driver_routes WHERE id = $1 AND status = 'active'`,
+        `SELECT max_parcels, driver_id, to_lat, to_lng, delivery_radius_km, trip_type
+         FROM driver_routes WHERE id = $1 AND status = 'active'`,
         [assigned_driver_route_id]
       );
-      if (!routeRows[0]) {
+      const routeRow = routeRows[0];
+      if (!routeRow) {
         return res.status(400).json({
           error: 'This trip is no longer available.',
           code: 'TRIP_NOT_FOUND',
         });
       }
+
+      if (isIntercity) {
+        const distToDestKm = haversineKm(
+          Number(dropoff_lat),
+          Number(dropoff_lng),
+          Number(routeRow.to_lat),
+          Number(routeRow.to_lng)
+        );
+        const radiusKm = Number(routeRow.delivery_radius_km) || 20;
+        if (Number.isFinite(distToDestKm) && distToDestKm > radiusKm) {
+          return res.status(400).json({
+            error:
+              `Dropoff address is ${Math.round(distToDestKm)}km from driver destination. `
+              + `Driver delivers within ${radiusKm}km.`,
+            distance_km: Math.round(distToDestKm),
+            max_radius_km: radiusKm,
+          });
+        }
+      }
+
       const available = await hasAvailableSlots(
         assigned_driver_route_id,
-        routeRows[0].max_parcels,
+        routeRow.max_parcels,
         parcel_size
       );
       if (!available) {
@@ -256,9 +287,26 @@ async function createOrder(req, res) {
         );
       }
 
+      // Intercity trip bookings: assign route owner immediately (skip job-offer matching).
+      if (isIntercity && assigned_driver_route_id) {
+        const routeOwnerRes = await client.query(
+          `SELECT driver_id FROM driver_routes WHERE id = $1`,
+          [assigned_driver_route_id]
+        );
+        const routeOwnerId = routeOwnerRes.rows[0]?.driver_id;
+        if (routeOwnerId) {
+          await client.query(
+            `UPDATE orders SET driver_id = $1, status = 'accepted', matched_at = NOW(), updated_at = NOW() WHERE id = $2`,
+            [routeOwnerId, order.id]
+          );
+        }
+      }
+
       await client.query('COMMIT');
 
-      runMatching(order.id);
+      if (!(isIntercity && assigned_driver_route_id)) {
+        runMatching(order.id);
+      }
 
       if (assigned_driver_route_id) {
         try {
@@ -392,11 +440,19 @@ async function getOrderById(req, res) {
         dp.vehicle_year,
         dp.vehicle_plate,
         COALESCE(dt.deliveries_completed, 0) AS driver_deliveries_completed,
-        COALESCE(dt.current_rating, 0.0) AS driver_rating
+        COALESCE(dt.current_rating, 0.0) AS driver_rating,
+        dr.departure_time AS trip_departure_time,
+        dr.from_city AS trip_from_city,
+        dr.to_city AS trip_to_city,
+        dr.from_address AS trip_route_from_address,
+        dr.to_address AS trip_route_to_address,
+        CASE WHEN dr.id IS NOT NULL THEN dr.trip_type ELSE 'local' END AS trip_type,
+        dr.driver_id AS route_driver_id
        FROM orders o
        LEFT JOIN users u ON u.id = o.driver_id
        LEFT JOIN driver_profiles dp ON dp.user_id = o.driver_id
        LEFT JOIN driver_tiers dt ON dt.driver_id = o.driver_id
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
        WHERE o.id = $1`,
       [id]
     );
@@ -405,6 +461,7 @@ async function getOrderById(req, res) {
     if (order.customer_id !== req.user.id && order.driver_id !== req.user.id && req.user.user_type !== 'admin') {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    delete order.route_driver_id;
     // Includes pickup_otp / delivery_otp from `orders` (o.*). Customer app shows OTPs to the order owner for handoff.
     return res.json(order);
   } catch (err) {
@@ -721,6 +778,109 @@ async function declineOrder(req, res) {
   }
 }
 
+async function pickupArrived(req, res) {
+  try {
+    const { id } = req.params;
+    const driverId = req.user.id;
+    if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
+
+    const { rows } = await db.query(
+      `SELECT o.*, u.phone AS customer_phone, u.full_name AS customer_name,
+              dr.driver_id AS route_driver_id
+       FROM orders o
+       JOIN users u ON u.id = o.customer_id
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
+
+    const allowedPrior = ['accepted', 'pickup_en_route', 'matching', 'pending'];
+    if (!allowedPrior.includes(order.status)) {
+      return res.status(400).json({ error: 'Invalid order status for pickup arrival' });
+    }
+
+    await db.query(
+      `UPDATE orders SET status = 'pickup_arrived', updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+
+    let pickupOtp = order.pickup_otp;
+    if (!pickupOtp) {
+      pickupOtp = String(Math.floor(1000 + Math.random() * 9000));
+      await db.query(`UPDATE orders SET pickup_otp = $1 WHERE id = $2`, [pickupOtp, id]);
+    }
+
+    if (order.customer_phone) {
+      await smsService.sendSMS(
+        order.customer_phone,
+        'SwiftDrop: Your driver has arrived to collect your parcel.\n\n'
+          + `Give this code to the driver:\n*${pickupOtp}*\n\n`
+          + 'Do not share this code with anyone else.'
+      );
+    }
+
+    return res.json({ success: true, message: 'OTP sent to sender' });
+  } catch (err) {
+    console.error('pickupArrived:', err);
+    return res.status(500).json({ error: 'Update failed' });
+  }
+}
+
+async function deliveryArrived(req, res) {
+  try {
+    const { id } = req.params;
+    const driverId = req.user.id;
+    if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
+
+    const { rows } = await db.query(
+      `SELECT o.*, u.phone AS customer_phone,
+              dr.driver_id AS route_driver_id
+       FROM orders o
+       JOIN users u ON u.id = o.customer_id
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
+
+    if (order.status !== 'delivery_en_route') {
+      return res.status(400).json({ error: 'Invalid order status for delivery arrival' });
+    }
+
+    await db.query(
+      `UPDATE orders SET status = 'delivery_arrived', updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+
+    let deliveryOtp = order.delivery_otp;
+    if (!deliveryOtp) {
+      deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+      await db.query(`UPDATE orders SET delivery_otp = $1 WHERE id = $2`, [deliveryOtp, id]);
+    }
+
+    const recipientPhone = order.recipient_phone || order.customer_phone;
+
+    if (recipientPhone) {
+      await smsService.sendSMS(
+        recipientPhone,
+        'SwiftDrop: Your parcel is being delivered now!\n\n'
+          + `Give this code to the driver:\n*${deliveryOtp}*\n\n`
+          + 'Do not share with anyone else.'
+      );
+    }
+
+    return res.json({ success: true, message: 'Delivery OTP sent' });
+  } catch (err) {
+    console.error('deliveryArrived:', err);
+    return res.status(500).json({ error: 'Update failed' });
+  }
+}
+
 async function updateOrderStatus(req, res) {
   try {
     const { id } = req.params;
@@ -731,10 +891,16 @@ async function updateOrderStatus(req, res) {
     const valid = ['pickup_arrived', 'delivery_arrived'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const orderRes = await db.query(
+      `SELECT o.*, dr.driver_id AS route_driver_id
+       FROM orders o
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
     const order = orderRes.rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.driver_id !== driverId) return res.status(403).json({ error: 'Forbidden' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
 
     const expected = {
       pickup_arrived: ['accepted', 'pickup_en_route'],
@@ -795,10 +961,18 @@ async function confirmPickupOTP(req, res) {
     const driverId = req.user.id;
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const orderRes = await db.query(
+      `SELECT o.*, u.phone AS customer_phone,
+              dr.driver_id AS route_driver_id
+       FROM orders o
+       JOIN users u ON u.id = o.customer_id
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
     const order = orderRes.rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.driver_id !== driverId) return res.status(403).json({ error: 'Forbidden' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
     if (order.status !== 'pickup_arrived') return res.status(400).json({ error: 'Invalid order status' });
     if (order.pickup_otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
 
@@ -813,6 +987,17 @@ async function confirmPickupOTP(req, res) {
       `On the way to ${order.dropoff_address}`,
       { orderId: id, type: 'order_update' }
     );
+
+    if (order.customer_phone) {
+      const driverUserRes = await db.query(`SELECT full_name FROM users WHERE id = $1`, [driverId]);
+      const driverName = driverUserRes.rows[0]?.full_name?.trim() || 'Your driver';
+      const collectedAt = new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+      await smsService.sendSMS(
+        order.customer_phone,
+        `SwiftDrop: Your parcel has been collected by ${driverName} at ${collectedAt}.\n`
+          + 'Track your delivery in the app.'
+      );
+    }
 
     // Driver-side only: offer return load after intercity pickup confirmation.
     await offerReturnLoadAfterIntercityPickup(id, driverId);
@@ -832,10 +1017,16 @@ async function confirmDeliveryOTP(req, res) {
     const driverId = req.user.id;
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const orderRes = await db.query(
+      `SELECT o.*, dr.driver_id AS route_driver_id
+       FROM orders o
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
     const order = orderRes.rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.driver_id !== driverId) return res.status(403).json({ error: 'Forbidden' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
     if (order.status !== 'delivery_arrived') return res.status(400).json({ error: 'Invalid order status' });
     if (order.delivery_otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
 
@@ -867,10 +1058,16 @@ async function uploadPickupPhoto(req, res) {
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
     if (!file) return res.status(400).json({ error: 'Image file required' });
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const orderRes = await db.query(
+      `SELECT o.*, dr.driver_id AS route_driver_id
+       FROM orders o
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
     const order = orderRes.rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.driver_id !== driverId) return res.status(403).json({ error: 'Forbidden' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
     if (order.status !== 'collected') return res.status(400).json({ error: 'Confirm pickup OTP first' });
 
     const result = await uploadImage(file);
@@ -897,10 +1094,16 @@ async function uploadDeliveryPhoto(req, res) {
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
     if (!file) return res.status(400).json({ error: 'Image file required' });
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const orderRes = await db.query(
+      `SELECT o.*, dr.driver_id AS route_driver_id
+       FROM orders o
+       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+       WHERE o.id = $1`,
+      [id]
+    );
     const order = orderRes.rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.driver_id !== driverId) return res.status(403).json({ error: 'Forbidden' });
+    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
     if (order.status !== 'delivered') return res.status(400).json({ error: 'Confirm delivery OTP first' });
 
     const result = await uploadImage(file);
@@ -1065,6 +1268,8 @@ module.exports = {
   acceptOrder,
   declineOrder,
   updateOrderStatus,
+  pickupArrived,
+  deliveryArrived,
   confirmPickupOTP,
   confirmDeliveryOTP,
   uploadPickupPhoto,

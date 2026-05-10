@@ -20,8 +20,26 @@ import { subscribeToDriverLocation, calculateETA } from '../../services/location
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 import ReportProblemModal, { ReportProblemButton, shouldShowReportProblem } from '../../components/customer/ReportProblem';
+import { getStatusLabel } from '../../utils/orderStatusLabels';
 
 const { width, height } = Dimensions.get('window');
+
+const INTERCITY_MAP_STATUSES = [
+  { key: 'pending', label: 'Booking confirmed', sub: 'Your slot is reserved' },
+  { key: 'collected', label: 'Parcel collected', sub: 'Driver has your parcel' },
+  { key: 'delivery_en_route', label: 'In transit', sub: 'Driver heading to destination' },
+  { key: 'delivery_arrived', label: 'Out for delivery', sub: 'Driver at destination' },
+  { key: 'delivered', label: 'Delivered', sub: 'Parcel received' },
+];
+
+function intercityMapTimelineIndex(status) {
+  const s = String(status || '');
+  if (['delivered', 'completed'].includes(s)) return 4;
+  if (s === 'delivery_arrived') return 3;
+  if (s === 'delivery_en_route') return 2;
+  if (s === 'collected') return 1;
+  return 0;
+}
 
 function humanStatus(status) {
   const statusMap = {
@@ -47,6 +65,12 @@ function humanStatus(status) {
     'en_route_delivery': 'On the way to you',
   };
   return statusMap[status] || status;
+}
+
+function statusTitleForOrder(order) {
+  if (!order) return '';
+  if (order.trip_type === 'intercity') return getStatusLabel(order.status);
+  return humanStatus(order.status);
 }
 
 function formatMoney(n) {
@@ -447,6 +471,21 @@ const TrackingWithMap = ({ navigation, route }) => {
 
   const driverVehicleLine = formatDriverVehicleLine(order);
 
+  const isIntercity = order.trip_type === 'intercity';
+  const intercityIdx = intercityMapTimelineIndex(order.status);
+  const intercityTerminal = ['delivered', 'completed'].includes(String(order.status || ''));
+  const departsLabel = order.trip_departure_time
+    ? new Date(order.trip_departure_time).toLocaleString('en-ZA', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : null;
+  const routeCities = [order.trip_from_city, order.trip_to_city].filter(Boolean).join(' → ')
+    || [order.trip_route_from_address, order.trip_route_to_address].filter(Boolean).join(' → ');
+
   return (
     <SafeAreaView style={styles.container}>
       <MapView
@@ -517,7 +556,7 @@ const TrackingWithMap = ({ navigation, route }) => {
         {/* Status Header */}
         <View style={styles.statusHeader}>
           <View style={styles.statusLeft}>
-            <Text style={styles.statusTitle}>{humanStatus(order.status)}</Text>
+            <Text style={styles.statusTitle}>{statusTitleForOrder(order)}</Text>
             {eta && (
               <Text style={styles.eta}>
                 {eta < 1 ? 'Arriving now' : `${eta} min away`}
@@ -533,6 +572,52 @@ const TrackingWithMap = ({ navigation, route }) => {
           </View>
         </View>
 
+        {isIntercity ? (
+          <View style={styles.intercityTimeline}>
+            {INTERCITY_MAP_STATUSES.map((step, index) => {
+              const isCompleted = intercityTerminal || index < intercityIdx;
+              const isCurrent = !intercityTerminal && index === intercityIdx;
+              const isFuture = !intercityTerminal && index > intercityIdx;
+              return (
+                <View key={step.key} style={styles.intercityTimelineRow}>
+                  <View style={styles.intercityTimelineLeft}>
+                    <View
+                      style={[
+                        styles.intercityDot,
+                        isCompleted && styles.intercityDotDone,
+                        isCurrent && styles.intercityDotCurrent,
+                        isFuture && styles.intercityDotFuture,
+                      ]}
+                    />
+                    {index < INTERCITY_MAP_STATUSES.length - 1 ? (
+                      <View
+                        style={[
+                          styles.intercityConnector,
+                          isCompleted ? styles.intercityConnectorDone : styles.intercityConnectorFuture,
+                        ]}
+                      />
+                    ) : null}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.intercityStepTitle,
+                        (isCompleted || isCurrent) && styles.intercityStepTitleOn,
+                        isFuture && styles.intercityStepTitleOff,
+                      ]}
+                    >
+                      {step.label}
+                    </Text>
+                    <Text style={[styles.intercityStepSub, isFuture && styles.intercityStepTitleOff]}>
+                      {step.sub}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
         {/* Driver Info */}
         {order.driver_name && (
           <View style={styles.driverInfo}>
@@ -546,6 +631,17 @@ const TrackingWithMap = ({ navigation, route }) => {
               <Text style={styles.driverName}>{order.driver_name}</Text>
               {driverVehicleLine ? (
                 <Text style={styles.vehicleLineText}>{driverVehicleLine}</Text>
+              ) : null}
+              {isIntercity ? (
+                <>
+                  {departsLabel ? (
+                    <Text style={styles.intercityMapMeta}>Departure: {departsLabel}</Text>
+                  ) : null}
+                  {routeCities ? (
+                    <Text style={styles.intercityMapMeta}>Route: {routeCities}</Text>
+                  ) : null}
+                  <Text style={styles.intercityMapMeta}>Status: {getStatusLabel(order.status)}</Text>
+                </>
               ) : null}
               <Text style={styles.driverTrustSubline}>
                 {formatDriverRatingDeliveriesLine(order)}
@@ -743,6 +839,73 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+  },
+  intercityTimeline: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  intercityTimelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  intercityTimelineLeft: {
+    width: 22,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  intercityDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.border,
+  },
+  intercityDotDone: {
+    backgroundColor: colors.success,
+  },
+  intercityDotCurrent: {
+    backgroundColor: colors.textPrimary,
+  },
+  intercityDotFuture: {
+    backgroundColor: '#E5E7EB',
+  },
+  intercityConnector: {
+    width: 2,
+    flexGrow: 1,
+    minHeight: 22,
+    marginVertical: 2,
+    backgroundColor: colors.border,
+  },
+  intercityConnectorDone: {
+    backgroundColor: colors.success,
+  },
+  intercityConnectorFuture: {
+    backgroundColor: '#E5E7EB',
+  },
+  intercityStepTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  intercityStepTitleOn: {
+    color: colors.textPrimary,
+  },
+  intercityStepTitleOff: {
+    color: colors.textMuted,
+  },
+  intercityStepSub: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 14,
+    lineHeight: 16,
+  },
+  intercityMapMeta: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 16,
   },
   statusLeft: {
     flex: 1,

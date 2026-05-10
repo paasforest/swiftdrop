@@ -23,6 +23,7 @@ import {
   formatDriverRatingDeliveriesLine,
   normalizeDriverDeliveriesCompleted,
 } from '../../utils/driverTrustDisplay';
+import { getStatusLabel } from '../../utils/orderStatusLabels';
 
 const { width, height } = Dimensions.get('window');
 
@@ -138,7 +139,7 @@ Delivery fee: ${formatMoney(base)}
 ${insLine}─────────────────
 TOTAL PAID: ${formatMoney(total)}
 
-Status: Delivered ✓
+Status: ${getStatusLabel(order.status)}
 Thank you for using SwiftDrop!
 `.trim();
   }, [order]);
@@ -217,6 +218,7 @@ Thank you for using SwiftDrop!
             <View style={{ flex: 1 }}>
               <Text style={styles.orderNumber}>{order.order_number || `Order ${order.id}`}</Text>
               <Text style={styles.orderDate}>{formatDate(order.created_at)}</Text>
+              <Text style={styles.orderStatusLine}>{getStatusLabel(order.status)}</Text>
             </View>
             {hasOpenDisputeForOrder ? (
               <View style={styles.disputeBadge}>
@@ -436,6 +438,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  orderStatusLine: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
   },
   orderTitleRow: {
     flexDirection: 'row',
