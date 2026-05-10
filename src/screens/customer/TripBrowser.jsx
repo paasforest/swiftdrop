@@ -12,10 +12,12 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Keyboard,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
+import { fetchCityPredictions, fetchPlaceDetails } from '../../services/googlePlaces';
 
 // ─── Inner component ──────────────────────────────────────────────────────────
 
@@ -132,18 +134,101 @@ const POPULAR_ROUTES = [
 
 export default function TripBrowser({ navigation }) {
   const toInputRef = useRef(null);
-  const [fromCity,       setFromCity]       = useState('');
-  const [toCity,         setToCity]         = useState('');
-  const [selectedDate,   setSelectedDate]   = useState(null);
-  const [trips,          setTrips]          = useState([]);
-  const [loading,        setLoading]        = useState(false);
-  const [searched,       setSearched]       = useState(false);
+  const fromSuggestSeq = useRef(0);
+  const toSuggestSeq = useRef(0);
+
+  const [fromCity, setFromCity] = useState('');
+  const [toCity, setToCity] = useState('');
+  const [fromSuggestions, setFromSuggestions] = useState([]);
+  const [toSuggestions, setToSuggestions] = useState([]);
+  const [fromLat, setFromLat] = useState(null);
+  const [fromLng, setFromLng] = useState(null);
+  const [toLat, setToLat] = useState(null);
+  const [toLng, setToLng] = useState(null);
+
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [error,          setError]          = useState(null);
+  const [error, setError] = useState(null);
 
   const auth = getAuth();
 
-  async function searchTripsWithCities(from, to) {
+  async function fetchFromSuggestions(text) {
+    if (text.length < 2) {
+      setFromSuggestions([]);
+      return;
+    }
+    const seq = ++fromSuggestSeq.current;
+    try {
+      const results = await fetchCityPredictions(text);
+      if (seq !== fromSuggestSeq.current) return;
+      setFromSuggestions(results);
+    } catch {
+      if (seq !== fromSuggestSeq.current) return;
+      setFromSuggestions([]);
+    }
+  }
+
+  async function fetchToSuggestions(text) {
+    if (text.length < 2) {
+      setToSuggestions([]);
+      return;
+    }
+    const seq = ++toSuggestSeq.current;
+    try {
+      const results = await fetchCityPredictions(text);
+      if (seq !== toSuggestSeq.current) return;
+      setToSuggestions(results);
+    } catch {
+      if (seq !== toSuggestSeq.current) return;
+      setToSuggestions([]);
+    }
+  }
+
+  async function selectFromPlace(place) {
+    Keyboard.dismiss();
+    try {
+      const details = await fetchPlaceDetails(place.place_id);
+      setFromCity(
+        place.structured_formatting?.main_text || place.description
+      );
+      setFromLat(details.latitude);
+      setFromLng(details.longitude);
+      setFromSuggestions([]);
+      setError(null);
+    } catch (e) {
+      setError(e.message || 'Could not load place details.');
+    }
+  }
+
+  async function selectToPlace(place) {
+    Keyboard.dismiss();
+    try {
+      const details = await fetchPlaceDetails(place.place_id);
+      setToCity(
+        place.structured_formatting?.main_text || place.description
+      );
+      setToLat(details.latitude);
+      setToLng(details.longitude);
+      setToSuggestions([]);
+      setError(null);
+    } catch (e) {
+      setError(e.message || 'Could not load place details.');
+    }
+  }
+
+  function coordsReady(lat, lng) {
+    return (
+      lat != null &&
+      lng != null &&
+      Number.isFinite(Number(lat)) &&
+      Number.isFinite(Number(lng))
+    );
+  }
+
+  async function searchTripsWithCities(from, to, fLat, fLng, tLat, tLng) {
     const fromTrim = String(from || '').trim();
     const toTrim = String(to || '').trim();
     if (!fromTrim || !toTrim) {
@@ -159,14 +244,21 @@ export default function TripBrowser({ navigation }) {
       const params = new URLSearchParams({
         from_city: fromTrim,
         to_city: toTrim,
+        ...(coordsReady(fLat, fLng) && {
+          from_lat: String(fLat),
+          from_lng: String(fLng),
+        }),
+        ...(coordsReady(tLat, tLng) && {
+          to_lat: String(tLat),
+          to_lng: String(tLng),
+        }),
         ...(selectedDate && {
           date: selectedDate.toISOString().split('T')[0],
         }),
       });
-      const data = await getJson(
-        `/api/trips/search?${params}`,
-        { token: auth?.token }
-      );
+      const data = await getJson(`/api/trips/search?${params}`, {
+        token: auth?.token,
+      });
       setTrips(data.trips || []);
       setSearched(true);
     } catch {
@@ -177,7 +269,14 @@ export default function TripBrowser({ navigation }) {
   }
 
   async function searchTrips() {
-    await searchTripsWithCities(fromCity, toCity);
+    await searchTripsWithCities(
+      fromCity,
+      toCity,
+      fromLat,
+      fromLng,
+      toLat,
+      toLng
+    );
   }
 
   function handleBookTrip(trip) {
@@ -206,18 +305,40 @@ export default function TripBrowser({ navigation }) {
           <Text style={styles.fieldLabel}>FROM</Text>
           <TextInput
             style={styles.fieldInput}
-            placeholder="City or town"
+            placeholder="Suburb or city"
             placeholderTextColor="#BDBDBD"
             value={fromCity}
             onChangeText={(text) => {
               setFromCity(text);
+              setFromLat(null);
+              setFromLng(null);
               setError(null);
               setSearched(false);
+              fetchFromSuggestions(text);
             }}
             autoCapitalize="words"
             returnKeyType="next"
             onSubmitEditing={() => toInputRef.current?.focus()}
           />
+          {fromSuggestions.length > 0 ? (
+            <View style={styles.suggestionsList}>
+              {fromSuggestions.map((place) => (
+                <TouchableOpacity
+                  key={place.place_id}
+                  style={styles.suggestionItem}
+                  onPress={() => selectFromPlace(place)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionMain}>
+                    {place.structured_formatting?.main_text || place.description}
+                  </Text>
+                  <Text style={styles.suggestionSub}>
+                    {place.structured_formatting?.secondary_text || ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.swapRow}>
@@ -228,6 +349,15 @@ export default function TripBrowser({ navigation }) {
               const temp = fromCity;
               setFromCity(toCity);
               setToCity(temp);
+              const tLatSwap = fromLat;
+              const tLngSwap = fromLng;
+              setFromLat(toLat);
+              setFromLng(toLng);
+              setToLat(tLatSwap);
+              setToLng(tLngSwap);
+              const fs = fromSuggestions;
+              setFromSuggestions(toSuggestions);
+              setToSuggestions(fs);
             }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -241,18 +371,40 @@ export default function TripBrowser({ navigation }) {
           <TextInput
             ref={toInputRef}
             style={styles.fieldInput}
-            placeholder="City or town"
+            placeholder="Suburb or city"
             placeholderTextColor="#BDBDBD"
             value={toCity}
             onChangeText={(text) => {
               setToCity(text);
+              setToLat(null);
+              setToLng(null);
               setError(null);
               setSearched(false);
+              fetchToSuggestions(text);
             }}
             autoCapitalize="words"
             returnKeyType="search"
             onSubmitEditing={searchTrips}
           />
+          {toSuggestions.length > 0 ? (
+            <View style={styles.suggestionsList}>
+              {toSuggestions.map((place) => (
+                <TouchableOpacity
+                  key={place.place_id}
+                  style={styles.suggestionItem}
+                  onPress={() => selectToPlace(place)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionMain}>
+                    {place.structured_formatting?.main_text || place.description}
+                  </Text>
+                  <Text style={styles.suggestionSub}>
+                    {place.structured_formatting?.secondary_text || ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.fieldDivider} />
@@ -290,7 +442,7 @@ export default function TripBrowser({ navigation }) {
           )}
         </View>
 
-        {showDatePicker && (
+        {showDatePicker ? (
           <DateTimePicker
             value={selectedDate || new Date()}
             mode="date"
@@ -300,7 +452,7 @@ export default function TripBrowser({ navigation }) {
               if (date) setSelectedDate(date);
             }}
           />
-        )}
+        ) : null}
 
         {error ? <Text style={styles.searchError}>{error}</Text> : null}
 
@@ -318,7 +470,7 @@ export default function TripBrowser({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {!searched && (
+      {!searched ? (
         <ScrollView
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
@@ -334,7 +486,15 @@ export default function TripBrowser({ navigation }) {
             <TouchableOpacity
               key={`${route.from}-${route.to}-${i}`}
               style={styles.popularRoute}
-              onPress={() => searchTripsWithCities(route.from, route.to)}
+              onPress={() => {
+                setFromLat(null);
+                setFromLng(null);
+                setToLat(null);
+                setToLng(null);
+                setFromSuggestions([]);
+                setToSuggestions([]);
+                searchTripsWithCities(route.from, route.to);
+              }}
             >
               <Text style={styles.popularRouteIcon}>🚗</Text>
               <Text style={styles.popularRouteText}>
@@ -344,10 +504,10 @@ export default function TripBrowser({ navigation }) {
             </TouchableOpacity>
           ))}
         </ScrollView>
-      )}
+      ) : null}
 
       {/* Empty state */}
-      {searched && trips.length === 0 && (
+      {searched && trips.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>🔍</Text>
           <Text style={styles.emptyTitle}>No trips found</Text>
@@ -368,10 +528,10 @@ export default function TripBrowser({ navigation }) {
             <Text style={styles.notifyButtonText}>Notify me when available</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
 
       {/* Results */}
-      {trips.length > 0 && (
+      {trips.length > 0 ? (
         <FlatList
           data={trips}
           keyExtractor={(item) => item.id.toString()}
@@ -383,7 +543,7 @@ export default function TripBrowser({ navigation }) {
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
         />
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -422,6 +582,7 @@ const styles = StyleSheet.create({
   fieldContainer: {
     paddingVertical: 8,
     paddingRight: 0,
+    zIndex: 2,
   },
   fieldLabel: {
     fontSize: 10,
@@ -436,10 +597,38 @@ const styles = StyleSheet.create({
     color: '#000000',
     paddingVertical: 4,
   },
+  suggestionsList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginTop: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+    zIndex: 100,
+    elevation: Platform.OS === 'android' ? 4 : 0,
+  },
+  suggestionItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  suggestionMain: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000000',
+  },
+  suggestionSub: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
+  },
   swapRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 4,
+    zIndex: 1,
   },
   swapLine: {
     flex: 1,
@@ -518,8 +707,10 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#000', marginBottom: 8 },
   emptySubtext: {
-    fontSize: 14, color: '#9E9E9E',
-    textAlign: 'center', lineHeight: 20,
+    fontSize: 14,
+    color: '#9E9E9E',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   notifyButton: {
     borderWidth: 1.5,
