@@ -25,19 +25,39 @@ import { getStatusLabel } from '../../utils/orderStatusLabels';
 const { width, height } = Dimensions.get('window');
 
 const INTERCITY_MAP_STATUSES = [
-  { key: 'pending', label: 'Booking confirmed', sub: 'Your slot is reserved' },
-  { key: 'collected', label: 'Parcel collected', sub: 'Driver has your parcel' },
-  { key: 'delivery_en_route', label: 'In transit', sub: 'Driver heading to destination' },
-  { key: 'delivery_arrived', label: 'Out for delivery', sub: 'Driver at destination' },
-  { key: 'delivered', label: 'Delivered', sub: 'Parcel received' },
+  {
+    key: 'pending',
+    label: 'Booking confirmed',
+    sub: 'Your slot is reserved',
+  },
+  {
+    key: 'accepted',
+    label: 'Awaiting collection',
+    sub: 'Driver will collect before departure',
+  },
+  {
+    key: 'delivery_en_route',
+    label: 'In transit',
+    sub: 'Driver heading to destination',
+  },
+  {
+    key: 'delivery_arrived',
+    label: 'Out for delivery',
+    sub: 'Driver at destination city',
+  },
+  {
+    key: 'delivered',
+    label: 'Delivered',
+    sub: 'Parcel received',
+  },
 ];
 
 function intercityMapTimelineIndex(status) {
   const s = String(status || '');
   if (['delivered', 'completed'].includes(s)) return 4;
   if (s === 'delivery_arrived') return 3;
-  if (s === 'delivery_en_route') return 2;
-  if (s === 'collected') return 1;
+  if (['delivery_en_route'].includes(s)) return 2;
+  if (['collected', 'pickup_arrived', 'pickup_en_route', 'accepted'].includes(s)) return 1;
   return 0;
 }
 
@@ -564,10 +584,12 @@ const TrackingWithMap = ({ navigation, route }) => {
             )}
           </View>
           <View style={styles.statusBadge}>
-            {order.status === 'delivered' ? (
-              <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+            {['delivered', 'completed'].includes(order.status) ? (
+              <Ionicons name="checkmark-circle" size={28} color="#00C853" />
+            ) : order.trip_type === 'intercity' ? (
+              <Ionicons name="time-outline" size={22} color="#000000" />
             ) : (
-              <Ionicons name="ellipse" size={14} color={colors.primary} />
+              <Ionicons name="ellipse" size={14} color="#000000" />
             )}
           </View>
         </View>
@@ -619,7 +641,7 @@ const TrackingWithMap = ({ navigation, route }) => {
         ) : null}
 
         {/* Driver Info */}
-        {order.driver_name && (
+        {order.driver_name ? (
           <View style={styles.driverInfo}>
             <DriverAvatar
               uri={order.driver_photo}
@@ -653,7 +675,43 @@ const TrackingWithMap = ({ navigation, route }) => {
               </TouchableOpacity>
             )}
           </View>
-        )}
+        ) : order.trip_type === 'intercity' ? (
+          <View style={styles.driverInfo}>
+            <View
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: '#E0E0E0',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 12,
+              }}
+            >
+              <ActivityIndicator color="#9E9E9E" size="small" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 15,
+                  fontWeight: '600',
+                  color: '#000000',
+                  marginBottom: 4,
+                }}
+              >
+                Loading driver details...
+              </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  color: '#9E9E9E',
+                }}
+              >
+                Your booking is confirmed
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Order Details */}
         <View style={styles.orderDetails}>
