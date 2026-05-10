@@ -119,7 +119,7 @@ const PostRoute = ({ navigation }) => {
       setFromPlacesLoading(true);
       setFromPlacesError(null);
       try {
-        const list = await fetchPlacePredictions(debouncedFrom);
+        const list = await fetchCityPredictions(debouncedFrom);
         if (!cancelled) setFromPredictions(list);
       } catch (e) {
         if (!cancelled) {
@@ -274,10 +274,10 @@ const PostRoute = ({ navigation }) => {
   }, [androidPickerMode]);
 
   const validate = useCallback(() => {
-    if (!fromAddress.trim()) return 'From address is required.';
-    if (fromLat == null || fromLng == null) return 'Choose a From address from the suggestions so we have a location.';
-    if (!toAddress.trim()) return 'To address is required.';
-    if (toLat == null || toLng == null) return 'Choose a To address from the suggestions so we have a location.';
+    if (!fromAddress.trim()) return 'Departure city is required.';
+    if (fromLat == null || fromLng == null) return 'Choose a departure city from the suggestions so we have a location.';
+    if (!toAddress.trim()) return 'Destination city is required.';
+    if (toLat == null || toLng == null) return 'Choose a destination city from the suggestions so we have a location.';
     if (!(departureAt instanceof Date) || Number.isNaN(departureAt.getTime())) return 'Departure time is invalid.';
     if (departureAt.getTime() <= Date.now()) return 'Departure time must be in the future.';
     if (!Number.isInteger(maxParcels) || maxParcels < 1 || maxParcels > 5) return 'Max parcels must be between 1 and 5.';
@@ -441,9 +441,9 @@ const PostRoute = ({ navigation }) => {
             </Text>
           </View>
 
-          {/* From */}
+          {/* From — city / major suburb */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>From</Text>
+            <Text style={styles.inputLabel}>Departure city</Text>
             <View style={styles.inputContainer}>
               <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
               <TextInput
@@ -453,7 +453,7 @@ const PostRoute = ({ navigation }) => {
                   setFromAddress(t);
                   if (!t.trim()) { setFromLat(null); setFromLng(null); }
                 }}
-                placeholder="Search starting address"
+                placeholder="e.g. Johannesburg, Cape Town"
                 placeholderTextColor="#BDBDBD"
               />
             </View>
@@ -479,9 +479,9 @@ const PostRoute = ({ navigation }) => {
             {fromPlacesLoading ? <ActivityIndicator style={{ marginTop: 8 }} color="#000000" /> : null}
           </View>
 
-          {/* To — city / suburb only */}
+          {/* To — city / major suburb */}
           <View style={styles.inputSection}>
-            <Text style={styles.inputLabel}>Destination city or suburb</Text>
+            <Text style={styles.inputLabel}>Destination city</Text>
             <View style={styles.inputContainer}>
               <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
               <TextInput
@@ -495,7 +495,7 @@ const PostRoute = ({ navigation }) => {
                     setToCityName('');
                   }
                 }}
-                placeholder="Search city or suburb e.g. Polokwane, Sandton"
+                placeholder="e.g. Polokwane, Sandton"
                 placeholderTextColor="#BDBDBD"
               />
             </View>

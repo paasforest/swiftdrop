@@ -17,7 +17,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getAuth } from '../../authStore';
 import { getJson } from '../../apiClient';
-import { fetchCityPredictions, fetchPlaceDetails } from '../../services/googlePlaces';
+import { fetchPlacePredictions, fetchPlaceDetails } from '../../services/googlePlaces';
 
 // ─── Inner component ──────────────────────────────────────────────────────────
 
@@ -162,7 +162,7 @@ export default function TripBrowser({ navigation }) {
     }
     const seq = ++fromSuggestSeq.current;
     try {
-      const results = await fetchCityPredictions(text);
+      const results = await fetchPlacePredictions(text);
       if (seq !== fromSuggestSeq.current) return;
       setFromSuggestions(results);
     } catch {
@@ -178,7 +178,7 @@ export default function TripBrowser({ navigation }) {
     }
     const seq = ++toSuggestSeq.current;
     try {
-      const results = await fetchCityPredictions(text);
+      const results = await fetchPlacePredictions(text);
       if (seq !== toSuggestSeq.current) return;
       setToSuggestions(results);
     } catch {
@@ -302,10 +302,10 @@ export default function TripBrowser({ navigation }) {
       {/* Search card */}
       <View style={styles.searchCard}>
         <View style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>FROM</Text>
+          <Text style={styles.fieldLabel}>YOUR AREA</Text>
           <TextInput
             style={styles.fieldInput}
-            placeholder="Suburb or city"
+            placeholder="e.g. Turfloop, Soweto, Sandton"
             placeholderTextColor="#BDBDBD"
             value={fromCity}
             onChangeText={(text) => {
@@ -367,11 +367,11 @@ export default function TripBrowser({ navigation }) {
         </View>
 
         <View style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>TO</Text>
+          <Text style={styles.fieldLabel}>DESTINATION AREA</Text>
           <TextInput
             ref={toInputRef}
             style={styles.fieldInput}
-            placeholder="Suburb or city"
+            placeholder="e.g. Polokwane, Durban, Cape Town"
             placeholderTextColor="#BDBDBD"
             value={toCity}
             onChangeText={(text) => {

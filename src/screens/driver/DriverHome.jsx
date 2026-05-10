@@ -343,7 +343,9 @@ const DriverHome = ({ navigation }) => {
             <View>
               <Text style={styles.tripBannerTitle}>ACTIVE TRIP</Text>
               <Text style={styles.tripBannerRoute} numberOfLines={1}>
-                {trip.from_address} → {trip.to_address}
+                {trip.from_city || trip.from_address?.split(',')[0]}
+                {' → '}
+                {trip.to_city || trip.to_address?.split(',')[0]}
               </Text>
             </View>
             <Text style={styles.tripBannerArrow}>→</Text>
@@ -368,7 +370,9 @@ const DriverHome = ({ navigation }) => {
                   {trip.max_parcels ?? '—'} slot{Number(trip.max_parcels) === 1 ? '' : 's'}
                 </Text>
                 <Text style={styles.postedTripRoute} numberOfLines={2}>
-                  {trip.from_address} → {trip.to_address}
+                  {trip.from_city || trip.from_address?.split(',')[0]}
+                  {' → '}
+                  {trip.to_city || trip.to_address?.split(',')[0]}
                 </Text>
                 <Text style={styles.postedTripMeta}>
                   Departs {formatRouteDeparture(trip.departure_time)}

@@ -124,14 +124,14 @@ export default function DriverPostedRoutes({ navigation, route }) {
               <View style={styles.routeRow}>
                 <View style={styles.dotGreen} />
                 <Text style={styles.routeText} numberOfLines={1}>
-                  {trip.from_address}
+                  {trip.from_city || trip.from_address?.split(',')[0]}
                 </Text>
               </View>
               <View style={styles.connector} />
               <View style={styles.routeRow}>
                 <View style={styles.dotBlack} />
                 <Text style={styles.routeText} numberOfLines={1}>
-                  {trip.to_address}
+                  {trip.to_city || trip.to_address?.split(',')[0]}
                 </Text>
               </View>
             </View>
