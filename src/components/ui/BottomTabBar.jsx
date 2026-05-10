@@ -6,9 +6,10 @@ import { colors, spacing } from '../../theme/theme';
 
 /**
  * @param {'customer' | 'driver'} variant
- * @param {'home' | 'track' | 'history' | 'profile' | 'jobs' | 'earnings'} active
+ * @param {'home' | 'track' | 'myjobs' | 'profile' | 'jobs' | 'earnings' | false | null} [active] Pass false to dim all tabs (e.g. auxiliary screens).
  */
 export default function BottomTabBar({ navigation, variant = 'customer', active = 'home' }) {
+  const highlightKey = active === false || active === null ? null : active;
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, spacing.sm);
 
@@ -16,14 +17,14 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
     const tabs = [
       { key: 'home', label: 'Home', icon: 'home', iconOutline: 'home-outline', route: 'Home' },
       { key: 'track', label: 'Track', icon: 'location', iconOutline: 'location-outline', route: 'Tracking' },
-      { key: 'history', label: 'History', icon: 'time', iconOutline: 'time-outline', route: 'OrderHistory' },
+      { key: 'myjobs', label: 'My Jobs', icon: 'clipboard', iconOutline: 'clipboard-outline', route: 'MyJobs' },
       { key: 'profile', label: 'Profile', icon: 'person', iconOutline: 'person-outline', route: 'Profile' },
     ];
 
     return (
       <View style={[styles.bar, { paddingBottom: bottomPad }]}>
         {tabs.map((t) => {
-          const isActive = active === t.key;
+          const isActive = highlightKey === t.key;
           return (
             <TouchableOpacity
               key={t.key}
@@ -59,7 +60,7 @@ export default function BottomTabBar({ navigation, variant = 'customer', active 
     return (
       <View style={[styles.bar, { paddingBottom: bottomPad }]}>
         {tabs.map((t) => {
-          const isActive = active === t.key;
+          const isActive = highlightKey === t.key;
           return (
             <TouchableOpacity
               key={t.key}

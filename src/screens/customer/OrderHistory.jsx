@@ -191,7 +191,7 @@ const OrderHistory = ({ navigation }) => {
         </ScrollView>
       )}
 
-      <BottomTabBar navigation={navigation} variant="customer" active="history" />
+      <BottomTabBar navigation={navigation} variant="customer" active={false} />
     </SafeAreaView>
   );
 };

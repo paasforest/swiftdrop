@@ -29,6 +29,10 @@ import TripBrowser from './src/screens/customer/TripBrowser';
 import TripBookingConfirm from './src/screens/customer/TripBookingConfirm';
 import RatingScreen from './src/screens/customer/RatingScreen';
 import OrderConfirmation from './src/screens/customer/OrderConfirmation';
+import PostJob from './src/screens/customer/PostJob';
+import JobApplicants from './src/screens/customer/JobApplicants';
+import MyJobs from './src/screens/customer/MyJobs';
+import JobTracking from './src/screens/customer/JobTracking';
 
 // Driver Screens
 import DriverRegister from './src/screens/driver/DriverRegister';
@@ -130,6 +134,10 @@ export default function App() {
         <Stack.Screen name="TripBookingConfirm" component={TripBookingConfirm} options={{ headerShown: false }} />
         <Stack.Screen name="RatingScreen" component={RatingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="OrderConfirmation" component={OrderConfirmation} options={{ headerShown: false }} />
+        <Stack.Screen name="PostJob" component={PostJob} options={{ headerShown: false }} />
+        <Stack.Screen name="JobApplicants" component={JobApplicants} options={{ headerShown: false }} />
+        <Stack.Screen name="MyJobs" component={MyJobs} options={{ headerShown: false }} />
+        <Stack.Screen name="JobTracking" component={JobTracking} options={{ headerShown: false }} />
 
         {/* Driver Flow */}
         <Stack.Screen name="DriverRegister" component={DriverRegister} />
