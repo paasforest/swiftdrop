@@ -2,6 +2,11 @@ const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const smsService = require('../services/smsService');
 
+/** Same pattern as orderController.generateOrderNumber — unique order_number for job-board → orders bridge */
+function generateJobBoardOrderNumber() {
+  return `SD${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
 const LOCAL_PRICING = {
   small: [
     { maxKm: 10, price: 150 },
@@ -707,22 +712,6 @@ async function selectDriver(req, res) {
       return res.status(400).json({ error: 'driver_id required' });
     }
 
-    const { rows: jobRows } = await db.query(
-      `
-        SELECT j.*, uc.phone AS customer_phone
-        FROM delivery_jobs j
-        JOIN users uc ON uc.id = j.customer_id
-        WHERE j.id = $1 AND j.customer_id = $2 AND j.status = 'open'
-      `,
-      [jobId, customerId]
-    );
-
-    if (!jobRows[0]) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    const job = jobRows[0];
-
     const { rows: driverRows } = await db.query(
       `
         SELECT u.id, u.full_name, u.phone,
@@ -740,30 +729,157 @@ async function selectDriver(req, res) {
 
     const driver = driverRows[0];
 
-    await db.query(
-      `
-        UPDATE delivery_jobs
-        SET status = 'driver_selected', selected_driver_id = $1, updated_at = NOW()
-        WHERE id = $2
-      `,
-      [driverIdSel, jobId]
-    );
+    const client = await db.pool.connect();
+    let order;
+    let job;
+    try {
+      await client.query('BEGIN');
 
-    await db.query(
-      `
-        UPDATE job_applications SET status = 'rejected'
-        WHERE job_id = $1 AND driver_id <> $2
-      `,
-      [jobId, driverIdSel]
-    );
+      const { rows: jobRows } = await client.query(
+        `
+          SELECT j.*, uc.phone AS customer_phone
+          FROM delivery_jobs j
+          JOIN users uc ON uc.id = j.customer_id
+          WHERE j.id = $1 AND j.customer_id = $2 AND j.status = 'open'
+          FOR UPDATE OF j
+        `,
+        [jobId, customerId]
+      );
 
-    await db.query(
-      `
-        UPDATE job_applications SET status = 'selected'
-        WHERE job_id = $1 AND driver_id = $2
-      `,
-      [jobId, driverIdSel]
-    );
+      if (!jobRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      job = jobRows[0];
+
+      await client.query(
+        `
+          UPDATE delivery_jobs
+          SET status = 'driver_selected', selected_driver_id = $1, updated_at = NOW()
+          WHERE id = $2
+        `,
+        [driverIdSel, jobId]
+      );
+
+      await client.query(
+        `
+          UPDATE job_applications SET status = 'rejected'
+          WHERE job_id = $1 AND driver_id <> $2
+        `,
+        [jobId, driverIdSel]
+      );
+
+      await client.query(
+        `
+          UPDATE job_applications SET status = 'selected'
+          WHERE job_id = $1 AND driver_id = $2
+        `,
+        [jobId, driverIdSel]
+      );
+
+      const orderNumber = generateJobBoardOrderNumber();
+      const tripType = String(job.delivery_type || 'local') === 'intercity' ? 'intercity' : 'local';
+
+      const orderRes = await client.query(
+        `
+          INSERT INTO orders (
+            order_number,
+            customer_id,
+            driver_id,
+            pickup_address,
+            pickup_lat,
+            pickup_lng,
+            dropoff_address,
+            dropoff_lat,
+            dropoff_lng,
+            province,
+            parcel_type,
+            parcel_size,
+            parcel_value,
+            special_handling,
+            delivery_tier,
+            status,
+            base_price,
+            insurance_fee,
+            total_price,
+            commission_amount,
+            driver_earnings,
+            pickup_otp,
+            delivery_otp,
+            assigned_driver_route_id,
+            matched_at,
+            delivery_job_id,
+            trip_type,
+            distance_km,
+            updated_at
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+            $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
+            $21,$22,$23,NULL,NOW(),$24,$25,$26,NOW()
+          )
+          RETURNING *
+        `,
+        [
+          orderNumber,
+          job.customer_id,
+          driverIdSel,
+          job.pickup_address,
+          Number(job.pickup_lat),
+          Number(job.pickup_lng),
+          job.dropoff_address,
+          Number(job.dropoff_lat),
+          Number(job.dropoff_lng),
+          null,
+          job.parcel_type || 'General',
+          job.parcel_size || 'small',
+          job.parcel_value != null ? Number(job.parcel_value) : 0,
+          null,
+          'standard',
+          'accepted',
+          Number(job.base_price),
+          Number(job.insurance_fee ?? 0),
+          Number(job.total_price),
+          Number(job.commission ?? 0),
+          Number(job.driver_earnings),
+          job.pickup_otp,
+          job.delivery_otp,
+          job.id,
+          tripType,
+          job.distance_km != null ? Number(job.distance_km) : null,
+        ]
+      );
+
+      order = orderRes.rows[0];
+
+      await client.query(
+        `
+          INSERT INTO payments (order_id, amount, payment_method, escrow_status)
+          VALUES ($1, $2, $3, 'held')
+        `,
+        [order.id, Number(job.total_price), job.payment_method || 'wallet']
+      );
+
+      await client.query(
+        `
+          UPDATE delivery_jobs
+          SET order_id = $1, updated_at = NOW()
+          WHERE id = $2
+        `,
+        [order.id, jobId]
+      );
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
     const { rows: rejectedPhones } = await db.query(
       `
@@ -800,6 +916,7 @@ async function selectDriver(req, res) {
 
     res.json({
       success: true,
+      order_id: order.id,
       driver: {
         id: driver.id,
         name: driver.full_name,

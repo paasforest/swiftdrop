@@ -53,7 +53,7 @@ export default function JobApplicants({ navigation }) {
         onPress: async () => {
           setConfirming(true);
           try {
-            await postJson(
+            const result = await postJson(
               `/api/jobs/${jobId}/select-driver`,
               { driver_id: driverId },
               { token: auth.token }
@@ -61,7 +61,18 @@ export default function JobApplicants({ navigation }) {
             Alert.alert(
               '✓ Driver confirmed!',
               `${driverName} will collect your parcel. Their contact details have been sent to you via SMS.`,
-              [{ text: 'OK', onPress: () => navigation.replace('Home') }]
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    if (result?.order_id != null) {
+                      navigation.replace('Tracking', { orderId: result.order_id });
+                    } else {
+                      navigation.replace('Home');
+                    }
+                  },
+                },
+              ]
             );
           } catch (err) {
             Alert.alert('Error', err.message || 'Could not confirm driver');
