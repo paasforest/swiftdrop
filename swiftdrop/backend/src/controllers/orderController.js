@@ -3,7 +3,7 @@ const { haversineKm } = require('../utils/distanceHelper');
 const { generateOTP } = require('../utils/otpHelper');
 const { detectProvince } = require('../services/provinceService');
 const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
-const { releaseEscrow } = require('../services/paymentService');
+const { releaseEscrow } = require('../utils/escrow');
 const { sendPushNotification } = require('../services/notificationService');
 const { queueSMS } = require('../services/smsQueue');
 const { uploadImage } = require('../services/cloudinaryService');
@@ -1064,37 +1064,113 @@ async function confirmPickupOTP(req, res) {
 async function confirmDeliveryOTP(req, res) {
   try {
     const { id } = req.params;
+    const orderId = parseInt(String(id), 10);
     const { otp } = req.body;
     const driverId = req.user.id;
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
 
-    const orderRes = await db.query(
-      `SELECT o.*, dr.driver_id AS route_driver_id
-       FROM orders o
-       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
-       WHERE o.id = $1`,
-      [id]
-    );
-    const order = orderRes.rows[0];
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
-    if (order.status !== 'delivery_arrived') return res.status(400).json({ error: 'Invalid order status' });
-    if (order.delivery_otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
 
-    await db.query(
-      `UPDATE orders SET status = 'delivered', delivery_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [id]
-    );
+      const orderRes = await client.query(
+        `SELECT o.*,
+                du.phone AS driver_phone,
+                dr.driver_id AS route_driver_id
+         FROM orders o
+         LEFT JOIN users du ON du.id = o.driver_id
+         LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+         WHERE o.id = $1
+         FOR UPDATE`,
+        [orderId]
+      );
+      const order = orderRes.rows[0];
+      if (!order) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      if (!driverMatchesOrderRow(order, driverId)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (order.status !== 'delivery_arrived') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid order status' });
+      }
+      if (order.delivery_otp !== otp) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid OTP' });
+      }
 
-    await sendPushNotification(
-      order.customer_id,
-      'Delivered!',
-      'Your parcel has been delivered',
-      { orderId: id, type: 'delivered' }
-    );
+      await client.query(
+        `UPDATE orders SET status = 'delivered', delivery_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [orderId]
+      );
 
-    const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
-    return res.json(updated.rows[0]);
+      const release = await releaseEscrow(client, orderId, null);
+
+      if (order.delivery_job_id) {
+        await client.query(
+          `UPDATE delivery_jobs
+           SET status = 'delivered',
+               delivery_confirmed_at = COALESCE(delivery_confirmed_at, NOW()),
+               updated_at = NOW()
+           WHERE id = $1`,
+          [order.delivery_job_id]
+        );
+      }
+
+      await client.query('COMMIT');
+
+      await sendPushNotification(
+        order.customer_id,
+        'Delivered!',
+        'Your parcel has been delivered',
+        { orderId: String(orderId), type: 'delivered' }
+      );
+
+      if (release.skipped && release.reason === 'no_payment_row') {
+        console.warn('confirmDeliveryOTP: escrow skipped — no payments row', orderId);
+      }
+
+      const paid = !release.skipped && Number(release.earnings_released) > 0;
+      if (paid && order.driver_phone) {
+        queueSMS(
+          order.driver_phone,
+          'SwiftDrop: Payment released!\n'
+            + `R${Number(release.earnings_released).toFixed(2)} `
+            + 'has been added to your wallet.\n'
+            + `New balance: R${Number(release.new_balance || 0).toFixed(2)}`,
+          `PAY-${orderId}-${Date.now()}`
+        ).catch((err) => console.error('SMS error:', err));
+      }
+
+      if (paid && order.driver_id) {
+        await sendPushNotification(
+          order.driver_id,
+          'Payment Received',
+          `R${Number(release.earnings_released).toFixed(2)} added to your wallet`,
+          { orderId: String(orderId), type: 'payment' }
+        );
+      }
+
+      const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [orderId]);
+      return res.json({
+        ...updated.rows[0],
+        success: true,
+        message: 'Delivery confirmed',
+        driver_paid: Number(release.earnings_released) || 0,
+      });
+    } catch (inner) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        /* ignore */
+      }
+      throw inner;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error('confirmDeliveryOTP:', err);
     return res.status(500).json({ error: 'Confirmation failed' });
@@ -1160,32 +1236,27 @@ async function uploadDeliveryPhoto(req, res) {
     const result = await uploadImage(file);
     const url = result.secure_url;
 
-    // Release payment only after delivery photo evidence is successfully uploaded.
-    const payout = await releaseEscrow(id);
-
     await db.query(
       `UPDATE orders SET delivery_photo_url = $1, status = 'completed', updated_at = NOW() WHERE id = $2`,
       [url, id]
     );
 
-    if (order.driver_id) {
+    if (order.delivery_job_id) {
       await db.query(
-        `INSERT INTO driver_tiers (driver_id, tier_name, deliveries_completed)
-         VALUES ($1, 'new', 1)
-         ON CONFLICT (driver_id) DO UPDATE SET
-           deliveries_completed = driver_tiers.deliveries_completed + 1,
-           tier_updated_at = NOW()`,
-        [order.driver_id]
+        `UPDATE delivery_jobs
+         SET status = 'completed',
+             delivery_photo_url = COALESCE(delivery_photo_url, $1),
+             updated_at = NOW()
+         WHERE id = $2`,
+        [url, order.delivery_job_id]
       );
     }
 
-    const driverAmount = Number(payout?.driverAmount);
-    const amtStr = Number.isFinite(driverAmount) ? driverAmount.toFixed(2) : '0.00';
     await sendPushNotification(
       order.driver_id,
-      'Payment Received',
-      `R${amtStr} added to your earnings`,
-      { orderId: id, type: 'payment' }
+      'Delivery completed',
+      'Photo saved — job closed.',
+      { orderId: String(id), type: 'delivery_complete' }
     );
 
     const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);

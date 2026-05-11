@@ -405,7 +405,7 @@ async function getTodayEarnings(req, res) {
               COUNT(*) AS deliveries
        FROM orders
        WHERE driver_id = $1
-         AND status = 'delivered'
+         AND status IN ('delivered', 'completed')
          AND updated_at >= NOW()::date`,
       [driverId]
     );

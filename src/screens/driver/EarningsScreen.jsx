@@ -17,6 +17,8 @@ const EarningsScreen = ({ navigation }) => {
   const auth = getAuth();
   const [summary, setSummary] = useState(null);
   const [today, setToday] = useState(null);
+  const [walletBal, setWalletBal] = useState(null);
+  const [walletUpdatedAt, setWalletUpdatedAt] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,13 +31,18 @@ const EarningsScreen = ({ navigation }) => {
   async function fetchAll() {
     setLoading(true);
     try {
-      const [s, t, tx] = await Promise.all([
+      const [s, t, w, tx] = await Promise.all([
         getJson('/api/driver/earnings/summary', { token: auth?.token }),
         getJson('/api/driver/earnings/today', { token: auth?.token }),
-        getJson('/api/wallet/transactions?limit=20', { token: auth?.token }),
+        getJson('/api/wallet/balance', { token: auth?.token }),
+        getJson('/api/wallet/transactions?page=1&limit=20', { token: auth?.token }),
       ]);
       setSummary(s);
       setToday(t);
+      const wb =
+        w?.balance_numeric != null ? Number(w.balance_numeric) : Number(w?.balance);
+      setWalletBal(Number.isFinite(wb) ? wb : 0);
+      setWalletUpdatedAt(w?.updated_at ?? null);
       setTransactions(tx.transactions || []);
     } catch (err) {
       console.error('Earnings fetch:', err);
@@ -64,9 +71,26 @@ const EarningsScreen = ({ navigation }) => {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
 
+          {/* Wallet balance (available now) */}
+          <View style={styles.walletCard}>
+            <Text style={styles.walletCardLabel}>WALLET BALANCE</Text>
+            <Text style={styles.walletCardAmount}>R{Number(walletBal || 0).toFixed(2)}</Text>
+            {walletUpdatedAt ? (
+              <Text style={styles.walletCardSub}>
+                As of{' '}
+                {new Date(walletUpdatedAt).toLocaleString('en-ZA', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
+            ) : null}
+          </View>
+
           {/* Balance card */}
           <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>TOTAL EARNED</Text>
+            <Text style={styles.balanceLabel}>TOTAL CREDITS (ALL TIME)</Text>
             <Text style={styles.balanceAmount}>
               R{Number(summary?.all_time_total || 0).toFixed(2)}
             </Text>
@@ -122,6 +146,9 @@ const EarningsScreen = ({ navigation }) => {
                       day: 'numeric', month: 'short',
                       hour: '2-digit', minute: '2-digit',
                     })}
+                    {tx.balance_after != null
+                      ? ` · Bal R${Number(tx.balance_after).toFixed(2)}`
+                      : ''}
                   </Text>
                 </View>
                 <Text style={[styles.txAmount, tx.type === 'credit' ? styles.txCredit : styles.txDebit]}>
@@ -148,6 +175,30 @@ const styles = StyleSheet.create({
   backArrow: { fontSize: 22, color: '#000000' },
   headerTitle: { fontSize: 17, fontWeight: '700', color: '#000000' },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  walletCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 20,
+  },
+  walletCardLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9E9E9E',
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  walletCardAmount: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#E8FF00',
+    marginBottom: 4,
+  },
+  walletCardSub: {
+    fontSize: 12,
+    color: '#BDBDBD',
+  },
   balanceCard: {
     backgroundColor: '#000000', borderRadius: 20, margin: 16, padding: 24,
   },
