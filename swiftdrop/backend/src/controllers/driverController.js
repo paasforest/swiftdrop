@@ -425,6 +425,21 @@ async function getMyRoutes(req, res) {
     if (req.user.user_type !== 'driver') {
       return res.status(403).json({ error: 'Drivers only' });
     }
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Number(req.query.limit) || 20);
+    const offset = (page - 1) * limit;
+    const driverId = req.user.id;
+
+    const countRes = await db.query(
+      `SELECT COUNT(*)::int AS c
+       FROM driver_routes dr
+       WHERE dr.driver_id = $1
+         AND dr.status = 'active'
+         AND dr.departure_time > NOW() - INTERVAL '24 hours'`,
+      [driverId]
+    );
+    const total = countRes.rows[0]?.c || 0;
+
     const { rows } = await db.query(
       `SELECT dr.*,
               COUNT(o.id) AS parcel_count
@@ -435,10 +450,19 @@ async function getMyRoutes(req, res) {
          AND dr.status = 'active'
          AND dr.departure_time > NOW() - INTERVAL '24 hours'
        GROUP BY dr.id
-       ORDER BY dr.departure_time ASC`,
-      [req.user.id]
+       ORDER BY dr.departure_time ASC
+       LIMIT $2 OFFSET $3`,
+      [driverId, limit, offset]
     );
-    return res.json({ routes: rows });
+    return res.json({
+      routes: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        has_more: rows.length === limit,
+      },
+    });
   } catch (err) {
     console.error('getMyRoutes:', err);
     return res.status(500).json({ error: 'Failed to load routes' });

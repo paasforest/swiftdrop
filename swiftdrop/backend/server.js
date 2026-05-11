@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const db = require('./src/database/connection');
+const { refundWallet } = require('./src/utils/wallet');
 const authRoutes = require('./src/routes/authRoutes');
 const orderRoutes = require('./src/routes/orderRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
@@ -30,6 +32,50 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+app.use((req, res, next) => {
+  res.setHeader('X-API-Version', '1.0');
+  next();
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (duration > 1000 || res.statusCode >= 400) {
+      console.log({
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        url: req.url,
+        status: res.statusCode,
+        duration: `${duration}ms`,
+        userId: req.user?.id,
+      });
+    }
+  });
+  next();
+});
+
+app.get('/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || '1.0.0',
+      database: 'connected',
+      environment: process.env.NODE_ENV || 'production',
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: 'Database connection failed',
+    });
+  }
+});
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -108,6 +154,74 @@ cron.schedule('*/5 * * * *', () => {
   retryFailedSMS().catch((e) =>
     console.error('[smsQueue] retry:', e?.message || e)
   );
+});
+
+cron.schedule('0 * * * *', async () => {
+  try {
+    const { rows } = await db.query(`
+      UPDATE delivery_jobs
+      SET status = 'expired',
+          updated_at = NOW()
+      WHERE status = 'open'
+        AND expires_at < NOW()
+      RETURNING id
+    `);
+    if (rows.length > 0) {
+      console.log(`Expired ${rows.length} jobs`);
+
+      for (const job of rows) {
+        try {
+          const { rows: jobRows } = await db.query(
+            `SELECT * FROM delivery_jobs WHERE id = $1`,
+            [job.id]
+          );
+
+          const fullJob = jobRows[0];
+          if (
+            fullJob?.payment_status === 'paid'
+            && fullJob.payment_method === 'wallet'
+          ) {
+            const total = Number(fullJob.total_price);
+            if (!Number.isFinite(total) || total <= 0) {
+              continue;
+            }
+            const client = await db.getClient();
+            try {
+              await client.query('BEGIN');
+              await refundWallet(
+                client,
+                fullJob.customer_id,
+                total,
+                `EXPIRED-${job.id}`
+              );
+              await client.query(
+                `
+                  UPDATE delivery_jobs
+                  SET payment_status = 'refunded'
+                  WHERE id = $1
+                `,
+                [job.id]
+              );
+              await client.query('COMMIT');
+            } catch (err) {
+              try {
+                await client.query('ROLLBACK');
+              } catch {
+                /* ignore */
+              }
+              console.error('Refund failed for job', job.id, err);
+            } finally {
+              client.release();
+            }
+          }
+        } catch (err) {
+          console.error('Error processing expired job', job.id, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Job expiry cron error:', err);
+  }
 });
 
 app.listen(PORT, HOST, () => {

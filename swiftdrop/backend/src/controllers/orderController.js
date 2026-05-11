@@ -338,7 +338,7 @@ async function createOrder(req, res) {
                 day: 'numeric',
                 month: 'short',
               });
-              await queueSMS(
+              queueSMS(
                 customerPhone,
                 'SwiftDrop: Your intercity booking is confirmed!\n\n'
                   + 'Drop off your parcel at:\n'
@@ -347,7 +347,7 @@ async function createOrder(req, res) {
                   + '(30 min before driver departs)\n\n'
                   + 'The driver will verify with a code and photo.',
                 `ORDER-${order.order_number}-${order.id}-MEET-${Date.now()}`
-              );
+              ).catch((err) => console.error('SMS queue error:', err));
             }
           }
         } catch (smsErr) {
@@ -511,8 +511,8 @@ async function getCustomerOrders(req, res) {
       return res.status(403).json({ error: 'Customers only' });
     }
 
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Number(req.query.limit) || 20);
     const offset = (page - 1) * limit;
     const status = req.query.status;
 
@@ -535,7 +535,15 @@ async function getCustomerOrders(req, res) {
       params
     );
     const total = countRes.rows[0]?.c || 0;
-    return res.json({ orders: rows.rows, total, page, limit });
+    return res.json({
+      orders: rows.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        has_more: rows.rows.length === limit,
+      },
+    });
   } catch (err) {
     console.error('getCustomerOrders:', err);
     return res.status(500).json({ error: 'Failed to fetch orders' });
@@ -850,13 +858,13 @@ async function pickupArrived(req, res) {
     }
 
     if (order.customer_phone) {
-      await queueSMS(
+      queueSMS(
         order.customer_phone,
         'SwiftDrop: Your driver has arrived to collect your parcel.\n\n'
           + `Give this code to the driver:\n*${pickupOtp}*\n\n`
           + 'Do not share this code with anyone else.',
         `ORDER-${id}-PICKUP-ARR-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     return res.json({ success: true, message: 'OTP sent to sender' });
@@ -903,13 +911,13 @@ async function deliveryArrived(req, res) {
     const recipientPhone = order.recipient_phone || order.customer_phone;
 
     if (recipientPhone) {
-      await queueSMS(
+      queueSMS(
         recipientPhone,
         'SwiftDrop: Your parcel is being delivered now!\n\n'
           + `Give this code to the driver:\n*${deliveryOtp}*\n\n`
           + 'Do not share with anyone else.',
         `ORDER-${id}-DROP-ARR-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     return res.json({ success: true, message: 'Delivery OTP sent' });
@@ -980,11 +988,11 @@ async function updateOrderStatus(req, res) {
       );
 
       if (customerPhone && order.delivery_otp && driverFullName) {
-        await queueSMS(
+        queueSMS(
           customerPhone,
           `SwiftDrop: ${driverFullName} arrived with your parcel. Delivery code: ${order.delivery_otp}`,
           `ORDER-${id}-DELIVERY-OTP-${Date.now()}`
-        );
+        ).catch((err) => console.error('SMS queue error:', err));
       }
     }
 
@@ -1034,12 +1042,12 @@ async function confirmPickupOTP(req, res) {
       const driverUserRes = await db.query(`SELECT full_name FROM users WHERE id = $1`, [driverId]);
       const driverName = driverUserRes.rows[0]?.full_name?.trim() || 'Your driver';
       const collectedAt = new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
-      await queueSMS(
+      queueSMS(
         order.customer_phone,
         `SwiftDrop: Your parcel has been collected by ${driverName} at ${collectedAt}.\n`
           + 'Track your delivery in the app.',
         `ORDER-${id}-PICKUP-CONFIRM-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     // Driver-side only: offer return load after intercity pickup confirmation.
@@ -1194,8 +1202,8 @@ async function getDriverOrders(req, res) {
     if (req.user.user_type !== 'driver') {
       return res.status(403).json({ error: 'Drivers only' });
     }
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Number(req.query.limit) || 20);
     const offset = (page - 1) * limit;
 
     const rows = await db.query(
@@ -1212,7 +1220,15 @@ async function getDriverOrders(req, res) {
       [req.user.id]
     );
     const total = countRes.rows[0]?.c || 0;
-    return res.json({ orders: rows.rows, total, page, limit });
+    return res.json({
+      orders: rows.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        has_more: rows.rows.length === limit,
+      },
+    });
   } catch (err) {
     console.error('getDriverOrders:', err);
     return res.status(500).json({ error: 'Failed to fetch driver orders' });

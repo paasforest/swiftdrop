@@ -136,11 +136,11 @@ async function notifyMatchingDrivers(job) {
 
     for (const driver of drivers) {
       if (driver.phone) {
-        await queueSMS(
+        queueSMS(
           driver.phone,
           `SwiftDrop: A parcel job matches your route!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen the app to apply.`,
           `JOB-NOTIFY-IC-${job.id}-${driver.id}-${Date.now()}`
-        );
+        ).catch((err) => console.error('SMS queue error:', err));
       }
     }
   } catch (err) {
@@ -179,11 +179,11 @@ async function notifyNearbyDrivers(job) {
 
     for (const driver of drivers) {
       if (driver.phone) {
-        await queueSMS(
+        queueSMS(
           driver.phone,
           `SwiftDrop: New delivery job near you!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen SwiftDrop to apply.`,
           `JOB-NOTIFY-LOCAL-${job.id}-${driver.id}-${Date.now()}`
-        );
+        ).catch((err) => console.error('SMS queue error:', err));
       }
     }
   } catch (err) {
@@ -346,9 +346,9 @@ async function createJob(req, res) {
     const job = rows[0];
 
     if (type === 'intercity') {
-      await notifyMatchingDrivers(job);
+      notifyMatchingDrivers(job).catch((err) => console.error('notifyMatchingDrivers:', err));
     } else {
-      await notifyNearbyDrivers(job);
+      notifyNearbyDrivers(job).catch((err) => console.error('notifyNearbyDrivers:', err));
     }
 
     res.status(201).json({ job });
@@ -377,6 +377,10 @@ async function createJob(req, res) {
 async function getMyJobs(req, res) {
   try {
     const customerId = req.user.id;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Number(req.query.limit) || 20);
+    const offset = (page - 1) * limit;
+
     const { rows } = await db.query(
       `
         SELECT
@@ -402,11 +406,31 @@ async function getMyJobs(req, res) {
         WHERE j.customer_id = $1
           AND j.status NOT IN ('completed', 'cancelled', 'expired')
         ORDER BY j.created_at DESC
+        LIMIT $2 OFFSET $3
+      `,
+      [customerId, limit, offset]
+    );
+
+    const countRes = await db.query(
+      `
+        SELECT COUNT(*)::int AS c
+        FROM delivery_jobs j
+        WHERE j.customer_id = $1
+          AND j.status NOT IN ('completed', 'cancelled', 'expired')
       `,
       [customerId]
     );
+    const total = countRes.rows[0]?.c || 0;
 
-    res.json({ jobs: rows });
+    res.json({
+      jobs: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        has_more: rows.length === limit,
+      },
+    });
   } catch (err) {
     console.error('getMyJobs:', err);
     res.status(500).json({ error: 'Could not load jobs' });
@@ -427,8 +451,48 @@ async function getAvailableJobs(req, res) {
     const dLng = req.query.lng != null ? Number(req.query.lng) : Number(locRows[0]?.lng);
 
     if (!Number.isFinite(dLat) || !Number.isFinite(dLng)) {
-      return res.json({ jobs: [] });
+      return res.json({
+        jobs: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          has_more: false,
+        },
+      });
     }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = 20;
+    const offset = (page - 1) * limit;
+
+    const countRes = await db.query(
+      `
+        SELECT COUNT(*)::int AS c
+        FROM delivery_jobs j
+        WHERE j.status = 'open'
+          AND j.expires_at > NOW()
+          AND j.payment_status = 'paid'
+          AND j.delivery_type = 'local'
+          AND j.pickup_lat IS NOT NULL
+          AND j.pickup_lng IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM job_applications a
+            WHERE a.job_id = j.id AND a.driver_id = $3
+          )
+          AND (
+            6371 * acos(LEAST(1::double precision, GREATEST(-1::double precision,
+              cos(radians($1::double precision))
+              * cos(radians(j.pickup_lat::double precision))
+              * cos(radians(j.pickup_lng::double precision) - radians($2::double precision))
+              + sin(radians($1::double precision))
+              * sin(radians(j.pickup_lat::double precision))
+            )))
+          ) <= $4
+      `,
+      [dLat, dLng, driverId, radiusKm]
+    );
+    const total = countRes.rows[0]?.c || 0;
 
     const { rows } = await db.query(
       `
@@ -478,12 +542,20 @@ async function getAvailableJobs(req, res) {
             )))
           ) <= $4
         ORDER BY distance_from_driver_km ASC
-        LIMIT 50
+        LIMIT $5 OFFSET $6
       `,
-      [dLat, dLng, driverId, radiusKm]
+      [dLat, dLng, driverId, radiusKm, limit, offset]
     );
 
-    res.json({ jobs: rows });
+    res.json({
+      jobs: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        has_more: rows.length === limit,
+      },
+    });
   } catch (err) {
     console.error('getAvailableJobs:', err);
     res.status(500).json({ error: 'Could not load jobs' });
@@ -671,11 +743,11 @@ async function applyForJob(req, res) {
 
     const job = jobRows[0];
     if (job.customer_phone) {
-      await queueSMS(
+      queueSMS(
         job.customer_phone,
         'SwiftDrop: A driver applied for your delivery!\nOpen the app to view their profile and confirm your driver.',
         `JOB-APPLY-${jobId}-${driverId}-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     res.json({
@@ -940,11 +1012,11 @@ async function selectDriver(req, res) {
     );
 
     if (driver.phone) {
-      await queueSMS(
+      queueSMS(
         driver.phone,
         `SwiftDrop: You got the job!\n\nCollect from:\n${job.pickup_address}\n\nDeliver to:\n${job.dropoff_address}\n\nYour earnings: R${job.driver_earnings}\n\nCustomer: ${job.customer_phone}`,
         `JOB-SELECT-${jobId}-WIN-${driverIdSel}-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     rejectedPhones.forEach((row, idx) => {
@@ -953,16 +1025,16 @@ async function selectDriver(req, res) {
           row.phone,
           'SwiftDrop: Thank you for applying. Another driver was selected for this job.',
           `JOB-SELECT-${jobId}-REJ-${idx}-${Date.now()}`
-        ).catch(() => {});
+        ).catch((err) => console.error('SMS queue error:', err));
       }
     });
 
     if (job.customer_phone) {
-      await queueSMS(
+      queueSMS(
         job.customer_phone,
         `SwiftDrop: Driver confirmed!\n\n${driver.full_name}\n${driver.vehicle_color} ${driver.vehicle_make} ${driver.vehicle_model}\nPlate: ${driver.vehicle_plate}\nPhone: ${driver.phone}`,
         `JOB-SELECT-${jobId}-CUSTOMER-${Date.now()}`
-      );
+      ).catch((err) => console.error('SMS queue error:', err));
     }
 
     res.json({
