@@ -108,7 +108,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminDriverRoutes);
-app.use('/api', ratingsRoutes);
+app.use('/api/ratings', ratingsRoutes);
 app.use('/api/drivers', driverRoutes);
 /** Alias: mobile app calls /api/driver/earnings/* */
 app.use('/api/driver', driverRoutes);

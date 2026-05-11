@@ -1,11 +1,11 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
-const ratingsController = require('../controllers/ratingsController');
+const ratings = require('../controllers/ratingsController');
 
 const router = express.Router();
 
-router.post('/ratings', auth, ratingsController.submitRating);
-router.get('/ratings/customer/:orderId', auth, ratingsController.getCustomerRating);
+router.post('/', auth, ratings.submitRating);
+router.get('/customer/:orderId', auth, ratings.getCustomerRating);
+router.get('/driver/:driverId', ratings.getDriverRating);
 
 module.exports = router;
-

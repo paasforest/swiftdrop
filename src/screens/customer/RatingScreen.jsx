@@ -28,8 +28,12 @@ const RatingScreen = ({ navigation, route }) => {
     setSubmitting(true);
     try {
       await postJson(
-        `/api/ratings/order/${orderId}`,
-        { rating, comment },
+        `/api/ratings`,
+        {
+          order_id: orderId,
+          rating,
+          comment: comment.trim() || null,
+        },
         { token: auth?.token }
       );
       navigation.replace('Home');

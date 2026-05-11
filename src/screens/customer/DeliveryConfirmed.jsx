@@ -11,10 +11,11 @@ import {
   Image,
   Animated,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
-import { colors, spacing, radius, shadows } from '../../theme/theme';
+import { colors, spacing, radius } from '../../theme/theme';
 import DriverAvatar from '../../components/customer/DriverAvatar';
 import { formatDriverVehicleLine } from '../../utils/formatDriverVehicleLine';
 import {
@@ -40,13 +41,19 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const params = route?.params || {};
 
   const orderId = params.orderId;
+  const routeJobId = params.jobId ?? null;
+  const routeDriverId =
+    params.driverId != null && Number.isFinite(Number(params.driverId))
+      ? Number(params.driverId)
+      : null;
+
   const driverName = params.driverName || 'your driver';
   const driverRating = params.driverRating;
   const driverPhotoParam = params.driverPhoto;
   const driverDeliveriesParam = params.driverDeliveriesCompleted;
   const deliveryPhoto = params.deliveryPhoto;
-  const fromAddress = params.fromAddress;
-  const toAddress = params.toAddress;
+  const fromAddress = params.fromAddress ?? params.pickup_address;
+  const toAddress = params.toAddress ?? params.dropoff_address;
   const totalPrice = params.totalPrice;
   const timeTaken = params.timeTaken;
   const basePrice = params.basePrice;
@@ -173,13 +180,25 @@ const DeliveryConfirmed = ({ navigation, route }) => {
     return Math.max(1, Math.min(5, Math.round(v)));
   }, [displayDriverRating]);
 
+  const selectedRatingLabel = useMemo(() => {
+    const labels = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent!'];
+    return rating > 0 ? labels[rating] : '';
+  }, [rating]);
+
+  const handleDone = () => {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
+  };
+
   const handleSubmitRating = async () => {
     if (!orderId) {
-      alert('Missing order id');
+      Alert.alert('Error', 'Missing order id');
       return;
     }
     if (rating < 1) {
-      alert('Please choose a star rating (1 to 5).');
+      Alert.alert('Please rate your delivery', 'Tap a star to rate your driver (1–5).');
       return;
     }
 
@@ -189,16 +208,37 @@ const DeliveryConfirmed = ({ navigation, route }) => {
       return;
     }
 
+    const resolvedDriverId =
+      (orderDetails?.driver_id != null ? Number(orderDetails.driver_id) : null) ?? routeDriverId;
+    if (!Number.isFinite(resolvedDriverId) || resolvedDriverId <= 0) {
+      Alert.alert('Error', 'Could not determine your driver for this delivery.');
+      return;
+    }
+
+    const resolvedJobId =
+      routeJobId != null && Number.isFinite(Number(routeJobId))
+        ? Number(routeJobId)
+        : (orderDetails?.delivery_job_id != null ? Number(orderDetails.delivery_job_id) : null);
+
     setSubmitting(true);
     try {
       await postJson(
         '/api/ratings',
-        { orderId, rating, comment: comment || null },
+        {
+          order_id: orderId,
+          job_id: Number.isFinite(resolvedJobId) && resolvedJobId > 0 ? resolvedJobId : null,
+          driver_id: resolvedDriverId,
+          rating,
+          comment: comment.trim() || null,
+        },
         { token: auth.token }
       );
       setSubmitted(true);
     } catch (e) {
-      alert(e.message || 'Rating submission failed');
+      Alert.alert(
+        'Error',
+        e.message?.includes?.('already') ? e.message : 'Could not submit rating. Please try again.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -349,6 +389,10 @@ const DeliveryConfirmed = ({ navigation, route }) => {
                 {renderRatingStars(true)}
               </View>
 
+              {selectedRatingLabel ? (
+                <Text style={styles.ratingValueLabel}>{selectedRatingLabel}</Text>
+              ) : null}
+
               <TextInput
                 style={styles.commentInput}
                 placeholder="Add a comment (optional)"
@@ -356,6 +400,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
                 onChangeText={setComment}
                 multiline
                 numberOfLines={3}
+                maxLength={200}
                 textAlignVertical="top"
               />
 
@@ -364,14 +409,24 @@ const DeliveryConfirmed = ({ navigation, route }) => {
                 onPress={handleSubmitRating}
                 disabled={submitting}
               >
-                <Text style={styles.submitButtonText}>
-                  {submitting ? 'Submitting…' : 'Submit Rating'}
-                </Text>
+                {submitting ? (
+                  <ActivityIndicator color={colors.textWhite} size="small" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Submit rating</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.skipButton} onPress={handleDone} disabled={submitting}>
+                <Text style={styles.skipButtonText}>Skip for now</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.submittedContainer}>
-              <Text style={styles.submittedText}>Thank you for your feedback!</Text>
+              <Text style={styles.thankYouEmoji} accessibilityRole="text">🙏</Text>
+              <Text style={styles.submittedTitle}>Thank you!</Text>
+              <Text style={styles.submittedSub}>
+                Your rating helps build trust in the community.
+              </Text>
             </View>
           )}
 
@@ -391,10 +446,7 @@ const DeliveryConfirmed = ({ navigation, route }) => {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.reset({
-            index: 0,
-            routes: [{ name: 'Home' }],
-          })}>
+          <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
             <Text style={styles.doneButtonText}>Back to Home</Text>
           </TouchableOpacity>
         </View>
@@ -563,7 +615,14 @@ const styles = StyleSheet.create({
   starsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: 8,
+  },
+  ratingValueLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.warning,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   starButton: {
     marginHorizontal: 8,
@@ -588,17 +647,30 @@ const styles = StyleSheet.create({
     minHeight: 80,
   },
   submittedContainer: {
-    padding: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 18,
     backgroundColor: colors.successLight,
     borderRadius: 12,
     width: '100%',
     marginBottom: 32,
+    alignItems: 'center',
   },
-  submittedText: {
-    fontSize: 16,
-    color: colors.success,
+  thankYouEmoji: {
+    fontSize: 44,
+    marginBottom: 8,
+  },
+  submittedTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 8,
     textAlign: 'center',
-    fontWeight: '500',
+  },
+  submittedSub: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   submitButton: {
     backgroundColor: colors.primary,
@@ -609,6 +681,16 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: colors.textWhite,
     fontSize: 16,
+    fontWeight: '600',
+  },
+  skipButton: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    width: '100%',
+  },
+  skipButtonText: {
+    fontSize: 14,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   doneButton: {

@@ -235,6 +235,8 @@ const TrackingWithMap = ({ navigation, route }) => {
             setStopPolling(true);
             navigation.navigate('DeliveryConfirmed', {
               orderId: data.id,
+              jobId: data.delivery_job_id ?? null,
+              driverId: data.driver_id ?? null,
               driverName: data.driver_name,
               driverRating: data.driver_rating,
               driverPhoto: data.driver_photo ?? null,
@@ -242,6 +244,8 @@ const TrackingWithMap = ({ navigation, route }) => {
               deliveryPhoto: data.delivery_photo_url ?? null,
               fromAddress: data.pickup_address,
               toAddress: data.dropoff_address,
+              pickup_address: data.pickup_address,
+              dropoff_address: data.dropoff_address,
               totalPrice: data.total_price,
               timeTaken: computeTimeTakenString(data),
               basePrice: data.base_price,
@@ -337,6 +341,8 @@ const TrackingWithMap = ({ navigation, route }) => {
           setStopPolling(true);
           navigation.navigate('DeliveryConfirmed', {
             orderId: data.id,
+            jobId: data.delivery_job_id ?? null,
+            driverId: data.driver_id ?? null,
             driverName: data.driver_name,
             driverRating: data.driver_rating,
             driverPhoto: data.driver_photo ?? null,
@@ -344,6 +350,8 @@ const TrackingWithMap = ({ navigation, route }) => {
             deliveryPhoto: data.delivery_photo_url ?? null,
             fromAddress: data.pickup_address,
             toAddress: data.dropoff_address,
+            pickup_address: data.pickup_address,
+            dropoff_address: data.dropoff_address,
             totalPrice: data.total_price,
             timeTaken: computeTimeTakenString(data),
             basePrice: data.base_price,

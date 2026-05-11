@@ -137,7 +137,10 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE TABLE IF NOT EXISTS ratings (
   id SERIAL PRIMARY KEY,
-  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  customer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  driver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+  job_id INTEGER REFERENCES delivery_jobs(id) ON DELETE SET NULL,
   rated_by VARCHAR(20) NOT NULL CHECK (rated_by IN ('customer','driver')),
   rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
   comment TEXT,
