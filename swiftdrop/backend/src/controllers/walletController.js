@@ -36,7 +36,7 @@ async function getWalletBalance(req, res) {
 }
 
 /**
- * GET /api/wallet/transactions?limit=20 — recent wallet rows for the authenticated user.
+ * GET /api/wallet/transactions — paginated wallet rows for the authenticated user.
  */
 async function getTransactions(req, res) {
   try {

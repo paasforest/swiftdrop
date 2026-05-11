@@ -10,6 +10,8 @@ import { getAuth } from '../../authStore';
 import { getJson, postJson } from '../../apiClient';
 import { API_BASE_URL } from '../../apiConfig';
 
+const ORDER_OTP_DIGITS = 6;
+
 const TripDeliveryManager = ({ navigation, route }) => {
   const { routeId } = route.params;
 
@@ -404,7 +406,7 @@ const TripDeliveryManager = ({ navigation, route }) => {
                 </Text>
 
                 <View style={styles.otpRow}>
-                  {[0, 1, 2, 3].map((i) => (
+                  {Array.from({ length: ORDER_OTP_DIGITS }, (_, i) => i).map((i) => (
                     <TextInput
                       key={i}
                       style={styles.otpBox}
@@ -414,7 +416,7 @@ const TripDeliveryManager = ({ navigation, route }) => {
                       onChangeText={(text) => {
                         const arr = otpInput.split('');
                         arr[i] = text;
-                        setOtpInput(arr.join('').slice(0, 4));
+                        setOtpInput(arr.join('').slice(0, ORDER_OTP_DIGITS));
                       }}
                     />
                   ))}
@@ -423,8 +425,8 @@ const TripDeliveryManager = ({ navigation, route }) => {
                 {error && <Text style={styles.errorText}>{error}</Text>}
 
                 <TouchableOpacity
-                  style={[styles.modalButton, otpInput.length < 4 && { opacity: 0.4 }]}
-                  disabled={otpInput.length < 4 || processing}
+                  style={[styles.modalButton, otpInput.length < ORDER_OTP_DIGITS && { opacity: 0.4 }]}
+                  disabled={otpInput.length < ORDER_OTP_DIGITS || processing}
                   onPress={phase === 'collection_otp' ? handleConfirmCollectionOtp : handleConfirmDeliveryOtp}
                 >
                   {processing
@@ -573,11 +575,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', fontSize: 16,
     fontWeight: '700',
   },
-  otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 32 },
+  otpRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 32,
+    paddingHorizontal: 8,
+  },
   otpBox: {
-    width: 64, height: 72, borderRadius: 14, borderWidth: 1.5,
-    borderColor: '#E0E0E0', backgroundColor: '#FAFAFA',
-    fontSize: 28, fontWeight: '700', textAlign: 'center', color: '#000000',
+    width: 48,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    color: '#000000',
   },
   errorText: { color: '#FF3B30', fontSize: 13, textAlign: 'center', marginBottom: 16 },
   modalButton: {

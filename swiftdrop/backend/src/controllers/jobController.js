@@ -1,5 +1,6 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
+const { generateOrderOtp } = require('../utils/otpHelper');
 const { queueSMS } = require('../services/smsQueue');
 const {
   deductWallet,
@@ -290,8 +291,8 @@ async function createJob(req, res) {
       );
     }
 
-    const pickupOtp = String(Math.floor(1000 + Math.random() * 9000));
-    const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+    const pickupOtp = generateOrderOtp();
+    const deliveryOtp = generateOrderOtp();
 
     const { rows } = await client.query(
       `

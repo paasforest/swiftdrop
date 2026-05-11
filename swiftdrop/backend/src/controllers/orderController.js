@@ -1,6 +1,6 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
-const { generateOTP } = require('../utils/otpHelper');
+const { generateOrderOtp } = require('../utils/otpHelper');
 const { detectProvince } = require('../services/provinceService');
 const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
 const { releaseEscrow } = require('../utils/escrow');
@@ -50,6 +50,12 @@ function getLocalPrice(parcelSize, distKm) {
   if (!Number.isFinite(d) || d < 0) return tiers[0].price;
   const tier = tiers.find((t) => d <= t.maxKm);
   return tier?.price || 200;
+}
+
+const MAX_ORDER_OTP_ATTEMPTS = 5;
+
+function normalizeOrderOtp(input) {
+  return String(input ?? '').replace(/\D/g, '');
 }
 
 function roundMoney(n) {
@@ -236,8 +242,8 @@ async function createOrder(req, res) {
       totalPrice = roundMoney(localBase + valueComponentRaw);
     }
 
-    const pickupOtp = generateOTP();
-    const deliveryOtp = generateOTP();
+    const pickupOtp = generateOrderOtp();
+    const deliveryOtp = generateOrderOtp();
     const orderNumber = generateOrderNumber();
     const customerId = req.user.id;
 
@@ -853,15 +859,18 @@ async function pickupArrived(req, res) {
 
     let pickupOtp = order.pickup_otp;
     if (!pickupOtp) {
-      pickupOtp = String(Math.floor(1000 + Math.random() * 9000));
-      await db.query(`UPDATE orders SET pickup_otp = $1 WHERE id = $2`, [pickupOtp, id]);
+      pickupOtp = generateOrderOtp();
+      await db.query(
+        `UPDATE orders SET pickup_otp = $1, pickup_otp_attempts = 0, updated_at = NOW() WHERE id = $2`,
+        [pickupOtp, id]
+      );
     }
 
     if (order.customer_phone) {
       queueSMS(
         order.customer_phone,
         'SwiftDrop: Your driver has arrived to collect your parcel.\n\n'
-          + `Give this code to the driver:\n*${pickupOtp}*\n\n`
+          + `Give this 6-digit code to the driver:\n*${pickupOtp}*\n\n`
           + 'Do not share this code with anyone else.',
         `ORDER-${id}-PICKUP-ARR-${Date.now()}`
       ).catch((err) => console.error('SMS queue error:', err));
@@ -904,8 +913,11 @@ async function deliveryArrived(req, res) {
 
     let deliveryOtp = order.delivery_otp;
     if (!deliveryOtp) {
-      deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
-      await db.query(`UPDATE orders SET delivery_otp = $1 WHERE id = $2`, [deliveryOtp, id]);
+      deliveryOtp = generateOrderOtp();
+      await db.query(
+        `UPDATE orders SET delivery_otp = $1, delivery_otp_attempts = 0, updated_at = NOW() WHERE id = $2`,
+        [deliveryOtp, id]
+      );
     }
 
     const recipientPhone = order.recipient_phone || order.customer_phone;
@@ -914,7 +926,7 @@ async function deliveryArrived(req, res) {
       queueSMS(
         recipientPhone,
         'SwiftDrop: Your parcel is being delivered now!\n\n'
-          + `Give this code to the driver:\n*${deliveryOtp}*\n\n`
+          + `Give this 6-digit code to the driver:\n*${deliveryOtp}*\n\n`
           + 'Do not share with anyone else.',
         `ORDER-${id}-DROP-ARR-${Date.now()}`
       ).catch((err) => console.error('SMS queue error:', err));
@@ -990,7 +1002,7 @@ async function updateOrderStatus(req, res) {
       if (customerPhone && order.delivery_otp && driverFullName) {
         queueSMS(
           customerPhone,
-          `SwiftDrop: ${driverFullName} arrived with your parcel. Delivery code: ${order.delivery_otp}`,
+          `SwiftDrop: ${driverFullName} arrived with your parcel. Your 6-digit delivery code: ${order.delivery_otp}`,
           `ORDER-${id}-DELIVERY-OTP-${Date.now()}`
         ).catch((err) => console.error('SMS queue error:', err));
       }
@@ -1007,35 +1019,101 @@ async function updateOrderStatus(req, res) {
 async function confirmPickupOTP(req, res) {
   try {
     const { id } = req.params;
-    const { otp } = req.body;
+    const orderId = parseInt(String(id), 10);
+    const otpNormalized = normalizeOrderOtp(req.body?.otp);
     const driverId = req.user.id;
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
 
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      const orderRes = await client.query(
+        `SELECT o.*, u.phone AS customer_phone,
+                dr.driver_id AS route_driver_id
+         FROM orders o
+         JOIN users u ON u.id = o.customer_id
+         LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
+         WHERE o.id = $1
+         FOR UPDATE`,
+        [orderId]
+      );
+      const order = orderRes.rows[0];
+      if (!order) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      if (!driverMatchesOrderRow(order, driverId)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (order.status !== 'pickup_arrived') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid order status' });
+      }
+
+      const attempts = Number(order.pickup_otp_attempts) || 0;
+      if (attempts >= MAX_ORDER_OTP_ATTEMPTS) {
+        await client.query('ROLLBACK');
+        return res.status(429).json({
+          error:
+            'Too many incorrect attempts. Please contact the customer to resend the OTP.',
+        });
+      }
+
+      if (String(order.pickup_otp) !== otpNormalized) {
+        const inc = await client.query(
+          `UPDATE orders
+           SET pickup_otp_attempts = pickup_otp_attempts + 1,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING pickup_otp_attempts`,
+          [orderId]
+        );
+        await client.query('COMMIT');
+        const newAttempts = Number(inc.rows[0]?.pickup_otp_attempts) || attempts + 1;
+        const remaining = Math.max(0, MAX_ORDER_OTP_ATTEMPTS - newAttempts);
+        return res.status(400).json({
+          error: `Incorrect OTP. ${remaining} attempts remaining.`,
+        });
+      }
+
+      await client.query(
+        `UPDATE orders
+         SET status = 'collected',
+             pickup_otp_attempts = 0,
+             pickup_confirmed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [orderId]
+      );
+
+      await client.query('COMMIT');
+    } catch (inner) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        /* ignore */
+      }
+      throw inner;
+    } finally {
+      client.release();
+    }
+
     const orderRes = await db.query(
-      `SELECT o.*, u.phone AS customer_phone,
-              dr.driver_id AS route_driver_id
+      `SELECT o.*, u.phone AS customer_phone
        FROM orders o
        JOIN users u ON u.id = o.customer_id
-       LEFT JOIN driver_routes dr ON dr.id = o.assigned_driver_route_id
        WHERE o.id = $1`,
-      [id]
+      [orderId]
     );
     const order = orderRes.rows[0];
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!driverMatchesOrderRow(order, driverId)) return res.status(403).json({ error: 'Forbidden' });
-    if (order.status !== 'pickup_arrived') return res.status(400).json({ error: 'Invalid order status' });
-    if (order.pickup_otp !== otp) return res.status(400).json({ error: 'Invalid OTP' });
-
-    await db.query(
-      `UPDATE orders SET status = 'collected', pickup_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
-      [id]
-    );
 
     await sendPushNotification(
       order.customer_id,
       'Parcel Collected',
       `On the way to ${order.dropoff_address}`,
-      { orderId: id, type: 'order_update' }
+      { orderId: String(orderId), type: 'order_update' }
     );
 
     if (order.customer_phone) {
@@ -1046,14 +1124,13 @@ async function confirmPickupOTP(req, res) {
         order.customer_phone,
         `SwiftDrop: Your parcel has been collected by ${driverName} at ${collectedAt}.\n`
           + 'Track your delivery in the app.',
-        `ORDER-${id}-PICKUP-CONFIRM-${Date.now()}`
+        `ORDER-${orderId}-PICKUP-CONFIRM-${Date.now()}`
       ).catch((err) => console.error('SMS queue error:', err));
     }
 
-    // Driver-side only: offer return load after intercity pickup confirmation.
-    await offerReturnLoadAfterIntercityPickup(id, driverId);
+    await offerReturnLoadAfterIntercityPickup(orderId, driverId);
 
-    const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
+    const updated = await db.query(`SELECT * FROM orders WHERE id = $1`, [orderId]);
     return res.json(updated.rows[0]);
   } catch (err) {
     console.error('confirmPickupOTP:', err);
@@ -1065,7 +1142,7 @@ async function confirmDeliveryOTP(req, res) {
   try {
     const { id } = req.params;
     const orderId = parseInt(String(id), 10);
-    const { otp } = req.body;
+    const otpNormalized = normalizeOrderOtp(req.body?.otp);
     const driverId = req.user.id;
     if (req.user.user_type !== 'driver') return res.status(403).json({ error: 'Drivers only' });
 
@@ -1097,13 +1174,40 @@ async function confirmDeliveryOTP(req, res) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'Invalid order status' });
       }
-      if (order.delivery_otp !== otp) {
+
+      const attempts = Number(order.delivery_otp_attempts) || 0;
+      if (attempts >= MAX_ORDER_OTP_ATTEMPTS) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Invalid OTP' });
+        return res.status(429).json({
+          error:
+            'Too many incorrect attempts. Please contact the customer to resend the OTP.',
+        });
+      }
+
+      if (String(order.delivery_otp) !== otpNormalized) {
+        const inc = await client.query(
+          `UPDATE orders
+           SET delivery_otp_attempts = delivery_otp_attempts + 1,
+               updated_at = NOW()
+           WHERE id = $1
+           RETURNING delivery_otp_attempts`,
+          [orderId]
+        );
+        await client.query('COMMIT');
+        const newAttempts = Number(inc.rows[0]?.delivery_otp_attempts) || attempts + 1;
+        const remaining = Math.max(0, MAX_ORDER_OTP_ATTEMPTS - newAttempts);
+        return res.status(400).json({
+          error: `Incorrect OTP. ${remaining} attempts remaining.`,
+        });
       }
 
       await client.query(
-        `UPDATE orders SET status = 'delivered', delivery_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        `UPDATE orders
+         SET status = 'delivered',
+             delivery_otp_attempts = 0,
+             delivery_confirmed_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
         [orderId]
       );
 

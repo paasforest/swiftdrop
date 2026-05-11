@@ -118,7 +118,7 @@ const EnRouteDelivery = ({ route, navigation }) => {
 
         <View style={styles.infoCard}>
           <Text style={styles.infoText}>
-            📱 When you arrive, tap the button below. The recipient will receive an OTP code to give you.
+            📱 When you arrive, tap the button below. The recipient will receive a 6-digit OTP code to give you.
           </Text>
         </View>
 

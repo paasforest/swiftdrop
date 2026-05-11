@@ -20,11 +20,13 @@ import { colors, spacing, radius, typography, shadows } from '../../theme/theme'
 
 const { width, height } = Dimensions.get('window');
 
+const ORDER_OTP_DIGITS = 6;
+
 const DeliveryConfirm = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
 
   // OTP then delivery photo; arrival SMS is triggered from EnRouteDelivery (POST delivery-arrived).
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otp, setOtp] = useState(() => Array.from({ length: ORDER_OTP_DIGITS }, () => ''));
   const otpString = useMemo(() => otp.join(''), [otp]);
   const [otpConfirmed, setOtpConfirmed] = useState(false);
   const [otpSubmitting, setOtpSubmitting] = useState(false);
@@ -70,7 +72,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
     newOtp[index] = digit;
     setOtp(newOtp);
 
-    if (digit && index < 3) {
+    if (digit && index < ORDER_OTP_DIGITS - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -83,7 +85,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
 
   const handleConfirmOtp = async () => {
     if (!orderId) return;
-    if (otpString.length !== 4) return;
+    if (otpString.length !== ORDER_OTP_DIGITS) return;
     if (otpSubmitting) return;
 
     setOtpSubmitting(true);
@@ -97,8 +99,12 @@ const DeliveryConfirm = ({ navigation, route }) => {
       setOtpConfirmed(true);
     } catch (e) {
       const msg = e?.message || '';
-      if (msg.includes('Invalid OTP')) {
+      if (msg.includes('attempts remaining')) {
+        setOtpError(msg);
+      } else if (msg.includes('Incorrect OTP')) {
         setOtpError('Incorrect code. Ask receiver to check their SMS.');
+      } else if (msg.includes('Too many incorrect attempts')) {
+        setOtpError(msg);
       } else {
         setOtpError(msg || 'OTP verification failed');
       }
@@ -231,7 +237,7 @@ const DeliveryConfirm = ({ navigation, route }) => {
       </View>
 
       <Text style={styles.instructionText}>
-        Ask the receiver to provide their 4-digit confirmation code
+        Ask the receiver to provide their 6-digit confirmation code
       </Text>
 
       {/* OTP Input */}
@@ -258,10 +264,10 @@ const DeliveryConfirm = ({ navigation, route }) => {
       <TouchableOpacity
         style={[
           styles.confirmButton,
-          (otpString.length !== 4 || otpSubmitting) && styles.confirmButtonDisabled
+          (otpString.length !== ORDER_OTP_DIGITS || otpSubmitting) && styles.confirmButtonDisabled
         ]}
         onPress={handleConfirmOtp}
-        disabled={otpString.length !== 4 || otpSubmitting}
+        disabled={otpString.length !== ORDER_OTP_DIGITS || otpSubmitting}
       >
         <Text style={styles.confirmButtonText}>{otpSubmitting ? 'Verifying...' : 'Confirm OTP'}</Text>
       </TouchableOpacity>
@@ -426,16 +432,16 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   otpInput: {
-    width: 60,
-    height: 60,
+    width: 46,
+    height: 56,
     backgroundColor: colors.background,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: 12,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.textPrimary,
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     textAlign: 'center',
   },
   confirmButton: {

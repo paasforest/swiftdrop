@@ -3,8 +3,16 @@ const db = require('../database/connection');
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_LENGTH = 4;
 
+/** Login / phone verification — keep 4-digit for existing app flows. */
 function generateOTP() {
   return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+/** Pickup & delivery codes on orders / job-board orders — 6-digit. */
+const ORDER_OTP_LENGTH = 6;
+
+function generateOrderOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
 }
 
 async function storeOTP(userId, phone, code, purpose) {
@@ -38,8 +46,10 @@ async function validateOTP(phone, code, purpose) {
 
 module.exports = {
   generateOTP,
+  generateOrderOtp,
   storeOTP,
   validateOTP,
   OTP_LENGTH,
+  ORDER_OTP_LENGTH,
   OTP_EXPIRY_MINUTES,
 };

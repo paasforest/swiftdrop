@@ -20,10 +20,12 @@ import { colors, spacing, radius } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
 
+const ORDER_OTP_DIGITS = 6;
+
 const PickupConfirm = ({ navigation, route }) => {
   const orderId = route?.params?.orderId;
 
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otp, setOtp] = useState(() => Array.from({ length: ORDER_OTP_DIGITS }, () => ''));
   const [otpConfirmed, setOtpConfirmed] = useState(false);
   const [otpSubmitting, setOtpSubmitting] = useState(false);
   const [otpError, setOtpError] = useState(null);
@@ -47,7 +49,7 @@ const PickupConfirm = ({ navigation, route }) => {
     setOtp(newOtp);
 
     // Auto-focus next input
-    if (digit && index < 3) {
+    if (digit && index < ORDER_OTP_DIGITS - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -61,7 +63,7 @@ const PickupConfirm = ({ navigation, route }) => {
 
   const handleConfirmOtp = async () => {
     if (!orderId) return;
-    if (otpString.length !== 4) return;
+    if (otpString.length !== ORDER_OTP_DIGITS) return;
     if (otpSubmitting) return;
 
     setOtpSubmitting(true);
@@ -74,7 +76,13 @@ const PickupConfirm = ({ navigation, route }) => {
       setOtpConfirmed(true);
     } catch (e) {
       const msg = e.message || '';
-      if (msg.includes('Invalid OTP')) {
+      if (msg.includes('attempts remaining')) {
+        setOtpError(msg);
+      } else if (msg.includes('Incorrect OTP')) {
+        setOtpError('Incorrect code. Ask sender to check their SMS.');
+      } else if (msg.includes('Too many incorrect attempts')) {
+        setOtpError(msg);
+      } else if (msg.includes('Invalid OTP')) {
         setOtpError('Incorrect code. Ask sender to check their SMS.');
       } else {
         setOtpError(msg || 'OTP verification failed');
@@ -201,7 +209,7 @@ const PickupConfirm = ({ navigation, route }) => {
       </View>
 
       <Text style={styles.instructionText}>
-        Ask the sender to read you their 4-digit code
+        Ask the sender to read you their 6-digit code
       </Text>
 
       {/* OTP Input */}
@@ -228,10 +236,10 @@ const PickupConfirm = ({ navigation, route }) => {
       <TouchableOpacity
         style={[
           styles.confirmButton,
-          (otpString.length !== 4 || otpSubmitting) && styles.confirmButtonDisabled,
+          (otpString.length !== ORDER_OTP_DIGITS || otpSubmitting) && styles.confirmButtonDisabled,
         ]}
         onPress={handleConfirmOtp}
-        disabled={otpString.length !== 4 || otpSubmitting}
+        disabled={otpString.length !== ORDER_OTP_DIGITS || otpSubmitting}
       >
         <Text style={styles.confirmButtonText}>{otpSubmitting ? 'Verifying...' : 'Confirm OTP'}</Text>
       </TouchableOpacity>
@@ -365,16 +373,16 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   otpInput: {
-    width: 60,
-    height: 60,
+    width: 46,
+    height: 56,
     backgroundColor: colors.background,
     borderWidth: 2,
     borderColor: colors.border,
     borderRadius: radius.md,
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.textPrimary,
-    marginHorizontal: 8,
+    marginHorizontal: 4,
     textAlign: 'center',
   },
   confirmButton: {
