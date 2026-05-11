@@ -22,6 +22,7 @@ import DriverMatching from './src/screens/customer/DriverMatching';
 import TrackingWithMap from './src/screens/customer/TrackingWithMap';
 import OTPScreen from './src/screens/customer/OTPScreen';
 import DeliveryConfirmed from './src/screens/customer/DeliveryConfirmed';
+import RaiseDispute from './src/screens/customer/RaiseDispute';
 import OrderDetail from './src/screens/customer/OrderDetail';
 import OrderHistory from './src/screens/customer/OrderHistory';
 import Profile from './src/screens/customer/Profile';
@@ -128,6 +129,7 @@ export default function App() {
         <Stack.Screen name="Tracking" component={TrackingWithMap} />
         <Stack.Screen name="OTPScreen" component={OTPScreen} />
         <Stack.Screen name="DeliveryConfirmed" component={DeliveryConfirmed} />
+        <Stack.Screen name="RaiseDispute" component={RaiseDispute} options={{ headerShown: false }} />
         <Stack.Screen name="OrderDetail" component={OrderDetail} />
         <Stack.Screen name="OrderHistory" component={OrderHistory} />
         <Stack.Screen name="Profile" component={Profile} />

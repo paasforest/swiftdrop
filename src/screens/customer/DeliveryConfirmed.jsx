@@ -171,6 +171,17 @@ const DeliveryConfirmed = ({ navigation, route }) => {
   const displayFromAddress = orderDetails?.pickup_address || fromAddress;
   const displayToAddress = orderDetails?.dropoff_address || toAddress;
   const displayTotalPrice = orderDetails?.total_price ?? totalPrice;
+  const resolvedDriverIdForDispute =
+    orderDetails?.driver_id != null && Number.isFinite(Number(orderDetails.driver_id))
+      ? Number(orderDetails.driver_id)
+      : routeDriverId;
+  const resolvedJobIdForDispute =
+    routeJobId != null && Number.isFinite(Number(routeJobId))
+      ? Number(routeJobId)
+      : orderDetails?.delivery_job_id != null
+        ? Number(orderDetails.delivery_job_id)
+        : null;
+
   const displayTimeTaken = timeTaken || null;
   const displayBasePrice = orderDetails?.base_price ?? basePrice;
   const displayInsuranceFee = orderDetails?.insurance_fee ?? insuranceFee;
@@ -419,6 +430,20 @@ const DeliveryConfirmed = ({ navigation, route }) => {
               <TouchableOpacity style={styles.skipButton} onPress={handleDone} disabled={submitting}>
                 <Text style={styles.skipButtonText}>Skip for now</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.reportBtn}
+                onPress={() =>
+                  navigation.navigate('RaiseDispute', {
+                    orderId: orderId || null,
+                    jobId: resolvedJobIdForDispute,
+                    driverId: resolvedDriverIdForDispute,
+                    totalPrice: displayTotalPrice,
+                  })
+                }
+              >
+                <Text style={styles.reportBtnText}>Report a problem</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.submittedContainer}>
@@ -427,6 +452,20 @@ const DeliveryConfirmed = ({ navigation, route }) => {
               <Text style={styles.submittedSub}>
                 Your rating helps build trust in the community.
               </Text>
+
+              <TouchableOpacity
+                style={styles.reportBtn}
+                onPress={() =>
+                  navigation.navigate('RaiseDispute', {
+                    orderId: orderId || null,
+                    jobId: resolvedJobIdForDispute,
+                    driverId: resolvedDriverIdForDispute,
+                    totalPrice: displayTotalPrice,
+                  })
+                }
+              >
+                <Text style={styles.reportBtnText}>Report a problem</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -691,6 +730,15 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 14,
     color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  reportBtn: {
+    padding: 12,
+    alignItems: 'center',
+  },
+  reportBtnText: {
+    fontSize: 13,
+    color: '#FF3B30',
     fontWeight: '600',
   },
   doneButton: {

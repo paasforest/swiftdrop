@@ -1,176 +1,383 @@
 const db = require('../database/connection');
+const { queueSMS } = require('../services/smsQueue');
 const { sendPushNotification } = require('../services/notificationService');
-const { refundCustomer, releaseHeldDriverPayout, setPayoutHeld } = require('../services/paymentService');
+const { setPayoutHeld } = require('../services/paymentService');
+const { refundWallet, deductWallet, InsufficientWalletBalanceError } = require('../utils/wallet');
+const { releaseEscrow } = require('../utils/escrow');
 
-const DISPUTE_TYPES = new Set([
-  'lost_item',
-  'damaged',
+const VALID_REASONS = new Set([
   'not_delivered',
+  'damaged',
   'wrong_item',
+  'late_delivery',
   'driver_behaviour',
   'other',
 ]);
 
-function requireAdmin(user) {
-  if (!user || user.user_type !== 'admin') {
-    const err = new Error('Admins only');
-    err.statusCode = 403;
-    throw err;
-  }
+function mapLegacyDisputeType(t) {
+  const s = String(t || '');
+  if (s === 'lost_item') return 'other';
+  if (VALID_REASONS.has(s)) return s;
+  if (['damaged', 'not_delivered', 'wrong_item', 'driver_behaviour', 'other'].includes(s)) return s;
+  return 'other';
 }
 
-async function notifyAdminsNewDispute(orderNumber, orderId) {
+async function notifyAdminsPush(orderNumber, orderId) {
   try {
     const r = await db.query(`SELECT id FROM users WHERE user_type = 'admin' AND is_active = true`);
     const title = 'New dispute';
-    const body = `New dispute raised on order #${orderNumber || orderId}`;
+    const body = `Dispute raised on order #${orderNumber || orderId}`;
     for (const row of r.rows) {
       await sendPushNotification(row.id, title, body, {
         type: 'dispute_admin',
-        orderId: String(orderId),
+        orderId: String(orderId || ''),
       });
     }
   } catch (e) {
-    console.error('notifyAdminsNewDispute:', e.message);
+    console.error('notifyAdminsPush:', e.message);
   }
 }
 
 /** POST /api/disputes — customer */
-async function raiseDispute(req, res) {
+async function createDispute(req, res) {
   try {
     if (req.user.user_type !== 'customer') {
       return res.status(403).json({ error: 'Customers only' });
     }
 
-    const { order_id, dispute_type, description } = req.body;
-    const oid = parseInt(order_id, 10);
-    if (!Number.isInteger(oid)) {
-      return res.status(400).json({ error: 'order_id is required' });
-    }
-    if (!dispute_type || !DISPUTE_TYPES.has(String(dispute_type))) {
-      return res.status(400).json({ error: 'Invalid dispute_type' });
-    }
-    if (!description || String(description).trim().length < 20) {
-      return res.status(400).json({ error: 'description must be at least 20 characters' });
+    const customerId = req.user.id;
+    let { order_id, job_id, reason, description } = req.body || {};
+
+    if (!reason && req.body?.dispute_type) {
+      reason = mapLegacyDisputeType(req.body.dispute_type);
     }
 
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [oid]);
-    const order = orderRes.rows[0];
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.customer_id !== req.user.id) {
-      return res.status(403).json({ error: 'This order does not belong to you' });
-    }
-    if (!['delivered', 'completed'].includes(order.status)) {
-      return res.status(400).json({ error: 'Disputes can only be raised for delivered or completed orders' });
+    const oid = order_id != null ? parseInt(String(order_id), 10) : null;
+    const jid = job_id != null ? parseInt(String(job_id), 10) : null;
+
+    if (!Number.isInteger(oid) && !Number.isInteger(jid)) {
+      return res.status(400).json({ error: 'order_id or job_id is required' });
     }
 
-    const openRes = await db.query(
-      `SELECT id FROM disputes WHERE order_id = $1 AND status IN ('open','in_review')`,
-      [oid]
+    if (!reason || !VALID_REASONS.has(String(reason))) {
+      return res.status(400).json({ error: 'Invalid dispute reason' });
+    }
+
+    if (!description || String(description).trim().length < 10) {
+      return res.status(400).json({
+        error:
+          'Please describe the issue in more detail (minimum 10 characters)',
+      });
+    }
+
+    let record = null;
+    let resolvedOrderId = Number.isInteger(oid) ? oid : null;
+    let resolvedJobId = Number.isInteger(jid) ? jid : null;
+    let driverId = null;
+
+    if (Number.isInteger(oid)) {
+      const { rows } = await db.query(
+        `SELECT o.*,
+                u.phone AS driver_phone,
+                u.full_name AS driver_name
+         FROM orders o
+         LEFT JOIN users u ON u.id = o.driver_id
+         WHERE o.id = $1
+           AND o.customer_id = $2
+           AND o.status IN ('delivered', 'completed')`,
+        [oid, customerId]
+      );
+      if (!rows[0]) {
+        return res.status(404).json({
+          error: 'Order not found or not eligible for dispute',
+        });
+      }
+      record = rows[0];
+      driverId = record.driver_id ? Number(record.driver_id) : null;
+      resolvedJobId = resolvedJobId ?? (record.delivery_job_id != null ? Number(record.delivery_job_id) : null);
+    }
+
+    if (Number.isInteger(jid)) {
+      const { rows } = await db.query(
+        `SELECT j.*,
+                u.phone AS driver_phone,
+                u.full_name AS driver_name
+         FROM delivery_jobs j
+         LEFT JOIN users u ON u.id = j.selected_driver_id
+         WHERE j.id = $1
+           AND j.customer_id = $2
+           AND j.status IN ('delivered', 'completed')`,
+        [jid, customerId]
+      );
+      if (!rows[0]) {
+        return res.status(404).json({
+          error: 'Job not found or not eligible for dispute',
+        });
+      }
+      record = rows[0];
+      driverId = record.selected_driver_id ? Number(record.selected_driver_id) : null;
+      if (record.order_id) {
+        resolvedOrderId = Number(record.order_id);
+      }
+    }
+
+    if (!driverId || !Number.isFinite(driverId)) {
+      return res.status(400).json({ error: 'No driver assigned for this delivery' });
+    }
+
+    const deliveredAt =
+      record.delivery_confirmed_at || record.updated_at || record.created_at;
+    const hoursSinceDelivery =
+      (Date.now() - new Date(deliveredAt).getTime()) / (1000 * 60 * 60);
+
+    if (!Number.isFinite(hoursSinceDelivery) || hoursSinceDelivery > 24) {
+      return res.status(400).json({
+        error:
+          'Dispute window has closed. Disputes must be raised within 24 hours of delivery.',
+      });
+    }
+
+    const existing = await db.query(
+      `SELECT id FROM disputes d
+       WHERE d.customer_id = $1
+         AND d.status NOT IN ('resolved_refund','resolved_release','resolved_partial','closed')
+         AND (
+           ($2::integer IS NOT NULL AND d.order_id = $2)
+           OR ($3::integer IS NOT NULL AND d.job_id = $3)
+         )`,
+      [customerId, resolvedOrderId, resolvedJobId]
     );
-    if (openRes.rows.length > 0) {
-      return res.status(400).json({ error: 'A dispute is already open for this order' });
+
+    if (existing.rows[0]) {
+      return res.status(409).json({
+        error: 'A dispute already exists for this delivery',
+      });
     }
 
-    const ins = await db.query(
+    const { rows: disputeRows } = await db.query(
       `INSERT INTO disputes (
-        order_id, raised_by_user_id, dispute_type, description, status, updated_at
-      ) VALUES ($1, $2, $3, $4, 'open', NOW())
+        order_id, job_id,
+        customer_id, driver_id,
+        raised_by_user_id,
+        dispute_type,
+        reason,
+        description,
+        status,
+        auto_release_at,
+        updated_at
+      ) VALUES (
+        $1, $2,
+        $3, $4,
+        $3,
+        CASE WHEN $5 = 'late_delivery' THEN 'other' ELSE $5 END,
+        $5,
+        $6,
+        'open',
+        NOW() + INTERVAL '24 hours',
+        NOW()
+      )
       RETURNING *`,
-      [oid, req.user.id, dispute_type, String(description).trim()]
+      [
+        resolvedOrderId,
+        resolvedJobId,
+        customerId,
+        driverId,
+        String(reason),
+        String(description).trim(),
+      ]
     );
 
-    const dispute = ins.rows[0];
+    const dispute = disputeRows[0];
 
-    await setPayoutHeld(oid);
+    try {
+      await setPayoutHeld(resolvedOrderId);
+    } catch (e) {
+      console.warn('setPayoutHeld:', e?.message || e);
+    }
 
-    await notifyAdminsNewDispute(order.order_number, oid);
+    if (resolvedOrderId) {
+      await db.query(
+        `UPDATE payments
+         SET escrow_status = 'held',
+             updated_at = NOW()
+         WHERE order_id = $1`,
+        [resolvedOrderId]
+      );
+    }
 
-    return res.status(201).json(dispute);
+    await notifyAdminsPush(record.order_number, resolvedOrderId);
+
+    const { rows: adminRows } = await db.query(
+      `SELECT phone FROM users
+       WHERE user_type = 'admin' AND is_active = true
+       LIMIT 5`
+    );
+
+    const targetRef = resolvedOrderId || resolvedJobId;
+    for (const admin of adminRows) {
+      if (admin.phone) {
+        queueSMS(
+          admin.phone,
+          `SwiftDrop DISPUTE #${dispute.id}\n`
+            + `Reason: ${reason}\n`
+            + `Order/Job: ${targetRef}\n`
+            + 'Review in admin panel.',
+          `DISPUTE-${dispute.id}-ADMIN-${Date.now()}`
+        ).catch(() => {});
+      }
+    }
+
+    if (record.driver_phone) {
+      queueSMS(
+        record.driver_phone,
+        'SwiftDrop: A dispute has been '
+          + `raised for delivery #${targetRef}.\n`
+          + `Reason: ${reason}\n`
+          + 'An admin will review and contact you shortly.',
+        `DISPUTE-${dispute.id}-DRIVER-${Date.now()}`
+      ).catch(() => {});
+    }
+
+    return res.status(201).json({
+      success: true,
+      dispute_id: dispute.id,
+      message:
+        'Dispute raised successfully. An admin will review within 24 hours.',
+    });
   } catch (err) {
-    console.error('raiseDispute:', err);
-    return res.status(500).json({ error: 'Failed to raise dispute' });
+    console.error('createDispute:', err);
+    return res.status(500).json({ error: 'Could not create dispute' });
   }
 }
 
-/** GET /api/disputes/my — customer */
+/** GET /api/disputes/my — customer or driver */
 async function getMyDisputes(req, res) {
   try {
-    if (req.user.user_type !== 'customer') {
-      return res.status(403).json({ error: 'Customers only' });
-    }
+    const userId = req.user.id;
+    const isDriver = req.user.user_type === 'driver';
 
-    const rows = await db.query(
-      `SELECT d.*,
-        o.order_number, o.status AS order_status, o.pickup_address, o.dropoff_address,
-        o.total_price, o.driver_id, o.pickup_photo_url, o.delivery_photo_url,
-        o.created_at AS order_created_at
+    const { rows } = await db.query(
+      `SELECT
+         d.*,
+         o.pickup_address,
+         o.dropoff_address,
+         o.total_price,
+         o.order_number,
+         o.status AS order_status,
+         cu.full_name AS customer_name,
+         du.full_name AS driver_name
        FROM disputes d
-       INNER JOIN orders o ON o.id = d.order_id
-       WHERE d.raised_by_user_id = $1
-       ORDER BY d.created_at DESC`,
-      [req.user.id]
+       LEFT JOIN orders o ON o.id = d.order_id
+       LEFT JOIN users cu ON cu.id = d.customer_id
+       LEFT JOIN users du ON du.id = d.driver_id
+       WHERE ${isDriver ? 'd.driver_id = $1' : 'd.customer_id = $1'}
+       ORDER BY d.created_at DESC
+       LIMIT 25`,
+      [userId]
     );
-    return res.json({ disputes: rows.rows });
+
+    return res.json({ disputes: rows });
   } catch (err) {
     console.error('getMyDisputes:', err);
-    return res.status(500).json({
-      error: 'Something went wrong. Please try again.',
-    });
+    return res.status(500).json({ error: 'Could not load disputes' });
   }
 }
 
-/** GET /api/disputes — admin */
-async function getAllDisputes(req, res) {
+/** GET /api/disputes/admin — admin queue */
+async function getAdminDisputes(req, res) {
   try {
-    requireAdmin(req.user);
-    const status = req.query.status;
-    const params = [];
-    let where = '';
-    if (status) {
-      if (!['open', 'in_review', 'resolved'].includes(status)) {
-        return res.status(400).json({ error: 'Invalid status filter' });
-      }
-      params.push(status);
-      where = `WHERE d.status = $${params.length}`;
+    if (req.user.user_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
     }
 
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
-    params.push(limit);
-    const limitIdx = params.length;
+    const raw = req.query.status || 'open';
 
-    const rows = await db.query(
-      `SELECT d.*,
-        o.order_number, o.status AS order_status, o.total_price,
-        o.pickup_address, o.dropoff_address,
-        o.pickup_photo_url, o.delivery_photo_url,
-        o.pickup_confirmed_at, o.delivery_confirmed_at,
-        o.base_price, o.insurance_fee, o.commission_amount, o.driver_earnings,
-        c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone,
-        dr.full_name AS driver_name, dr.phone AS driver_phone
-       FROM disputes d
-       INNER JOIN orders o ON o.id = d.order_id
-       INNER JOIN users c ON c.id = o.customer_id
-       LEFT JOIN users dr ON dr.id = o.driver_id
-       ${where}
-       ORDER BY d.created_at DESC
-       LIMIT $${limitIdx}`,
-      params
-    );
-    return res.json({ disputes: rows.rows });
+    let rows;
+    if (raw === 'open') {
+      const r = await db.query(
+        `SELECT
+           d.*,
+           o.pickup_address,
+           o.dropoff_address,
+           o.total_price,
+           o.order_number,
+           o.pickup_photo_url,
+           o.delivery_photo_url,
+           o.pickup_otp,
+           o.delivery_otp,
+           o.pickup_otp_attempts,
+           o.delivery_otp_attempts,
+           cu.full_name AS customer_name,
+           cu.phone AS customer_phone,
+           du.full_name AS driver_name,
+           du.phone AS driver_phone,
+           COALESCE(dt.current_rating, 0) AS driver_rating,
+           COALESCE(dt.deliveries_completed, 0) AS driver_deliveries
+         FROM disputes d
+         LEFT JOIN orders o ON o.id = d.order_id
+         LEFT JOIN users cu ON cu.id = d.customer_id
+         LEFT JOIN users du ON du.id = d.driver_id
+         LEFT JOIN driver_tiers dt ON dt.driver_id = d.driver_id
+         WHERE d.status IN ('open', 'under_review')
+         ORDER BY d.created_at ASC
+         LIMIT 50`
+      );
+      rows = r.rows;
+    } else {
+      const r = await db.query(
+        `SELECT
+           d.*,
+           o.pickup_address,
+           o.dropoff_address,
+           o.total_price,
+           o.order_number,
+           o.pickup_photo_url,
+           o.delivery_photo_url,
+           o.pickup_otp,
+           o.delivery_otp,
+           o.pickup_otp_attempts,
+           o.delivery_otp_attempts,
+           cu.full_name AS customer_name,
+           cu.phone AS customer_phone,
+           du.full_name AS driver_name,
+           du.phone AS driver_phone,
+           COALESCE(dt.current_rating, 0) AS driver_rating,
+           COALESCE(dt.deliveries_completed, 0) AS driver_deliveries
+         FROM disputes d
+         LEFT JOIN orders o ON o.id = d.order_id
+         LEFT JOIN users cu ON cu.id = d.customer_id
+         LEFT JOIN users du ON du.id = d.driver_id
+         LEFT JOIN driver_tiers dt ON dt.driver_id = d.driver_id
+         WHERE d.status = $1
+         ORDER BY d.created_at ASC
+         LIMIT 50`,
+        [raw]
+      );
+      rows = r.rows;
+    }
+
+    return res.json({ disputes: rows });
   } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
-    console.error('getAllDisputes:', err);
-    return res.status(500).json({
-      error: 'Something went wrong. Please try again.',
-    });
+    console.error('getAdminDisputes:', err);
+    return res.status(500).json({ error: 'Could not load disputes' });
   }
 }
 
-/** GET /api/disputes/:id — admin */
+/** GET /api/disputes — admin list (legacy query ?status=open) */
+async function getAllDisputes(req, res) {
+  if (req.user.user_type !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  return getAdminDisputes(req, res);
+}
+
+/** GET /api/disputes/:id — admin detail */
 async function getDisputeDetail(req, res) {
   try {
-    requireAdmin(req.user);
+    if (req.user.user_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
@@ -178,14 +385,20 @@ async function getDisputeDetail(req, res) {
       `SELECT
         d.id AS dispute_id,
         d.order_id,
+        d.job_id,
+        d.customer_id,
+        d.driver_id,
         d.raised_by_user_id,
         d.dispute_type,
+        d.reason,
         d.description,
         d.status AS dispute_status,
         d.resolution,
         d.resolution_notes,
+        d.admin_notes,
         d.refund_amount,
         d.resolved_by_admin_id,
+        d.admin_id,
         d.resolved_at,
         d.created_at AS dispute_created_at,
         d.updated_at AS dispute_updated_at,
@@ -201,45 +414,53 @@ async function getDisputeDetail(req, res) {
         o.total_price,
         o.base_price,
         o.driver_earnings,
-        o.driver_id,
+        o.driver_id AS order_driver_id,
         c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone,
         dr.full_name AS driver_name, dr.email AS driver_email, dr.phone AS driver_phone
        FROM disputes d
-       INNER JOIN orders o ON o.id = d.order_id
-       INNER JOIN users c ON c.id = o.customer_id
-       LEFT JOIN users dr ON dr.id = o.driver_id
+       LEFT JOIN orders o ON o.id = d.order_id
+       INNER JOIN users c ON c.id = d.customer_id
+       LEFT JOIN users dr ON dr.id = d.driver_id
        WHERE d.id = $1`,
       [id]
     );
     if (dRes.rows.length === 0) return res.status(404).json({ error: 'Dispute not found' });
 
     const row = dRes.rows[0];
-    const order = {
-      id: row.order_pk,
-      order_number: row.order_number,
-      status: row.order_status,
-      pickup_address: row.pickup_address,
-      dropoff_address: row.dropoff_address,
-      pickup_photo_url: row.pickup_photo_url,
-      delivery_photo_url: row.delivery_photo_url,
-      pickup_confirmed_at: row.pickup_confirmed_at,
-      delivery_confirmed_at: row.delivery_confirmed_at,
-      total_price: row.total_price,
-      base_price: row.base_price,
-      driver_earnings: row.driver_earnings,
-    };
+    const order = row.order_pk
+      ? {
+          id: row.order_pk,
+          order_number: row.order_number,
+          status: row.order_status,
+          pickup_address: row.pickup_address,
+          dropoff_address: row.dropoff_address,
+          pickup_photo_url: row.pickup_photo_url,
+          delivery_photo_url: row.delivery_photo_url,
+          pickup_confirmed_at: row.pickup_confirmed_at,
+          delivery_confirmed_at: row.delivery_confirmed_at,
+          total_price: row.total_price,
+          base_price: row.base_price,
+          driver_earnings: row.driver_earnings,
+        }
+      : null;
 
     const dispute = {
       id: row.dispute_id,
       order_id: row.order_id,
+      job_id: row.job_id,
+      customer_id: row.customer_id,
+      driver_id: row.driver_id,
       raised_by_user_id: row.raised_by_user_id,
       dispute_type: row.dispute_type,
+      reason: row.reason,
       description: row.description,
       status: row.dispute_status,
       resolution: row.resolution,
       resolution_notes: row.resolution_notes,
+      admin_notes: row.admin_notes,
       refund_amount: row.refund_amount,
       resolved_by_admin_id: row.resolved_by_admin_id,
+      admin_id: row.admin_id,
       resolved_at: row.resolved_at,
       created_at: row.dispute_created_at,
       updated_at: row.dispute_updated_at,
@@ -262,7 +483,6 @@ async function getDisputeDetail(req, res) {
         : null,
     });
   } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('getDisputeDetail:', err);
     return res.status(500).json({
       error: 'Something went wrong. Please try again.',
@@ -270,184 +490,366 @@ async function getDisputeDetail(req, res) {
   }
 }
 
-/** PATCH /api/disputes/:id/resolve — admin */
+async function maybeUpdateInsurancePool(client, orderId, amount) {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0 || !orderId) return;
+  await client.query(
+    `UPDATE insurance_pool
+     SET claim_amount = $1,
+         claim_status = 'claimed',
+         claimed_at = NOW()
+     WHERE order_id = $2`,
+    [amt, orderId]
+  );
+}
+
+/** POST /api/disputes/:id/resolve — admin */
 async function resolveDispute(req, res) {
-  try {
-    requireAdmin(req.user);
-    const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ error: 'Invalid id' });
-    }
+  const adminId = req.user?.id;
+  if (req.user?.user_type !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
 
-    const decisionRaw = req.body.decision ?? req.body.resolution;
-    const notesInput =
-      req.body.resolution_notes != null
-        ? String(req.body.resolution_notes)
-        : req.body.resolution_note != null
-          ? String(req.body.resolution_note)
-          : '';
+  const disputeId = Number(req.params.id);
+  if (!Number.isFinite(disputeId)) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
 
-    if (decisionRaw === 'escalate') {
-      const esc = await db.query(
-        `UPDATE disputes SET
-          status = 'in_review',
-          resolution_notes = COALESCE(NULLIF(TRIM($1::text), ''), resolution_notes),
-          updated_at = NOW()
-         WHERE id = $2 AND status = 'open'
-         RETURNING *`,
-        [notesInput, id]
-      );
-      if (esc.rows.length === 0) {
-        return res.status(400).json({ error: 'Dispute not found or not open for escalation' });
-      }
-      return res.json(esc.rows[0]);
-    }
-  } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
-    console.error('resolveDispute:', err);
-    return res.status(500).json({
-      error: 'Something went wrong. Please try again.',
+  let resolution = req.body?.resolution ?? req.body?.decision;
+  const refund_amount = req.body?.refund_amount;
+  const admin_notes = req.body?.admin_notes ?? req.body?.resolution_notes ?? req.body?.resolution_note;
+  const resolution_reason = req.body?.resolution_reason;
+
+  if (resolution === 'refund_customer') resolution = 'refund';
+  if (resolution === 'no_refund') resolution = 'release';
+  if (resolution === 'partial_refund') resolution = 'partial';
+
+  const validResolutions = ['refund', 'release', 'partial'];
+  if (!validResolutions.includes(resolution)) {
+    return res.status(400).json({
+      error: 'Invalid resolution. Must be refund, release, or partial',
     });
   }
 
-  const id = parseInt(req.params.id, 10);
-  const decisionRaw = req.body.decision ?? req.body.resolution;
-  const notesInput =
-    req.body.resolution_notes != null
-      ? String(req.body.resolution_notes)
-      : req.body.resolution_note != null
-        ? String(req.body.resolution_note)
-        : '';
-
-  let resolution = decisionRaw;
-  if (resolution === 'refund') resolution = 'refund_customer';
-  const { refund_amount } = req.body;
-  const resolution_notes = notesInput || null;
-
-  if (!resolution || !['refund_customer', 'no_refund', 'partial_refund'].includes(resolution)) {
-    return res.status(400).json({ error: 'resolution must be refund_customer, no_refund, or partial_refund' });
-  }
-
-  const client = await db.pool.connect();
+  const client = await db.getClient();
   try {
-    requireAdmin(req.user);
-
     await client.query('BEGIN');
 
-    const dRes = await client.query(
-      `SELECT d.*, o.order_number, o.customer_id, o.driver_id, o.total_price
+    const { rows: dispRows } = await client.query(
+      `SELECT d.*,
+              o.total_price,
+              o.driver_earnings,
+              o.customer_id AS order_customer_id,
+              o.order_number,
+              p.escrow_status AS pay_escrow_status
        FROM disputes d
-       INNER JOIN orders o ON o.id = d.order_id
-       WHERE d.id = $1 FOR UPDATE`,
-      [id]
+       LEFT JOIN orders o ON o.id = d.order_id
+       LEFT JOIN payments p ON p.order_id = d.order_id
+       WHERE d.id = $1
+         AND d.status IN ('open', 'under_review')
+       FOR UPDATE`,
+      [disputeId]
     );
-    if (dRes.rows.length === 0) {
+
+    if (!dispRows[0]) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Dispute not found' });
-    }
-    const drow = dRes.rows[0];
-    if (drow.status === 'resolved') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Dispute already resolved' });
+      return res.status(404).json({
+        error: 'Dispute not found or already resolved',
+      });
     }
 
-    const orderId = drow.order_id;
-    const totalPrice = parseFloat(drow.total_price) || 0;
+    const dispute = dispRows[0];
+    const orderId = dispute.order_id ? Number(dispute.order_id) : null;
+    const customerId = Number(dispute.customer_id);
+    const driverUserId = Number(dispute.driver_id);
+    const totalPrice = Math.round(Number(dispute.total_price || 0) * 100) / 100;
+    const driverEarnings = Math.round(Number(dispute.driver_earnings || 0) * 100) / 100;
+    const escrowWasReleased = dispute.pay_escrow_status === 'released';
 
-    let storedRefundAmount = null;
+    if (!orderId) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'This dispute is not linked to an order; resolve payouts manually.',
+      });
+    }
 
-    if (resolution === 'refund_customer') {
-      await refundCustomer(orderId, totalPrice, client);
-      storedRefundAmount = totalPrice;
-    } else if (resolution === 'partial_refund') {
-      const ra = parseFloat(refund_amount);
-      if (!Number.isFinite(ra) || ra <= 0 || ra > totalPrice) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'refund_amount must be between 0 and order total' });
+    if (resolution === 'refund') {
+      const refundAmt = totalPrice;
+      if (refundAmt > 0) {
+        await refundWallet(
+          client,
+          customerId,
+          refundAmt,
+          `DISPUTE-REFUND-${disputeId}`
+        );
       }
-      await refundCustomer(orderId, ra, client);
-      storedRefundAmount = ra;
-    } else {
-      await releaseHeldDriverPayout(orderId, client);
-    }
 
-    if (resolution !== 'no_refund') {
-      await releaseHeldDriverPayout(orderId, client);
-    }
+      if (escrowWasReleased && driverEarnings > 0) {
+        try {
+          await deductWallet(
+            client,
+            driverUserId,
+            Math.min(driverEarnings, refundAmt),
+            `DISPUTE-CLAWBACK-${disputeId}`
+          );
+        } catch (wErr) {
+          if (!(wErr instanceof InsufficientWalletBalanceError)) throw wErr;
+          console.warn(
+            'resolveDispute: driver wallet insufficient for clawback',
+            disputeId,
+            wErr.message
+          );
+        }
+      }
 
-    if (resolution === 'refund_customer' || resolution === 'partial_refund') {
       await client.query(
-        `UPDATE insurance_pool
-         SET claim_amount = $1,
-             claim_status = 'claimed',
-             claimed_at = NOW()
-         WHERE order_id = $2`,
-        [storedRefundAmount, orderId]
+        `UPDATE payments
+         SET escrow_status = 'refunded',
+             updated_at = NOW()
+         WHERE order_id = $1`,
+        [orderId]
       );
+
+      await client.query(
+        `UPDATE orders
+         SET status = 'disputed_refunded',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [orderId]
+      );
+
+      await maybeUpdateInsurancePool(client, orderId, refundAmt);
+    } else if (resolution === 'release') {
+      await releaseEscrow(client, orderId, null);
+
+      await client.query(
+        `UPDATE orders
+         SET status = 'completed',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [orderId]
+      );
+    } else if (resolution === 'partial') {
+      const partialRefund = Math.round(Number(refund_amount) * 100) / 100;
+      if (!Number.isFinite(partialRefund) || partialRefund <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'Refund amount required for partial resolution',
+        });
+      }
+
+      if (partialRefund > totalPrice) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Refund exceeds order total' });
+      }
+
+      await refundWallet(
+        client,
+        customerId,
+        partialRefund,
+        `DISPUTE-PARTIAL-${disputeId}`
+      );
+
+      const driverNet = Math.max(
+        0,
+        Math.round((driverEarnings - partialRefund) * 100) / 100
+      );
+
+      if (!escrowWasReleased && driverNet > 0) {
+        await client.query(`SELECT id FROM users WHERE id = $1 FOR UPDATE`, [
+          driverUserId,
+        ]);
+        await client.query(
+          `UPDATE users
+           SET wallet_balance = wallet_balance + $1::numeric,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [driverNet, driverUserId]
+        );
+        const { rows: balRows } = await client.query(
+          `SELECT wallet_balance FROM users WHERE id = $1`,
+          [driverUserId]
+        );
+        const nb = Math.round(Number(balRows[0]?.wallet_balance || 0) * 100) / 100;
+        await client.query(
+          `INSERT INTO wallet_transactions (
+             user_id, type, amount, reference, description, balance_after
+           ) VALUES ($1, 'credit', $2::numeric, $3, $4, $5::numeric)`,
+          [
+            driverUserId,
+            driverNet,
+            `DISPUTE-PARTIAL-DRIVER-${disputeId}`,
+            'Partial dispute resolution — driver share',
+            nb,
+          ]
+        );
+      }
+
+      if (escrowWasReleased && partialRefund > 0) {
+        try {
+          await deductWallet(
+            client,
+            driverUserId,
+            Math.min(partialRefund, driverEarnings),
+            `DISPUTE-PARTIAL-CLAWBACK-${disputeId}`
+          );
+        } catch (wErr) {
+          if (!(wErr instanceof InsufficientWalletBalanceError)) throw wErr;
+          console.warn('resolveDispute: partial clawback skipped', wErr.message);
+        }
+      }
+
+      await client.query(
+        `UPDATE payments
+         SET escrow_status = 'released',
+             updated_at = NOW()
+         WHERE order_id = $1`,
+        [orderId]
+      );
+
+      await maybeUpdateInsurancePool(client, orderId, partialRefund);
     }
 
-    const upd = await client.query(
-      `UPDATE disputes SET
-        status = 'resolved',
-        resolution = $1,
-        resolution_notes = $2,
-        refund_amount = COALESCE($3, refund_amount),
-        resolved_by_admin_id = $4,
-        resolved_at = NOW(),
-        updated_at = NOW()
-       WHERE id = $5
-       RETURNING *`,
+    const statusMap = {
+      refund: 'resolved_refund',
+      release: 'resolved_release',
+      partial: 'resolved_partial',
+    };
+
+    const notesVal =
+      admin_notes != null && String(admin_notes).trim()
+        ? String(admin_notes).trim()
+        : null;
+    const refundStored =
+      resolution === 'refund'
+        ? totalPrice
+        : resolution === 'partial'
+          ? Math.round(Number(refund_amount) * 100) / 100
+          : null;
+
+    await client.query(
+      `UPDATE disputes
+       SET status = $1,
+           admin_id = $2,
+           resolved_by_admin_id = $2,
+           admin_notes = COALESCE($3, admin_notes),
+           refund_amount = COALESCE($4::numeric, refund_amount),
+           resolution_reason = COALESCE($5, resolution_reason),
+           resolution_notes = COALESCE($3, resolution_notes),
+           resolved_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $6`,
       [
-        resolution,
-        resolution_notes != null ? String(resolution_notes) : null,
-        storedRefundAmount,
-        req.user.id,
-        id,
+        statusMap[resolution],
+        adminId,
+        notesVal,
+        refundStored,
+        resolution_reason != null ? String(resolution_reason) : null,
+        disputeId,
       ]
     );
 
     await client.query('COMMIT');
 
-    const updated = upd.rows[0];
-    const orderNum = drow.order_number || orderId;
+    const { rows: parties } = await db.query(
+      `SELECT
+         cu.phone AS customer_phone,
+         cu.full_name AS customer_name,
+         du.phone AS driver_phone,
+         du.full_name AS driver_name
+       FROM disputes d
+       JOIN users cu ON cu.id = d.customer_id
+       JOIN users du ON du.id = d.driver_id
+       WHERE d.id = $1`,
+      [disputeId]
+    );
+    const party = parties[0];
 
-    if (drow.customer_id) {
+    if (party?.customer_phone) {
+      const msg =
+        resolution === 'refund'
+          ? `SwiftDrop: Your dispute #${disputeId} has been resolved. Full refund of R${totalPrice.toFixed(
+              2
+            )} added to your wallet.`
+          : resolution === 'partial'
+            ? `SwiftDrop: Your dispute #${disputeId} has been resolved. Partial refund of R${Number(
+                refund_amount
+              ).toFixed(2)} added to your wallet.`
+            : `SwiftDrop: Your dispute #${disputeId} has been reviewed. Payment has been released to the driver.`;
+
+      queueSMS(
+        party.customer_phone,
+        msg,
+        `DISPUTE-${disputeId}-CUST-RESOLVED-${Date.now()}`
+      ).catch(() => {});
+    }
+
+    if (party?.driver_phone) {
+      const partialRefundNum = Number(refund_amount);
+      const driverShare =
+        resolution === 'partial'
+          ? Math.max(0, driverEarnings - partialRefundNum)
+          : 0;
+      const msg =
+        resolution === 'release'
+          ? `SwiftDrop: Dispute #${disputeId} resolved in your favour. Payment released to your wallet.`
+          : resolution === 'partial'
+            ? `SwiftDrop: Dispute #${disputeId} resolved. Your net share after adjustment: R${driverShare.toFixed(
+                2
+              )}.`
+            : `SwiftDrop: Dispute #${disputeId} resolved. Refund issued to customer.`;
+
+      queueSMS(
+        party.driver_phone,
+        msg,
+        `DISPUTE-${disputeId}-DRV-RESOLVED-${Date.now()}`
+      ).catch(() => {});
+    }
+
+    if (customerId) {
       await sendPushNotification(
-        drow.customer_id,
+        customerId,
         'Dispute resolved',
-        `Your dispute #${id} has been resolved`,
-        { type: 'dispute_resolved', disputeId: String(id), orderId: String(orderId) }
+        `Your dispute #${disputeId} has been resolved`,
+        { type: 'dispute_resolved', disputeId: String(disputeId), orderId: String(orderId) }
       );
     }
-    if (drow.driver_id) {
+    if (driverUserId) {
       await sendPushNotification(
-        drow.driver_id,
+        driverUserId,
         'Dispute resolved',
-        `Dispute resolved on order #${orderNum}`,
-        { type: 'dispute_resolved_driver', disputeId: String(id), orderId: String(orderId) }
+        `Dispute #${disputeId} on order #${dispute.order_number || orderId}`,
+        {
+          type: 'dispute_resolved_driver',
+          disputeId: String(disputeId),
+          orderId: String(orderId),
+        }
       );
     }
 
-    return res.json(updated);
+    return res.json({
+      success: true,
+      resolution,
+      dispute_id: disputeId,
+      message: 'Dispute resolved successfully',
+    });
   } catch (err) {
     try {
       await client.query('ROLLBACK');
     } catch (_) {
       /* ignore */
     }
-    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('resolveDispute:', err);
-    return res.status(500).json({
-      error: 'Something went wrong. Please try again.',
-    });
+    return res.status(500).json({ error: 'Could not resolve dispute' });
   } finally {
     client.release();
   }
 }
 
 module.exports = {
-  raiseDispute,
+  createDispute,
   getMyDisputes,
+  getAdminDisputes,
   getAllDisputes,
   getDisputeDetail,
   resolveDispute,

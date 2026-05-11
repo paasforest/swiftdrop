@@ -156,6 +156,56 @@ cron.schedule('*/5 * * * *', () => {
   );
 });
 
+cron.schedule('30 * * * *', async () => {
+  try {
+    const { rows: orders } = await db.query(`
+      SELECT o.id
+      FROM orders o
+      JOIN payments p ON p.order_id = o.id
+      WHERE o.status = 'delivered'
+        AND p.escrow_status = 'held'
+        AND o.delivery_confirmed_at IS NOT NULL
+        AND o.delivery_confirmed_at < NOW() - INTERVAL '24 hours'
+        AND NOT EXISTS (
+          SELECT 1 FROM disputes d
+          WHERE d.order_id = o.id
+            AND d.status IN ('open', 'under_review')
+        )
+      LIMIT 20
+    `);
+
+    const { releaseEscrow } = require('./src/utils/escrow');
+
+    for (const row of orders) {
+      const client = await db.getClient();
+      try {
+        await client.query('BEGIN');
+        await releaseEscrow(client, row.id, null);
+        await client.query(
+          `UPDATE orders
+           SET status = 'completed',
+               updated_at = NOW()
+           WHERE id = $1`,
+          [row.id]
+        );
+        await client.query('COMMIT');
+        console.log(`[disputes] Auto-released escrow for order ${row.id}`);
+      } catch (err) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_) {
+          /* ignore */
+        }
+        console.error('[disputes] Auto-release failed:', row.id, err?.message || err);
+      } finally {
+        client.release();
+      }
+    }
+  } catch (err) {
+    console.error('[disputes] Auto-release cron error:', err);
+  }
+});
+
 cron.schedule('0 * * * *', async () => {
   try {
     const { rows } = await db.query(`

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuth } from '../../authStore';
-import { getJson, patchJson } from '../../apiClient';
+import { getJson, postJson } from '../../apiClient';
 import { colors, spacing, radius, typography, shadows } from '../../theme/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -21,8 +21,11 @@ const { width, height } = Dimensions.get('window');
 function statusLabel(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'open') return 'Open';
-  if (s === 'in_review') return 'In Review';
-  if (s === 'resolved') return 'Resolved';
+  if (s === 'under_review' || s === 'in_review') return 'In Review';
+  if (s === 'resolved_refund' || s === 'resolved_release' || s === 'resolved_partial' || s === 'resolved') {
+    return 'Resolved';
+  }
+  if (s === 'closed') return 'Closed';
   return s || '—';
 }
 
@@ -64,7 +67,7 @@ const DisputeResolution = () => {
     setLoading(true);
     setListError(null);
     try {
-      const data = await getJson('/api/disputes?status=open&limit=50', { token: auth.token });
+      const data = await getJson('/api/disputes/admin?status=open', { token: auth.token });
       setDisputes(Array.isArray(data.disputes) ? data.disputes : []);
     } catch (err) {
       console.error('Disputes fetch:', err);
@@ -103,14 +106,14 @@ const DisputeResolution = () => {
     setSending(true);
     try {
       const body = {
-        decision,
-        resolution_note: notes.trim() || undefined,
+        resolution: decision,
+        admin_notes: notes.trim() || undefined,
       };
-      if (decision === 'partial_refund') {
+      if (decision === 'partial') {
         const total = parseFloat(selectedDispute.total_price) || 0;
         body.refund_amount = Math.max(1, Math.round(total / 2));
       }
-      await patchJson(`/api/disputes/${selectedDispute.id}/resolve`, body, { token: auth.token });
+      await postJson(`/api/disputes/${selectedDispute.id}/resolve`, body, { token: auth.token });
       Alert.alert('Success', 'Dispute updated.');
       handleCloseDetail();
       await fetchDisputes();
@@ -168,7 +171,7 @@ const DisputeResolution = () => {
               <View style={styles.disputeHeader}>
                 <View style={styles.disputeInfo}>
                   <Text style={styles.disputeId}>#{dispute.id}</Text>
-                  <Text style={styles.disputeReason}>{dispute.dispute_type || 'Dispute'}</Text>
+                  <Text style={styles.disputeReason}>{dispute.reason || dispute.dispute_type || 'Dispute'}</Text>
                   <Text style={styles.disputeDetails}>
                     {(dispute.customer_name || 'Customer') + ' vs ' + (dispute.driver_name || 'Driver')}
                   </Text>
@@ -180,7 +183,10 @@ const DisputeResolution = () => {
               </View>
               {urgency !== 'Resolved' && (
                 <View style={styles.timerContainer}>
-                  <Text style={styles.timerText}>Order: {dispute.order_number || dispute.order_id}</Text>
+                <Text style={styles.timerText}>
+                  Order: {dispute.order_number || dispute.order_id || '—'}
+                  {dispute.job_id ? ` · Job: ${dispute.job_id}` : ''}
+                </Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -325,7 +331,9 @@ const DisputeResolution = () => {
   };
 
   const renderDecision = () => {
-    if (!selectedDispute || String(selectedDispute.status).toLowerCase() === 'resolved') return null;
+    if (!selectedDispute) return null;
+    const st = String(selectedDispute.status || '').toLowerCase();
+    if (st.startsWith('resolved') || st === 'closed') return null;
 
     return (
       <View style={styles.decisionSection}>
@@ -333,10 +341,9 @@ const DisputeResolution = () => {
 
         <View style={styles.decisionOptions}>
           {[
-            { value: 'refund', label: 'Refund Customer' },
-            { value: 'no_refund', label: 'No Refund' },
-            { value: 'partial_refund', label: 'Partial Refund' },
-            { value: 'escalate', label: 'Escalate' },
+            { value: 'refund', label: 'Refund customer (full)' },
+            { value: 'release', label: 'Release payment to driver' },
+            { value: 'partial', label: 'Partial refund (50%)' },
           ].map((option) => (
             <TouchableOpacity
               key={option.value}

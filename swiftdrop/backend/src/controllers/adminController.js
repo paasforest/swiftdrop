@@ -47,7 +47,7 @@ async function dashboardStats(req, res) {
         SELECT COALESCE(SUM(amount), 0)::numeric AS s FROM payments
         WHERE (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
       `),
-      db.query(`SELECT COUNT(*)::int AS c FROM disputes WHERE status = 'open'`),
+      db.query(`SELECT COUNT(*)::int AS c FROM disputes WHERE status IN ('open','under_review')`),
       db.query(
         `SELECT COUNT(*)::int AS c FROM driver_profiles WHERE verification_status = 'pending'`
       ),
@@ -315,7 +315,7 @@ async function listAdminDeliveries(req, res) {
       } else if (statusFilter === 'completed') {
         whereParts.push(`o.status IN ('delivered','completed')`);
       } else if (statusFilter === 'disputed') {
-        whereParts.push(`o.status = 'disputed'`);
+        whereParts.push(`o.status IN ('disputed','disputed_refunded')`);
       } else if (statusFilter === 'cancelled') {
         whereParts.push(`o.status = 'cancelled'`);
       }
