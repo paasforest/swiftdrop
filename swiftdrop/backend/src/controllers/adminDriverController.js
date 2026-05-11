@@ -72,7 +72,11 @@ async function listDriverApplications(req, res) {
     return res.json({ drivers: rows.rows });
   } catch (err) {
     const statusCode = err.statusCode || 500;
-    return res.status(statusCode).json({ error: err.message || 'Failed to list drivers' });
+    const payload =
+      statusCode >= 500
+        ? 'Something went wrong. Please try again.'
+        : (statusCode === 403 ? 'Forbidden' : (err.message || 'Failed to list drivers'));
+    return res.status(statusCode).json({ error: payload });
   }
 }
 
@@ -132,7 +136,11 @@ async function getDriverApplicationDetail(req, res) {
     });
   } catch (err) {
     const statusCode = err.statusCode || 500;
-    return res.status(statusCode).json({ error: err.message || 'Failed to load driver' });
+    const payload =
+      statusCode >= 500
+        ? 'Something went wrong. Please try again.'
+        : (statusCode === 403 ? 'Forbidden' : (err.message || 'Failed to load driver'));
+    return res.status(statusCode).json({ error: payload });
   }
 }
 
@@ -168,7 +176,7 @@ async function approveDriver(req, res) {
     return res.json({ message: 'Driver approved' });
   } catch (err) {
     console.error('approveDriver:', err);
-    return res.status(500).json({ error: err.message || 'Approval failed' });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 
@@ -218,7 +226,7 @@ async function rejectDriver(req, res) {
     return res.json({ message: 'Application rejected' });
   } catch (err) {
     console.error('rejectDriver:', err);
-    return res.status(500).json({ error: err.message || 'Reject failed' });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 
@@ -265,7 +273,11 @@ async function updateDriverVehicle(req, res) {
     return res.json({ driver_profile: result.rows[0] });
   } catch (err) {
     const statusCode = err.statusCode || 500;
-    return res.status(statusCode).json({ error: err.message || 'Failed to update vehicle details' });
+    const payload =
+      statusCode >= 500
+        ? 'Something went wrong. Please try again.'
+        : (statusCode === 403 ? 'Forbidden' : (err.message || 'Failed to update vehicle details'));
+    return res.status(statusCode).json({ error: payload });
   }
 }
 

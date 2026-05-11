@@ -8,6 +8,11 @@ const { sendPushNotification } = require('../services/notificationService');
 const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 const { hasAvailableSlots } = require('../services/slotService');
+const {
+  deductWallet,
+  refundWallet,
+  InsufficientWalletBalanceError,
+} = require('../utils/wallet');
 
 const VALUE_COMPONENT_BY_PARCEL_VALUE = [
   { max: 199.999, value: 0 }, // Under R200
@@ -236,24 +241,23 @@ async function createOrder(req, res) {
     const orderNumber = generateOrderNumber();
     const customerId = req.user.id;
 
-    const client = await db.pool.connect();
+    const client = await db.getClient();
     try {
       await client.query('BEGIN');
 
       if (payment_method === 'wallet') {
-        const balRes = await client.query(
-          `SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE`,
-          [customerId]
-        );
-        const row = balRes.rows[0];
-        if (!row) {
+        try {
+          await deductWallet(client, customerId, totalPrice, `ORDER-${orderNumber}`);
+        } catch (wErr) {
           await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'User not found' });
-        }
-        const balance = parseFloat(row.wallet_balance) || 0;
-        if (balance < totalPrice) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'Insufficient wallet balance' });
+          if (wErr instanceof InsufficientWalletBalanceError) {
+            return res.status(400).json({
+              error: wErr.message,
+              required: wErr.required,
+              available: wErr.available,
+            });
+          }
+          throw wErr;
         }
       }
 
@@ -283,18 +287,6 @@ async function createOrder(req, res) {
          VALUES ($1, $2, $3, 'held')`,
         [order.id, totalPrice, payment_method]
       );
-
-      if (payment_method === 'wallet') {
-        await client.query(
-          `UPDATE users SET wallet_balance = wallet_balance - $1, updated_at = NOW() WHERE id = $2`,
-          [totalPrice, customerId]
-        );
-        await client.query(
-          `INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
-           VALUES ($1, 'debit', $2, $3, 'Order payment')`,
-          [customerId, totalPrice, orderNumber]
-        );
-      }
 
       // Intercity trip bookings: assign route owner immediately (skip job-offer matching).
       if (isIntercity && assigned_driver_route_id) {
@@ -381,7 +373,7 @@ async function createOrder(req, res) {
     }
   } catch (err) {
     console.error('createOrder:', err);
-    return res.status(500).json({ error: 'Order creation failed' });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 
@@ -552,33 +544,67 @@ async function getCustomerOrders(req, res) {
 async function cancelOrder(req, res) {
   try {
     const { id } = req.params;
-    const orderRes = await db.query(`SELECT * FROM orders WHERE id = $1`, [id]);
-    const order = orderRes.rows[0];
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.customer_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-    if (!['pending', 'matching', 'unmatched'].includes(order.status)) {
-      return res.status(400).json({ error: 'Order cannot be cancelled in current status' });
-    }
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
 
-    await db.query(`UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [id]);
-    const payRes = await db.query(`SELECT payment_method FROM payments WHERE order_id = $1`, [id]);
-    const payment = payRes.rows[0];
-    if (payment) {
-      await db.query(
-        `UPDATE payments SET escrow_status = 'refunded', updated_at = NOW() WHERE order_id = $1`,
+      const orderRes = await client.query(
+        `SELECT * FROM orders WHERE id = $1 FOR UPDATE`,
         [id]
       );
-      if (payment.payment_method === 'wallet') {
-        await db.query(
-          `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2`,
-          [order.total_price, order.customer_id]
-        );
+      const order = orderRes.rows[0];
+      if (!order) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Order not found' });
       }
+      if (order.customer_id !== req.user.id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (!['pending', 'matching', 'unmatched'].includes(order.status)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Order cannot be cancelled in current status' });
+      }
+
+      await client.query(
+        `UPDATE orders SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+
+      const payRes = await client.query(
+        `SELECT payment_method FROM payments WHERE order_id = $1`,
+        [id]
+      );
+      const payment = payRes.rows[0];
+
+      if (payment) {
+        await client.query(
+          `UPDATE payments SET escrow_status = 'refunded', updated_at = NOW() WHERE order_id = $1`,
+          [id]
+        );
+        if (payment.payment_method === 'wallet') {
+          const total = Number(order.total_price);
+          if (Number.isFinite(total) && total > 0) {
+            await refundWallet(client, order.customer_id, total, `ORDER-CANCEL-${id}`);
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+      return res.json({ message: 'Order cancelled', refund: order.total_price });
+    } catch (inner) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {
+        /* ignore */
+      }
+      throw inner;
+    } finally {
+      client.release();
     }
-    return res.json({ message: 'Order cancelled', refund: order.total_price });
   } catch (err) {
-    console.error('cancelOrder:', err);
-    return res.status(500).json({ error: 'Cancel failed' });
+    console.error('cancelOrder:', err.message, err.stack);
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 
@@ -718,7 +744,7 @@ async function acceptOrder(req, res) {
     );
     if (offerRes.rows.length === 0) return res.status(400).json({ error: 'No valid offer' });
 
-    const client = await db.pool.connect();
+    const client = await db.getClient();
     try {
       await client.query('BEGIN');
       await client.query(

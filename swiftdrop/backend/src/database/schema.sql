@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   amount NUMERIC(12,2) NOT NULL,
   reference VARCHAR(255),
   description TEXT,
+  balance_after NUMERIC(12,2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

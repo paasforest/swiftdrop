@@ -1,6 +1,8 @@
 const express = require('express');
 const { auth } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
+const { validate } = require('../middleware/validate');
+const { createOrderValidators } = require('../middleware/validators');
 const order = require('../controllers/orderController');
 
 const router = express.Router();
@@ -16,7 +18,7 @@ router.get('/driver', auth, order.getDriverOrders);
 
 router.get('/pending-offer', auth, order.getPendingOffer);
 
-router.post('/', auth, order.createOrder);
+router.post('/', auth, createOrderValidators, validate, order.createOrder);
 
 router.get('/:id/tracking', auth, order.getOrderTracking);
 router.post('/:id/cancel', auth, order.cancelOrder);

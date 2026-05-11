@@ -114,7 +114,9 @@ async function getMyDisputes(req, res) {
     return res.json({ disputes: rows.rows });
   } catch (err) {
     console.error('getMyDisputes:', err);
-    return res.status(500).json({ error: 'Failed to load disputes' });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 }
 
@@ -157,9 +159,11 @@ async function getAllDisputes(req, res) {
     );
     return res.json({ disputes: rows.rows });
   } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('getAllDisputes:', err);
-    return res.status(500).json({ error: 'Failed to load disputes' });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 }
 
@@ -258,9 +262,11 @@ async function getDisputeDetail(req, res) {
         : null,
     });
   } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('getDisputeDetail:', err);
-    return res.status(500).json({ error: 'Failed to load dispute' });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 }
 
@@ -297,9 +303,11 @@ async function resolveDispute(req, res) {
       return res.json(esc.rows[0]);
     }
   } catch (err) {
-    if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('resolveDispute:', err);
-    return res.status(500).json({ error: err.message || 'Failed to resolve dispute' });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 
   const id = parseInt(req.params.id, 10);
@@ -427,9 +435,11 @@ async function resolveDispute(req, res) {
     } catch (_) {
       /* ignore */
     }
-    if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+    if (err.statusCode === 403) return res.status(403).json({ error: 'Forbidden' });
     console.error('resolveDispute:', err);
-    return res.status(500).json({ error: err.message || 'Failed to resolve dispute' });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   } finally {
     client.release();
   }

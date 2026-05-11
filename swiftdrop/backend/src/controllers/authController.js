@@ -675,11 +675,12 @@ async function submitDriverApplication(req, res) {
     });
   } catch (err) {
     console.error('submitDriverApplication:', err);
-    const msg = err.message || 'Application submission failed';
-    if (msg.includes('Cloudinary')) {
-      return res.status(503).json({ error: msg });
+    if (err.message && String(err.message).includes('Cloudinary')) {
+      return res.status(503).json({
+        error: 'Photo storage is temporarily unavailable. Please try again.',
+      });
     }
-    return res.status(500).json({ error: msg });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 

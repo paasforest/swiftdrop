@@ -13,6 +13,12 @@ function requireAdmin(user) {
   }
 }
 
+function adminClientSafeMessage(err, fallbackNonServer) {
+  const code = err.statusCode || 500;
+  if (code >= 500) return 'Something went wrong. Please try again.';
+  return err.message || fallbackNonServer;
+}
+
 /** GET /api/admin/dashboard-stats */
 async function dashboardStats(req, res) {
   try {
@@ -77,7 +83,7 @@ async function dashboardStats(req, res) {
     });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to load stats' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to load stats') });
   }
 }
 
@@ -220,7 +226,7 @@ async function financeSummary(req, res) {
     });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to load finance summary' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to load finance summary') });
   }
 }
 
@@ -250,7 +256,7 @@ async function financeRevenueDaily(req, res) {
     return res.json({ days: rows, count: rows.length });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to load revenue series' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to load revenue series') });
   }
 }
 
@@ -278,7 +284,7 @@ async function financeInsurancePool(req, res) {
     return res.json({ transactions: r.rows, limit });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to load insurance pool' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to load insurance pool') });
   }
 }
 
@@ -377,7 +383,7 @@ async function listAdminDeliveries(req, res) {
     });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to load deliveries' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to load deliveries') });
   }
 }
 
@@ -426,7 +432,7 @@ async function setUserWallet(req, res) {
     });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to set wallet' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to set wallet') });
   }
 }
 
@@ -467,7 +473,7 @@ async function verifyUserByEmail(req, res) {
     });
   } catch (err) {
     const code = err.statusCode || 500;
-    return res.status(code).json({ error: err.message || 'Failed to verify user' });
+    return res.status(code).json({ error: adminClientSafeMessage(err, 'Failed to verify user') });
   }
 }
 

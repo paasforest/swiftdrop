@@ -1,6 +1,11 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
 const smsService = require('../services/smsService');
+const {
+  deductWallet,
+  refundWallet,
+  InsufficientWalletBalanceError,
+} = require('../utils/wallet');
 
 /** Same pattern as orderController.generateOrderNumber — unique order_number for job-board → orders bridge */
 function generateJobBoardOrderNumber() {
@@ -252,7 +257,7 @@ async function createJob(req, res) {
     return res.status(400).json({ error: 'Valid pickup and dropoff coordinates required' });
   }
 
-  const client = await db.pool.connect();
+  const client = await db.getClient();
   try {
     const distKm = haversineKm(
       Number(pickup_lat),
@@ -275,22 +280,11 @@ async function createJob(req, res) {
     await client.query('BEGIN');
 
     if (pm === 'wallet') {
-      const { rows: walletRows } = await client.query(
-        `SELECT wallet_balance FROM users WHERE id = $1 FOR UPDATE`,
-        [customerId]
-      );
-      const balance = Number(walletRows[0]?.wallet_balance || 0);
-      if (balance < totalPrice) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({
-          error: 'Insufficient wallet balance',
-          required: totalPrice,
-          available: balance,
-        });
-      }
-      await client.query(
-        `UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id = $2`,
-        [totalPrice, customerId]
+      await deductWallet(
+        client,
+        customerId,
+        totalPrice,
+        `JOB-${Date.now()}`
       );
     }
 
@@ -362,8 +356,17 @@ async function createJob(req, res) {
     } catch {
       /* ignore */
     }
+    if (err instanceof InsufficientWalletBalanceError) {
+      return res.status(400).json({
+        error: err.message,
+        required: err.required,
+        available: err.available,
+      });
+    }
     console.error('createJob:', err);
-    res.status(500).json({ error: 'Could not create job' });
+    res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   } finally {
     client.release();
   }
@@ -729,7 +732,7 @@ async function selectDriver(req, res) {
 
     const driver = driverRows[0];
 
-    const client = await db.pool.connect();
+    const client = await db.getClient();
     let order;
     let job;
     try {
@@ -737,18 +740,25 @@ async function selectDriver(req, res) {
 
       const { rows: jobRows } = await client.query(
         `
-          SELECT j.*, uc.phone AS customer_phone
+          SELECT j.*,
+            uc.phone AS customer_phone
           FROM delivery_jobs j
-          JOIN users uc ON uc.id = j.customer_id
-          WHERE j.id = $1 AND j.customer_id = $2 AND j.status = 'open'
-          FOR UPDATE OF j
+          JOIN users uc
+            ON uc.id = j.customer_id
+          WHERE j.id = $1
+            AND j.customer_id = $2
+            AND j.status = 'open'
+          FOR UPDATE
         `,
         [jobId, customerId]
       );
 
       if (!jobRows[0]) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Job not found' });
+        return res.status(409).json({
+          error:
+            'This job has already been confirmed or is no longer available',
+        });
       }
 
       job = jobRows[0];
@@ -927,7 +937,10 @@ async function selectDriver(req, res) {
     });
   } catch (err) {
     console.error('selectDriver:', err);
-    res.status(500).json({ error: 'Could not select driver' });
+    res.status(500).json({
+      error:
+        'Could not confirm driver. Please try again.',
+    });
   }
 }
 
@@ -936,49 +949,66 @@ async function cancelJob(req, res) {
     const customerId = req.user.id;
     const jobId = Number(req.params.id);
 
-    const { rows: jobRows } = await db.query(
-      `
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: jobRows } = await client.query(
+        `
         SELECT * FROM delivery_jobs
         WHERE id = $1
           AND customer_id = $2
           AND status IN ('open', 'driver_selected')
+        FOR UPDATE
       `,
-      [jobId, customerId]
-    );
-
-    if (!jobRows[0]) {
-      return res.status(404).json({ error: 'Job cannot be cancelled' });
-    }
-
-    const job = jobRows[0];
-
-    if (job.payment_status === 'paid') {
-      await db.query(
-        `UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id = $2`,
-        [job.total_price, customerId]
+        [jobId, customerId]
       );
 
-      await db.query(
+      if (!jobRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Job cannot be cancelled' });
+      }
+
+      const job = jobRows[0];
+
+      let walletRefundAmt = null;
+      if (job.payment_status === 'paid' && job.payment_method === 'wallet') {
+        const total = Number(job.total_price);
+        if (Number.isFinite(total) && total > 0) {
+          await refundWallet(client, customerId, total, `JOB-CANCEL-${jobId}`);
+          walletRefundAmt = total;
+        }
+      }
+
+      await client.query(
         `
-          INSERT INTO wallet_transactions (user_id, type, amount, reference, description)
-          VALUES ($1, 'credit', $2, $3, 'Refund for cancelled job')
-        `,
-        [customerId, job.total_price, `JOB-CANCEL-${jobId}`]
-      );
-    }
-
-    await db.query(
-      `
         UPDATE delivery_jobs SET status = 'cancelled', updated_at = NOW()
         WHERE id = $1
       `,
-      [jobId]
-    );
+        [jobId]
+      );
 
-    res.json({ success: true, refunded: job.total_price });
+      await client.query('COMMIT');
+
+      res.json({
+        success: true,
+        refunded: walletRefundAmt != null ? walletRefundAmt : 0,
+      });
+    } catch (inner) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+      throw inner;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error('cancelJob:', err);
-    res.status(500).json({ error: 'Could not cancel job' });
+    res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 }
 

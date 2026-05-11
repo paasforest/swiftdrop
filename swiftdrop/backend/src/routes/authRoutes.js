@@ -1,15 +1,17 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
-const authController = require('../controllers/authController');
 const { auth, verifyFirebaseToken } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { loginValidators } = require('../middleware/validators');
+const authController = require('../controllers/authController');
 
 const driverApplicationUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-router.post('/login', authController.login);
+router.post('/login', loginValidators, validate, authController.login);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/register-customer', authController.registerCustomer);
 router.post('/register-driver', authController.registerDriver);

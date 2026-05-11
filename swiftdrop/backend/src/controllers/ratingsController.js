@@ -42,7 +42,7 @@ async function submitRating(req, res) {
     return res.status(201).json({ rating: inserted.rows[0] });
   } catch (err) {
     console.error('submitRating:', err);
-    return res.status(500).json({ error: err.message || 'Failed to submit rating' });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 
@@ -74,7 +74,7 @@ async function getCustomerRating(req, res) {
     return res.json({ rating: ratingRes.rows[0] || null });
   } catch (err) {
     console.error('getCustomerRating:', err);
-    return res.status(500).json({ error: err.message || 'Failed to load rating' });
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
   }
 }
 

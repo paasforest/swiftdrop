@@ -605,7 +605,6 @@ async function uploadPhoto(req, res) {
         error:
           'Could not store photo. Configure Cloudinary on the server (CLOUDINARY_URL or CLOUDINARY_*).',
         code: 'PHOTO_STORAGE_FAILED',
-        detail: cloudErr.message,
       });
     }
 
@@ -621,7 +620,9 @@ async function uploadPhoto(req, res) {
 
     return res.json({ success: true, url: photoUrl, stage });
   } catch (err) {
-    return res.status(500).json({ error: 'Photo upload failed', detail: err.message });
+    return res.status(500).json({
+      error: 'Something went wrong. Please try again.',
+    });
   }
 }
 
