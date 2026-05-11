@@ -3,7 +3,7 @@ const multer = require('multer');
 const router = express.Router();
 const { auth, verifyFirebaseToken } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const { loginValidators } = require('../middleware/validators');
+const { loginValidators, registerValidators } = require('../middleware/validators');
 const authController = require('../controllers/authController');
 
 const driverApplicationUpload = multer({
@@ -13,8 +13,8 @@ const driverApplicationUpload = multer({
 
 router.post('/login', loginValidators, validate, authController.login);
 router.post('/forgot-password', authController.forgotPassword);
-router.post('/register-customer', authController.registerCustomer);
-router.post('/register-driver', authController.registerDriver);
+router.post('/register-customer', registerValidators, validate, authController.registerCustomer);
+router.post('/register-driver', registerValidators, validate, authController.registerDriver);
 router.post('/refresh-token', authController.refreshToken);
 router.get('/me', auth, authController.getMe);
 router.post('/register', verifyFirebaseToken, authController.register);

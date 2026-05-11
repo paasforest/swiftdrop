@@ -5,7 +5,7 @@ const { detectProvince } = require('../services/provinceService');
 const { runMatching, offerReturnLoadAfterIntercityPickup } = require('../services/matchingService');
 const { releaseEscrow } = require('../services/paymentService');
 const { sendPushNotification } = require('../services/notificationService');
-const smsService = require('../services/smsService');
+const { queueSMS } = require('../services/smsQueue');
 const { uploadImage } = require('../services/cloudinaryService');
 const { hasAvailableSlots } = require('../services/slotService');
 const {
@@ -338,14 +338,15 @@ async function createOrder(req, res) {
                 day: 'numeric',
                 month: 'short',
               });
-              await smsService.sendSMS(
+              await queueSMS(
                 customerPhone,
                 'SwiftDrop: Your intercity booking is confirmed!\n\n'
                   + 'Drop off your parcel at:\n'
                   + `${driverRoute.meeting_point_address}\n\n`
                   + `Deadline: ${deadlineStr} on ${departureDateStr}\n`
                   + '(30 min before driver departs)\n\n'
-                  + 'The driver will verify with a code and photo.'
+                  + 'The driver will verify with a code and photo.',
+                `ORDER-${order.order_number}-${order.id}-MEET-${Date.now()}`
               );
             }
           }
@@ -849,11 +850,12 @@ async function pickupArrived(req, res) {
     }
 
     if (order.customer_phone) {
-      await smsService.sendSMS(
+      await queueSMS(
         order.customer_phone,
         'SwiftDrop: Your driver has arrived to collect your parcel.\n\n'
           + `Give this code to the driver:\n*${pickupOtp}*\n\n`
-          + 'Do not share this code with anyone else.'
+          + 'Do not share this code with anyone else.',
+        `ORDER-${id}-PICKUP-ARR-${Date.now()}`
       );
     }
 
@@ -901,11 +903,12 @@ async function deliveryArrived(req, res) {
     const recipientPhone = order.recipient_phone || order.customer_phone;
 
     if (recipientPhone) {
-      await smsService.sendSMS(
+      await queueSMS(
         recipientPhone,
         'SwiftDrop: Your parcel is being delivered now!\n\n'
           + `Give this code to the driver:\n*${deliveryOtp}*\n\n`
-          + 'Do not share with anyone else.'
+          + 'Do not share with anyone else.',
+        `ORDER-${id}-DROP-ARR-${Date.now()}`
       );
     }
 
@@ -977,7 +980,11 @@ async function updateOrderStatus(req, res) {
       );
 
       if (customerPhone && order.delivery_otp && driverFullName) {
-        await smsService.sendDeliveryOTP(customerPhone, order.delivery_otp, driverFullName);
+        await queueSMS(
+          customerPhone,
+          `SwiftDrop: ${driverFullName} arrived with your parcel. Delivery code: ${order.delivery_otp}`,
+          `ORDER-${id}-DELIVERY-OTP-${Date.now()}`
+        );
       }
     }
 
@@ -1027,10 +1034,11 @@ async function confirmPickupOTP(req, res) {
       const driverUserRes = await db.query(`SELECT full_name FROM users WHERE id = $1`, [driverId]);
       const driverName = driverUserRes.rows[0]?.full_name?.trim() || 'Your driver';
       const collectedAt = new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
-      await smsService.sendSMS(
+      await queueSMS(
         order.customer_phone,
         `SwiftDrop: Your parcel has been collected by ${driverName} at ${collectedAt}.\n`
-          + 'Track your delivery in the app.'
+          + 'Track your delivery in the app.',
+        `ORDER-${id}-PICKUP-CONFIRM-${Date.now()}`
       );
     }
 

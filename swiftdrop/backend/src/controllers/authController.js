@@ -5,9 +5,11 @@ const smsService = require('../services/smsService');
 const { uploadImage } = require('../services/cloudinaryService');
 const { generateOTP, storeOTP, validateOTP } = require('../utils/otpHelper');
 const { normalizeSouthAfricaToE164 } = require('../utils/phoneNormalize');
+const { normalizeSAPhone, isValidSAPhone } = require('../middleware/validators');
+const { requireJwtSecret } = require('../utils/jwtSecret');
 
 function signTokens(user) {
-  const secret = process.env.JWT_SECRET;
+  const secret = requireJwtSecret();
   const token = jwt.sign(
     { id: user.id, user_type: user.user_type, email: user.email },
     secret,
@@ -407,28 +409,32 @@ async function forgotPassword(req, res) {
 async function registerCustomer(req, res) {
   const full_name = String(req.body?.full_name || '').trim();
   const email = String(req.body?.email || '').trim().toLowerCase();
-  const rawPhone = String(req.body?.phone || '').trim();
+  const rawPhone = req.body?.phone;
   const password = String(req.body?.password || '').trim();
 
-  if (!full_name || !email || !rawPhone || !password) {
+  if (!full_name || !email || !password || rawPhone == null || String(rawPhone).trim() === '') {
     return res.status(400).json({ error: 'full_name, email, phone and password are required' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
-  }
-  const phone = normalizeSouthAfricaToE164(rawPhone);
-  if (!phone) {
+  const phone = normalizeSAPhone(rawPhone);
+  if (!phone || !isValidSAPhone(phone)) {
     return res.status(400).json({ error: 'A valid South African phone number is required' });
+  }
+
+  const dupPhoneRes = await db.query(`SELECT id FROM users WHERE phone = $1 LIMIT 1`, [phone]);
+  if (dupPhoneRes.rows.length > 0) {
+    return res.status(409).json({
+      error: 'An account with this phone number already exists',
+    });
   }
 
   const client = await db.pool.connect();
   try {
     const existing = await client.query(
-      `SELECT id FROM users WHERE LOWER(email) = $1 OR phone = $2 LIMIT 1`,
-      [email, phone]
+      `SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+      [email]
     );
     if (existing.rows[0]) {
-      return res.status(409).json({ error: 'An account with this email or phone already exists' });
+      return res.status(409).json({ error: 'An account with this email already exists' });
     }
     const password_hash = await bcrypt.hash(password, 10);
     const inserted = await client.query(
@@ -450,6 +456,13 @@ async function registerCustomer(req, res) {
       phoneVerificationRequired: false,
     });
   } catch (err) {
+    if (err.code === '23505') {
+      const msg =
+        String(err.detail || '').includes('phone')
+          ? 'An account with this phone number already exists'
+          : 'An account with this email already exists';
+      return res.status(409).json({ error: msg });
+    }
     console.error('registerCustomer:', err);
     return res.status(500).json({ error: 'Registration failed' });
   } finally {
@@ -486,19 +499,23 @@ async function uploadFieldToUrl(files, fieldname) {
 async function registerDriver(req, res) {
   const full_name = String(req.body?.full_name || '').trim();
   const email = String(req.body?.email || '').trim().toLowerCase();
-  const rawPhone = String(req.body?.phone || '').trim();
+  const rawPhone = req.body?.phone;
   const password = String(req.body?.password || '').trim();
 
-  if (!full_name || !email || !rawPhone || !password) {
+  if (!full_name || !email || !password || rawPhone == null || String(rawPhone).trim() === '') {
     return res.status(400).json({ error: 'Name, email, phone and password are required' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const phone = normalizeSAPhone(rawPhone);
+  if (!phone || !isValidSAPhone(phone)) {
+    return res.status(400).json({ error: 'A valid South African phone number is required' });
   }
 
-  const phone = normalizeSouthAfricaToE164(rawPhone);
-  if (!phone) {
-    return res.status(400).json({ error: 'A valid South African phone number is required' });
+  const dupPhoneRes = await db.query(`SELECT id FROM users WHERE phone = $1 LIMIT 1`, [phone]);
+  if (dupPhoneRes.rows.length > 0) {
+    return res.status(409).json({
+      error: 'An account with this phone number already exists',
+    });
   }
 
   const client = await db.pool.connect();
@@ -506,12 +523,12 @@ async function registerDriver(req, res) {
     await client.query('BEGIN');
 
     const existing = await client.query(
-      `SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 OR phone = $2 LIMIT 1`,
-      [email, phone]
+      `SELECT id FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1`,
+      [email]
     );
     if (existing.rows[0]) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Account already exists' });
+      return res.status(409).json({ error: 'An account with this email already exists' });
     }
 
     const password_hash = await bcrypt.hash(password, 10);
@@ -547,7 +564,14 @@ async function registerDriver(req, res) {
       phoneVerificationRequired: false,
     });
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.code === '23505') {
+      const msg =
+        String(err.detail || '').includes('phone')
+          ? 'An account with this phone number already exists'
+          : 'An account with this email already exists';
+      return res.status(409).json({ error: msg });
+    }
     console.error('registerDriver:', err);
     return res.status(500).json({ error: 'Registration failed' });
   } finally {
@@ -688,7 +712,7 @@ async function refreshToken(req, res) {
   const rt = String(req.body?.refreshToken || '').trim();
   if (!rt) return res.status(400).json({ error: 'refreshToken is required' });
   try {
-    const decoded = jwt.verify(rt, process.env.JWT_SECRET);
+    const decoded = jwt.verify(rt, requireJwtSecret());
     if (decoded.type !== 'refresh') {
       return res.status(401).json({ error: 'Invalid refresh token' });
     }
@@ -704,6 +728,10 @@ async function refreshToken(req, res) {
     const { token } = signTokens(user);
     return res.json({ token, user: buildUserPayload(user) });
   } catch (err) {
+    if (err.message && String(err.message).includes('JWT_SECRET')) {
+      console.error('refreshToken:', err);
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
     return res.status(401).json({ error: 'Invalid or expired refresh token' });
   }
 }

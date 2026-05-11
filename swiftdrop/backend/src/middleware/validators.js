@@ -1,4 +1,23 @@
 const { body } = require('express-validator');
+const { haversineKm } = require('../utils/distanceHelper');
+
+function normalizeSAPhone(phone) {
+  if (phone == null || phone === '') return phone;
+  let cleaned = String(phone).replace(/[\s\-()]/g, '');
+
+  if (cleaned.startsWith('0')) {
+    cleaned = `+27${cleaned.slice(1)}`;
+  }
+  if (cleaned.startsWith('27') && !cleaned.startsWith('+')) {
+    cleaned = `+${cleaned}`;
+  }
+  return cleaned;
+}
+
+function isValidSAPhone(phone) {
+  const normalized = normalizeSAPhone(phone);
+  return /^\+27[678]\d{8}$/.test(normalized);
+}
 
 const SA_LAT_MIN = -35;
 const SA_LAT_MAX = -22;
@@ -43,6 +62,21 @@ const createOrderValidators = [
         throw new Error(
           'Dropoff must be within South Africa'
         );
+      }
+      const pickupLat = Number(req.body.pickup_lat);
+      const pickupLng = Number(req.body.pickup_lng);
+      if (
+        Number.isFinite(pickupLat)
+        && Number.isFinite(pickupLng)
+        && Number.isFinite(lat)
+        && Number.isFinite(lng)
+      ) {
+        const dist = haversineKm(pickupLat, pickupLng, lat, lng);
+        if (dist < 0.1) {
+          throw new Error(
+            'Pickup and dropoff addresses cannot be the same location'
+          );
+        }
       }
       return true;
     }),
@@ -109,8 +143,45 @@ const loginValidators = [
     }),
 ];
 
+const registerValidators = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Valid email required'),
+  body('phone')
+    .notEmpty()
+    .withMessage('Phone is required')
+    .custom((val) => {
+      if (!val) return true;
+      if (!isValidSAPhone(val)) {
+        throw new Error(
+          'Please enter a valid SA mobile number e.g. 0821234567'
+        );
+      }
+      return true;
+    })
+    .customSanitizer((val) => normalizeSAPhone(val)),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage(
+      'Password must be at least 8 characters'
+    )
+    .matches(/\d/)
+    .withMessage(
+      'Password must contain at least one number'
+    ),
+  body('full_name')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name is required')
+    .trim()
+    .escape(),
+];
+
 module.exports = {
   createOrderValidators,
   createJobValidators,
   loginValidators,
+  registerValidators,
+  normalizeSAPhone,
+  isValidSAPhone,
 };

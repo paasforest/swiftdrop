@@ -1,6 +1,6 @@
 const db = require('../database/connection');
 const { haversineKm } = require('../utils/distanceHelper');
-const smsService = require('../services/smsService');
+const { queueSMS } = require('../services/smsQueue');
 const {
   deductWallet,
   refundWallet,
@@ -136,9 +136,10 @@ async function notifyMatchingDrivers(job) {
 
     for (const driver of drivers) {
       if (driver.phone) {
-        await smsService.sendSMS(
+        await queueSMS(
           driver.phone,
-          `SwiftDrop: A parcel job matches your route!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen the app to apply.`
+          `SwiftDrop: A parcel job matches your route!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen the app to apply.`,
+          `JOB-NOTIFY-IC-${job.id}-${driver.id}-${Date.now()}`
         );
       }
     }
@@ -178,9 +179,10 @@ async function notifyNearbyDrivers(job) {
 
     for (const driver of drivers) {
       if (driver.phone) {
-        await smsService.sendSMS(
+        await queueSMS(
           driver.phone,
-          `SwiftDrop: New delivery job near you!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen SwiftDrop to apply.`
+          `SwiftDrop: New delivery job near you!\n${String(job.pickup_address).split(',')[0]} → ${String(job.dropoff_address).split(',')[0]}\nOpen SwiftDrop to apply.`,
+          `JOB-NOTIFY-LOCAL-${job.id}-${driver.id}-${Date.now()}`
         );
       }
     }
@@ -597,14 +599,49 @@ async function applyForJob(req, res) {
     const { driver_route_id } = req.body;
 
     const { rows: profileRows } = await db.query(
-      `SELECT verification_status FROM driver_profiles WHERE user_id = $1`,
+      `
+        SELECT
+          dp.verification_status,
+          dp.licence_expiry,
+          u.is_active
+        FROM driver_profiles dp
+        JOIN users u ON u.id = dp.user_id
+        WHERE dp.user_id = $1
+      `,
       [driverId]
     );
 
-    if (profileRows[0]?.verification_status !== 'approved') {
+    if (!profileRows[0]) {
       return res.status(403).json({
-        error: 'Your account is pending verification. Please wait for admin approval.',
+        error: 'Driver profile not found. Please complete your profile.',
       });
+    }
+
+    const prof = profileRows[0];
+
+    if (!prof.is_active) {
+      return res.status(403).json({
+        error: 'Your account has been deactivated.',
+      });
+    }
+
+    if (prof.verification_status !== 'approved') {
+      return res.status(403).json({
+        error:
+          'Your account is pending verification. An admin will review your documents shortly.',
+      });
+    }
+
+    if (prof.licence_expiry) {
+      const expDate = new Date(prof.licence_expiry);
+      const today = new Date();
+      expDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      if (expDate < today) {
+        return res.status(403).json({
+          error: 'Your driver licence on file has expired. Please update your documents.',
+        });
+      }
     }
 
     const { rows: jobRows } = await db.query(
@@ -634,9 +671,10 @@ async function applyForJob(req, res) {
 
     const job = jobRows[0];
     if (job.customer_phone) {
-      await smsService.sendSMS(
+      await queueSMS(
         job.customer_phone,
-        'SwiftDrop: A driver applied for your delivery!\nOpen the app to view their profile and confirm your driver.'
+        'SwiftDrop: A driver applied for your delivery!\nOpen the app to view their profile and confirm your driver.',
+        `JOB-APPLY-${jobId}-${driverId}-${Date.now()}`
       );
     }
 
@@ -902,25 +940,28 @@ async function selectDriver(req, res) {
     );
 
     if (driver.phone) {
-      await smsService.sendSMS(
+      await queueSMS(
         driver.phone,
-        `SwiftDrop: You got the job!\n\nCollect from:\n${job.pickup_address}\n\nDeliver to:\n${job.dropoff_address}\n\nYour earnings: R${job.driver_earnings}\n\nCustomer: ${job.customer_phone}`
+        `SwiftDrop: You got the job!\n\nCollect from:\n${job.pickup_address}\n\nDeliver to:\n${job.dropoff_address}\n\nYour earnings: R${job.driver_earnings}\n\nCustomer: ${job.customer_phone}`,
+        `JOB-SELECT-${jobId}-WIN-${driverIdSel}-${Date.now()}`
       );
     }
 
-    for (const row of rejectedPhones) {
+    rejectedPhones.forEach((row, idx) => {
       if (row.phone) {
-        await smsService.sendSMS(
+        queueSMS(
           row.phone,
-          'SwiftDrop: Thank you for applying. Another driver was selected for this job.'
+          'SwiftDrop: Thank you for applying. Another driver was selected for this job.',
+          `JOB-SELECT-${jobId}-REJ-${idx}-${Date.now()}`
         ).catch(() => {});
       }
-    }
+    });
 
     if (job.customer_phone) {
-      await smsService.sendSMS(
+      await queueSMS(
         job.customer_phone,
-        `SwiftDrop: Driver confirmed!\n\n${driver.full_name}\n${driver.vehicle_color} ${driver.vehicle_make} ${driver.vehicle_model}\nPlate: ${driver.vehicle_plate}\nPhone: ${driver.phone}`
+        `SwiftDrop: Driver confirmed!\n\n${driver.full_name}\n${driver.vehicle_color} ${driver.vehicle_make} ${driver.vehicle_model}\nPlate: ${driver.vehicle_plate}\nPhone: ${driver.phone}`,
+        `JOB-SELECT-${jobId}-CUSTOMER-${Date.now()}`
       );
     }
 

@@ -15,6 +15,16 @@ const walletRoutes = require('./src/routes/walletRoutes');
 const tripRoutes = require('./src/routes/tripRoutes');
 const jobRoutes = require('./src/routes/jobRoutes');
 
+try {
+  require('./src/utils/jwtSecret').requireJwtSecret();
+} catch (e) {
+  console.error('[SwiftDrop]', e.message);
+  process.exit(1);
+}
+
+const cron = require('node-cron');
+const { retryFailedSMS } = require('./src/services/smsQueue');
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -93,6 +103,13 @@ app.use((err, req, res, next) => {
 });
 
 const HOST = process.env.HOST || '0.0.0.0';
+
+cron.schedule('*/5 * * * *', () => {
+  retryFailedSMS().catch((e) =>
+    console.error('[smsQueue] retry:', e?.message || e)
+  );
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`SwiftDrop API running on http://${HOST}:${PORT}`);
 });

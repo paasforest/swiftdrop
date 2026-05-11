@@ -1,6 +1,7 @@
 const db = require('../database/connection');
 const jwt = require('jsonwebtoken');
 const { getAdminAuth } = require('../services/firebaseAdmin');
+const { requireJwtSecret } = require('../utils/jwtSecret');
 
 const USER_FIELDS = `id, firebase_uid, app_role, profile_completed, default_pickup_address,
                      full_name, email, phone, user_type, is_verified, is_active,
@@ -29,34 +30,67 @@ async function verifyFirebaseToken(req, res, next) {
 async function auth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Authorization token required' });
+    return res.status(401).json({ error: 'Authentication required' });
   }
   const token = authHeader.split(' ')[1];
 
-  // 1. Try our own JWT first (email/password login)
+  let secret;
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // Reject refresh tokens used as access tokens
-    if (decoded.id && decoded.type !== 'refresh') {
+    secret = requireJwtSecret();
+  } catch (e) {
+    console.error('[auth] JWT_SECRET misconfigured:', e.message);
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  // 1. Try JWT access token (login / register flows)
+  try {
+    const decoded = jwt.verify(token, secret);
+
+    if (decoded.type === 'refresh') {
+      throw new jwt.JsonWebTokenError('refresh token used as access');
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (decoded.exp != null && decoded.exp < nowSec) {
+      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    }
+
+    if (decoded.id) {
       const result = await db.query(
-        `SELECT ${USER_FIELDS} FROM users WHERE id = $1 AND is_active = true LIMIT 1`,
+        `SELECT ${USER_FIELDS} FROM users WHERE id = $1 LIMIT 1`,
         [decoded.id]
       );
       const user = result.rows[0];
-      if (user) {
-        req.user = user;
-        return next();
+      if (!user) {
+        return res.status(401).json({ error: 'Account not found' });
       }
+      if (user.is_active === false) {
+        return res.status(403).json({ error: 'Account has been deactivated' });
+      }
+      if (decoded.user_type && decoded.user_type !== user.user_type) {
+        return res.status(401).json({ error: 'Invalid authentication token' });
+      }
+      req.user = user;
+      return next();
     }
-  } catch (_jwtErr) {
-    // Not a valid JWT — fall through to Firebase
+
+    throw new jwt.JsonWebTokenError('invalid access payload');
+  } catch (e) {
+    if (e.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    }
+    if (e.name !== 'JsonWebTokenError') {
+      console.error('[auth] Unexpected JWT error:', e);
+      return res.status(500).json({ error: 'Authentication failed' });
+    }
+    // Invalid / wrong token type — fall through to Firebase bearer
   }
 
-  // 2. Fall back to Firebase ID token
+  // 2. Firebase ID token fallback
   try {
     const adminAuth = getAdminAuth();
     if (!adminAuth) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+      return res.status(401).json({ error: 'Invalid authentication token' });
     }
     const decoded = await adminAuth.verifyIdToken(token);
     req.firebaseUser = decoded;
@@ -79,8 +113,8 @@ async function auth(req, res, next) {
     }
     req.user = user;
     return next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+  } catch (_err) {
+    return res.status(401).json({ error: 'Invalid authentication token' });
   }
 }
 
